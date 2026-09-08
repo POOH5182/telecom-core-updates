@@ -1,6 +1,6 @@
 """Google login and revision-safe cloud drawings for the Windows desktop app.
 
-Bundled into workflow_v50.py to retain the installed three-file update protocol.
+Bundled into the versioned workflow module to retain the three-file update protocol.
 No privileged server keys or Google client secrets are shipped to the desktop.
 """
 import base64
@@ -471,7 +471,7 @@ class CloudController:
             return
         entry=self.entry()
         signature=self.signature()
-        if entry.get('synced_signature')==signature:
+        if entry.get('synced_signature')==signature and entry.get('synced_name')==entry['name']:
             return
         data=cloud_bundle(self.app.store,self.app.scenario_folder())
         digest=hashlib.sha256(data).hexdigest()
@@ -686,6 +686,70 @@ class CloudController:
             self.sync_now()
         self.ensure_saved(create)
 
+    def rename_drawing(self,row,changed=None):
+        if self.access_lost:
+            return
+        drawing_id=row['id']
+        entry=self.index['docs'].get(drawing_id)
+        old_name=entry['name'] if drawing_id==self.current and entry else row['name']
+        parent=self.dialog if self.dialog and self.dialog.winfo_exists() else self.app
+        name=simpledialog.askstring('도면 이름 변경','새 도면 이름을 입력하세요. (최대 120자)',
+                                    initialvalue=old_name,parent=parent)
+        if name is None:
+            return
+        name=name.strip()
+        if not name or len(name)>120:
+            messagebox.showwarning('도면 이름 확인','도면 이름을 1~120자로 입력해 주세요.',parent=parent)
+            return
+        if name==old_name:
+            return
+        def finish():
+            if changed:
+                changed()
+        def rename():
+            entry=self.index['docs'].get(drawing_id)
+            if drawing_id==self.current or (entry and entry.get('base_revision',0)==0):
+                entry['name']=name
+                self.persist()
+                self.app.update_title()
+                if drawing_id==self.current:
+                    self.capture()
+                    self.send_next(done=finish)
+                else:
+                    self.status.set('이름 변경 완료 · 이 PC의 도면을 열면 동기화됩니다.')
+                    finish()
+                return
+            # Preserve the complete server payload and its optimistic revision check.
+            # Renaming another drawing does not switch the currently open editor.
+            def work():
+                drawing=self.session.call('load',id=drawing_id)
+                result=self.session.call('save',id=drawing_id,name=name,
+                    base_revision=drawing['revision'],operation_id=str(uuid.uuid4()),
+                    payload=drawing['payload'],sha256=drawing['sha256'])
+                return drawing['revision'],result
+            def saved(result):
+                previous_revision,response=result
+                cached=self.index['docs'].get(drawing_id)
+                if cached:
+                    cached.update(name=name,synced_name=name)
+                    # Advance a matching cache's baseline only: its server content did not change.
+                    if cached.get('base_revision')==previous_revision:
+                        cached['base_revision']=response['revision']
+                    self.persist()
+                self.status.set('도면 이름 변경 · 동기화 완료')
+                self.status_label.configure(fg='#155e42')
+                finish()
+            def failed(error):
+                if isinstance(error,CloudError) and error.code=='40001':
+                    self.status.set('이름 변경 보류 · 다른 PC에서 수정된 도면입니다.')
+                    messagebox.showwarning('도면 이름 변경 보류',
+                        '다른 PC에서 도면이 수정됐습니다. 목록을 새로고침한 뒤 다시 변경해 주세요.',parent=self.app)
+                    finish()
+                else:
+                    self.failed(error)
+            self.jobs.run(work,saved,failed)
+        self.ensure_saved(rename)
+
     def import_external(self,path=None,legacy=False):
         if path is None:
             path=filedialog.askopenfilename(parent=self.dialog or self.app,title='기존 SQLite 도면 가져오기',filetypes=[('통신 코어 도면','*.sqlite3')])
@@ -773,7 +837,7 @@ class CloudController:
                 tree.insert('','end',iid=key,values=(row['name'],row['revision'],row['updated_at']))
             if self.index.get('current') in rows:
                 tree.selection_set(self.index['current'])
-            label.configure(text='도면을 선택하고 열기를 누르세요.' if rows else '새 도면을 만들거나 기존 PC 도면을 가져오세요.')
+            label.configure(text='도면을 선택하고 열기 또는 이름 변경을 누르세요.' if rows else '새 도면을 만들거나 기존 PC 도면을 가져오세요.')
         def load_rows():
             if not window.winfo_exists():
                 return
@@ -782,11 +846,18 @@ class CloudController:
         def selected():
             if tree.selection():
                 self.open_drawing(rows[tree.selection()[0]])
+        def rename_selected(event=None):
+            if tree.selection():
+                self.rename_drawing(rows[tree.selection()[0]],changed=load_rows)
+            else:
+                label.configure(text='이름을 변경할 도면을 먼저 선택하세요.')
+            return 'break'
         buttons=ttk.Frame(window,padding=10)
         buttons.pack(fill='x')
-        for text,command in [('열기',selected),('새 도면',self.new_drawing),('기존 PC 도면 가져오기',self.import_previous),('파일 선택해서 가져오기',self.import_external),('새로고침',load_rows)]:
+        for text,command in [('열기',selected),('이름 변경',rename_selected),('새 도면',self.new_drawing),('기존 PC 도면 가져오기',self.import_previous),('파일 선택해서 가져오기',self.import_external),('새로고침',load_rows)]:
             ttk.Button(buttons,text=text,command=command).pack(side='left',padx=3)
         tree.bind('<Double-1>',lambda e:selected())
+        tree.bind('<F2>',rename_selected)
         load_rows()
 
     def admin(self):

@@ -153,7 +153,8 @@ def names(app):
 
 def run():
     assert HEADLESS or sys.platform=='win32','Run this gate on Windows or pass --headless for persistence only.'
-    bundled=(ROOT/'app'/'workflow_v50.py').read_text(encoding='utf-8').split('\n\n# BEGIN TELECOM CLOUD CLIENT\n')[1]
+    version=json.loads((ROOT/'app'/'version.json').read_bytes())['version']
+    bundled=(ROOT/'app'/f'workflow_v{version}.py').read_text(encoding='utf-8').split('\n\n# BEGIN TELECOM CLOUD CLIENT\n')[1]
     assert bundled==(ROOT/'cloud'/'client.py').read_text(encoding='utf-8')
     if not HEADLESS:
         secret=b'synthetic-refresh-token-only'
@@ -190,6 +191,19 @@ def run():
         contents=cloud.cloud_unpack(base64.b64decode(server.rows[key]['payload']))
         assert set(contents)==cloud.CLOUD_FILES,'Before/after snapshots missing'
         assert c.entry()['base_revision']==2
+
+        # A name-only change must synchronize without touching filenames or drawing payloads.
+        original_path=app.store.path
+        original_payload=server.rows[key]['payload']
+        with patch.object(cloud.simpledialog,'askstring',return_value='  포항 / 1차 도면  '):
+            c.rename_drawing({'id':key,'name':server.rows[key]['name']})
+        pump(app,c)
+        assert server.rows[key]['name']=='포항 / 1차 도면'
+        assert server.rows[key]['payload']==original_payload and app.store.path==original_path
+        for rejected in (None,'   ','가'*121):
+            with patch.object(cloud.simpledialog,'askstring',return_value=rejected):
+                c.rename_drawing({'id':key,'name':server.rows[key]['name']})
+            assert server.rows[key]['name']=='포항 / 1차 도면'
 
         # A save accepted by the server but not acknowledged must retry exactly once.
         app.store.add_node('lost acknowledgement',200,0)
@@ -237,6 +251,14 @@ def run():
         c.open_drawing({'id':key});pump(app,c)
         assert 'other PC edit' in names(app) and 'local unqueued edit' not in names(app)
 
+        # Rename a cached, closed drawing without switching or changing either payload.
+        original_payload=server.rows[conflict]['payload']
+        with patch.object(cloud.simpledialog,'askstring',return_value='보관 도면 이름 변경'):
+            c.rename_drawing({'id':conflict,'name':server.rows[conflict]['name']})
+        pump(app,c)
+        assert c.current==key and server.rows[conflict]['payload']==original_payload
+        assert c.entry(conflict)['name']==server.rows[conflict]['name']=='보관 도면 이름 변경'
+
         # A download completed after a new local edit must not install its stale snapshot.
         before=set(names(app))
         c.fetch_drawing(key,expected_signature=c.signature())
@@ -248,14 +270,23 @@ def run():
         # A second PC loads the account's server drawing including undo history.
         app,c=make_app(root/'pc-two',server)
         c.fetch_drawing(conflict);pump(app,c)
+        assert c.entry()['name']=='보관 도면 이름 변경','Another PC did not receive the new name'
         assert 'local unqueued edit' in names(app)
         app.store.undo()
         assert 'local unqueued edit' not in names(app),'Undo history did not travel with the drawing'
         app.store.redo()
         assert 'local unqueued edit' in names(app)
+        # A server-only drawing can also be renamed from the list on a different PC.
+        original_payload=server.rows[key]['payload']
+        with patch.object(cloud.simpledialog,'askstring',return_value='서버 도면 이름 변경'):
+            c.rename_drawing({'id':key,'name':server.rows[key]['name']})
+        pump(app,c)
+        assert c.current==conflict and server.rows[key]['payload']==original_payload
+        assert server.rows[key]['name']=='서버 도면 이름 변경'
         c.finish_close()
         assert not errors,errors
     if not HEADLESS:print('PASS Windows DPAPI, approval gate and Tk editor')
+    print('PASS current, cached and remote-only drawing rename; name-only sync, validation, payload preservation and cross-PC name propagation')
     print('PASS SQLite before/after bundle, lost-ACK retry, close flush, crash recovery, two-PC conflict preservation, stale-download protection and cloud undo history')
 
 
