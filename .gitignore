@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.sqlite3
+*.sqlite3-*
+*.db
+*.lock
+*.log
+data/
+scenarios/
+backup/
+update_backup/
+update_cache/
+program_versions/
+update_config.json
+update_state.json
+dist/
+app/

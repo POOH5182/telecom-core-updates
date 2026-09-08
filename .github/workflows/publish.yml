@@ -1,0 +1,46 @@
+name: 자동 업데이트 배포
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release_payload/**'
+      - 'tools/**'
+      - '.github/workflows/publish.yml'
+      - '.gitattributes'
+      - 'RELEASE_NOTES.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: telecom-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: 코드 가져오기
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Python 준비
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: 게시 동작 검증
+        run: python -m unittest discover -s tools -p "test_*.py" -v
+      - name: 배포할 프로그램 준비
+        run: python tools/materialize_release.py
+      - name: Windows 화면 및 저장 확인
+        run: python tools/smoke_windows.py
+      - name: 배포 파일 만들기
+        run: python tools/build_release.py
+      - name: 검증한 버전 게시
+        run: python tools/publish_release.py
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONUTF8: '1'
