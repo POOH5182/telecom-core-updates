@@ -36,3 +36,10 @@ and authorization when delivering changes. Do not send messages to other people.
   and the first real Google login before claiming end-to-end login works.
 - The fixed client URL is
   `https://github.com/POOH5182/telecom-core-updates/releases/latest/download/latest.json`.
+- V52 planning source lives in `planning/after_plan.py`, bundled before the cloud
+  client. Regenerate both with `build_release.py --prepare`. Planning state belongs
+  in `workflow_state.project.after_plan` for scenario/cloud/undo preservation.
+- Renumbering is an explicit, stale-guarded, backed-up permutation. Preserve core
+  annotations, RN ports, splice identities and survey/exception slot references.
+  The history label `케이블 코어순서 교환` suppresses identity-annotation transport.
+  Run `tools/check_after_plan.py` including its Windows UI gate before publishing.

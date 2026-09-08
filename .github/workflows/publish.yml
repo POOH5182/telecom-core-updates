@@ -7,6 +7,7 @@ on:
       - 'release_payload/**'
       - 'tools/**'
       - 'cloud/**'
+      - 'planning/**'
       - '.github/workflows/publish.yml'
       - '.gitattributes'
       - 'RELEASE_NOTES.md'
@@ -40,6 +41,8 @@ jobs:
         run: python tools/smoke_windows.py
       - name: Windows 로그인과 도면 동기화 검증
         run: python tools/smoke_cloud_windows.py
+      - name: 후도면 전체 점검과 선번 재배치 보존 검증
+        run: python tools/check_after_plan.py
       - name: 배포 파일 만들기
         run: python tools/build_release.py
       - name: Google 로그인 설정과 서버 접근 확인

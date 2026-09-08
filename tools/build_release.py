@@ -38,6 +38,10 @@ def prepare_payload():
         workflow = ROOT / 'app' / f'workflow_v{version}.py'
         marker = '\n\n# BEGIN TELECOM CLOUD CLIENT\n'
         baseline = workflow.read_text(encoding='utf-8').split(marker)[0]
+        planning_marker = '\n\n# BEGIN TELECOM AFTER PLANNER\n'
+        baseline = baseline.split(planning_marker)[0]
+        if version >= 52:
+            baseline += planning_marker + (ROOT / 'planning' / 'after_plan.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()
