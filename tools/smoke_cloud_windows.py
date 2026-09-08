@@ -31,6 +31,7 @@ class Value:
 class LocalJobs:
     """Deterministic event delivery for the platform-independent persistence gate."""
     def __init__(self):self.busy=False;self.closed=False;self.pending=None
+    def stop(self):self.closed=True
     def run(self,work,done,failed):
         if self.busy or self.closed:return False
         self.busy=True;self.pending=(work,done,failed)
@@ -62,6 +63,7 @@ class LocalApp:
     def winfo_children(self):return []
     def on_close(self):self.store.close()
     def after(self,*args):pass
+    def after_cancel(self,*args):pass
 
 
 class Server:
@@ -122,6 +124,7 @@ def make_app(home,server):
         controller.current=None;controller.switching=False;controller.closing=False
         controller.logout_requested=False;controller.access_lost=False
         controller.retry_at=0;controller.refresh_at=0;controller.dialog=None
+        controller.projects_id=None;controller.tick_id=None
         controller.jobs=LocalJobs();controller.status=Value();controller.status_label=Value()
         app.cloud=controller
         return app,controller

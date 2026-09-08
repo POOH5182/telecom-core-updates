@@ -160,7 +160,14 @@ class CloudJobs:
         self.busy = False
         self.closed = False
         self.results = queue.Queue()
-        self.root.after(100, self.poll)
+        self.poll_id = self.root.after(100, self.poll)
+
+    def stop(self):
+        self.closed = True
+        try:
+            self.root.after_cancel(self.poll_id)
+        except tk.TclError:
+            pass
 
     def run(self, function, done, failed):
         if self.busy or self.closed:
@@ -192,7 +199,7 @@ class CloudJobs:
                 except Exception as callback_error:
                     failed(callback_error)
         if not self.closed:
-            self.root.after(100, self.poll)
+            self.poll_id = self.root.after(100, self.poll)
 
 
 def cloud_google_login(cancel):
@@ -272,7 +279,7 @@ class CloudLogin(tk.Tk):
         self.check_button.pack(pady=10)
         self.remember = tk.BooleanVar(value=True)
         ttk.Checkbutton(self, text='이 PC에서 로그인 유지', variable=self.remember).pack()
-        self.after(150,self.resume)
+        self.resume_id = self.after(150,self.resume)
 
     def resume(self):
         if not self.cache.exists():
@@ -311,7 +318,8 @@ class CloudLogin(tk.Tk):
         self.candidate.remember()
         if profile['status'] == 'approved':
             self.session = self.candidate
-            self.jobs.closed = True
+            self.jobs.stop()
+            self.after_cancel(self.resume_id)
             self.destroy()
         else:
             state = '관리자 승인 대기 중입니다.' if profile['status']=='pending' else '사용이 차단된 계정입니다. 관리자에게 확인해 주세요.'
@@ -322,7 +330,8 @@ class CloudLogin(tk.Tk):
 
     def close(self):
         self.cancel.set()
-        self.jobs.closed = True
+        self.jobs.stop()
+        self.after_cancel(self.resume_id)
         self.destroy()
 
 
@@ -416,8 +425,8 @@ class CloudController:
         self.status=tk.StringVar(value='내 도면을 불러오고 있습니다…')
         self.status_label=tk.Label(self.bar,textvariable=self.status,bg='#eaf0f8',fg='#155e42')
         self.status_label.pack(side='right',padx=10)
-        self.app.after(200,self.projects)
-        self.app.after(2000,self.tick)
+        self.projects_id = self.app.after(200,self.projects)
+        self.tick_id = self.app.after(2000,self.tick)
 
     def persist(self):
         if self.index_path.exists():
@@ -576,7 +585,7 @@ class CloudController:
         except Exception as error:
             self.failed(error)
         if not self.closing:
-            self.app.after(2000,self.tick)
+            self.tick_id = self.app.after(2000,self.tick)
 
     def has_dialogs(self):
         return any(isinstance(w,tk.Toplevel) and w.winfo_exists() for w in self.app.winfo_children())
@@ -857,7 +866,10 @@ class CloudController:
 
     def finish_close(self):
         self.closing=True
-        self.jobs.closed=True
+        self.jobs.stop()
+        for timer in (self.projects_id,self.tick_id):
+            try:self.app.after_cancel(timer)
+            except tk.TclError:pass
         if self.logout_requested:
             (self.root_home/'cloud_login.bin').unlink(missing_ok=True)
         self.app.on_close()
