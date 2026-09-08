@@ -108,6 +108,7 @@ def pump(app,controller):
 
 
 def make_app(home,server):
+    home.mkdir(parents=True,exist_ok=True)
     os.environ['TELECOM_APP_HOME']=str(home)
     ns['_CLOUD_ROOT_HOME']=home.parent
     if HEADLESS:
