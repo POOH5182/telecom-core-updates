@@ -7,8 +7,8 @@ and authorization when delivering changes. Do not send messages to other people.
 
 - Run `python tools/materialize_release.py` after downloading this repository to
   reconstruct `app/`. The complete source is transported in `release_payload/` as
-  small base64 chunks of the same verified ZIP delivered to users; large file writes
-  fail through this environment's connector. This transport is not encryption.
+  small base64 chunks of the same verified ZIP delivered to users.
+  This transport is not encryption.
 - Application source is in generated `app/`. Keep `version.json`, the imported workflow module,
   and the displayed version consistent. Bump the integer version for each changed app.
 - Preserve `TELECOM_APP_HOME`, the launcher's instance locks and readiness notification.

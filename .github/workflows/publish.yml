@@ -44,3 +44,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYTHONUTF8: '1'
+      - name: 실제 자동 업데이트 주소 확인
+        run: python tools/verify_download.py
