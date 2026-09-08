@@ -24,5 +24,15 @@ and authorization when delivering changes. Do not send messages to other people.
 - Verify the workflow's terminal result, both uploaded assets, and the latest manifest
   before claiming publication. Do not overwrite already published version contents.
 - No personal access token is needed: the Actions workflow uses its scoped GITHUB_TOKEN.
+- V50 cloud source lives in `cloud/client.py` and is bundled into the workflow module
+  by `build_release.py --prepare`. Do not edit the appended copy independently.
+- Keep the verified Google identity, server-side approval and owner checks in
+  `cloud/schema.sql`. Admin emails belong only in the private database whitelist.
+  Never commit OAuth secrets, privileged Supabase keys, tokens or account caches.
+- Sync uses revision comparison, persistent outbox operation IDs and conflict copies.
+  Always preserve unsent local edits before applying a remote drawing, including
+  after restart. Bundles include working, before/after snapshots and undo history.
+- `cloud-login` runs the Windows gates without publishing. Validate callback setup
+  and the first real Google login before claiming end-to-end login works.
 - The fixed client URL is
   `https://github.com/POOH5182/telecom-core-updates/releases/latest/download/latest.json`.

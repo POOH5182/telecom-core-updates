@@ -15,3 +15,7 @@ update_config.json
 update_state.json
 dist/
 app/
+accounts/
+cloud_login.bin
+cloud_outbox/
+cloud_index*.json

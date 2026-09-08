@@ -33,6 +33,12 @@ def build_release(source, output):
 
 
 def prepare_payload():
+    version = version_info(ROOT / 'app')['version']
+    if version >= 50:
+        workflow = ROOT / 'app' / f'workflow_v{version}.py'
+        marker = '\n\n# BEGIN TELECOM CLOUD CLIENT\n'
+        baseline = workflow.read_text(encoding='utf-8').split(marker)[0]
+        workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()
     text = base64.b64encode(payload).decode('ascii')

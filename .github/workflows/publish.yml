@@ -2,10 +2,11 @@ name: 자동 업데이트 배포
 
 on:
   push:
-    branches: [main]
+    branches: [main, cloud-login]
     paths:
       - 'release_payload/**'
       - 'tools/**'
+      - 'cloud/**'
       - '.github/workflows/publish.yml'
       - '.gitattributes'
       - 'RELEASE_NOTES.md'
@@ -37,12 +38,18 @@ jobs:
         run: python tools/materialize_release.py
       - name: Windows 화면 및 저장 확인
         run: python tools/smoke_windows.py
+      - name: Windows 로그인과 도면 동기화 검증
+        run: python tools/smoke_cloud_windows.py
       - name: 배포 파일 만들기
         run: python tools/build_release.py
+      - name: Google 로그인 설정과 서버 접근 확인
+        run: python tools/check_cloud_server.py
       - name: 검증한 버전 게시
+        if: github.ref == 'refs/heads/main'
         run: python tools/publish_release.py
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYTHONUTF8: '1'
       - name: 실제 자동 업데이트 주소 확인
+        if: github.ref == 'refs/heads/main'
         run: python tools/verify_download.py
