@@ -82,6 +82,16 @@ def completion_report(store,kind=None):
             targets.append(entry)
         for slot in slots:all_slots[slot]=entry
         if cid:by_id[cid]=entry
+    # Preserve displaced identities as targets even with no assigned live slots.
+    pending={}
+    for item in field_pending_identities(store):pending.setdefault(item['core_id'],[]).append(item)
+    for cid,items in pending.items():
+        if cid in by_id:continue
+        saved=[row for item in items for row in item.get('rows',[])];policy=completion_policy(saved or [{'core_id':cid}],kind)
+        reason='기존 내역 배정대기: 함체의 보존내역에서 새 경로 또는 GIS 오기록 여부를 확인하세요.' if policy['required'] else policy['excluded_reason']
+        entry=dict(key=('id',cid),core_id=cid,detail=' / '.join(dict.fromkeys(item.get('detail','') for item in items)),slots=[],active_slots=[],all_slots=[],
+                   complete=False,reason=reason,reason_items=(reason,),causes=frozenset({'identity'}),pending_nodes=tuple(dict.fromkeys(item['node_id'] for item in items)),**policy)
+        by_id[cid]=entry;(targets if policy['required'] else excluded).append(entry)
     targets.sort(key=lambda r:(r['core_id'],str(r['key'])));excluded.sort(key=lambda r:(r['excluded_reason'],r['core_id']))
     done=sum(r['complete'] for r in targets);total=len(targets)
     result={'kind':kind,'total':total,'done':done,'rate':100.0*done/total if total else None,'rows':targets,
@@ -117,6 +127,7 @@ class CompletionTargetsDialog(TableDialog):
         selected=self.table.selection()
         if not selected or not self.app or self.app.store is not self.store:return
         row=self.entries[self.table.index(selected[0])];cid=row['core_id']
+        if row.get('pending_nodes'):FieldArchiveDialog(self,self.store,row['pending_nodes'][0]);return
         if cid:reveal_search_result(self.app,dict(core_id=cid,kind='코어ID',identifier=cid),owner=self)
         elif row['slots']:
             slot=row['slots'][0];key='node_id' if slot[0].startswith('PORT:') else 'cable_id'

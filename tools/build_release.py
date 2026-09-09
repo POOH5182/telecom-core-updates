@@ -53,6 +53,8 @@ def prepare_payload():
             baseline += '\n\n' + (ROOT / 'planning' / 'navigation.py').read_text(encoding='utf-8')
         if version >= 58:
             baseline += field_marker + (ROOT / 'planning' / 'field_survey.py').read_text(encoding='utf-8')
+        if version >= 62:
+            baseline += '\n\n# BEGIN TELECOM FIELD COMPARISON\n' + (ROOT / 'planning' / 'field_compare.py').read_text(encoding='utf-8')
         if version >= 52:
             baseline += planning_marker + (ROOT / 'planning' / 'after_plan.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')

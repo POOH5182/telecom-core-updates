@@ -82,3 +82,17 @@ and authorization when delivering changes. Do not send messages to other people.
   drafts or clear their edit history during repaint. Cancelled rows stay grey even
   when incomplete or also marked error. Run tools/check_completion.py including
   its Windows dialog/draft-preservation gate before publishing.
+- V62 comparison source is planning/field_compare.py, bundled after field_survey.
+  Freeze GIS evidence in workflow_state.field_gis_baseline; never refresh it from
+  a changed survey/current drawing. GIS recopy explicitly resets the baseline.
+  Comparison-only saving writes observations/acknowledgements without rewiring.
+  Preserve notes, correction logs and displaced identities through re-paste,
+  history, file reopen and cloud bundles. Missing real identities remain pending
+  completion targets until explicitly reallocated or reviewed as a GIS error.
+- Only the explicit field-resolution action may replace real identities on
+  selected physical components. Preview the full changed scope, back up, guard
+  revision/generation and apply the entire group atomically. Ordinary imports
+  retain real-ID conflict refusal. The history label `현장 비교 선택 수정`
+  suppresses annotation transport so one old ID's labels cannot leak to another.
+  Never bypass enclosure locks or edit unrelated components merely by equal ID.
+  Run tools/check_field_compare.py including its Windows compare/edit gate.

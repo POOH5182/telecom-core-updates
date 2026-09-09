@@ -57,6 +57,8 @@ jobs:
         run: python tools/check_routes_find.py
       - name: 전후 완료율 대상과 상태 색상 공통 반영 검증
         run: python tools/check_completion.py
+      - name: GIS 원본 비교·내역 교체·보존과 함체 수정 화면 검증
+        run: python tools/check_field_compare.py
       - name: 배포 파일 만들기
         run: python tools/build_release.py
       - name: Google 로그인 설정과 서버 접근 확인
