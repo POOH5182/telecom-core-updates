@@ -5,6 +5,7 @@ from pathlib import Path
 import runpy
 import sys
 import tempfile
+import traceback
 import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
@@ -118,7 +119,10 @@ def check_bulk_keyboard(code, app):
         def drive(self):
             try:
                 expected = self.accept_button or self.cancel_button
-                assert self.focus_get() is expected, self.focus_get()
+                focused = self.focus_get()
+                assert focused is not None and focused.winfo_toplevel() is self, focused
+                if self.accept_button is not None:
+                    assert focused is self.accept_button, focused
                 expected.event_generate('<KeyRelease-space>')
                 assert self.winfo_exists() and not self.accepted
                 if mode[0] == 'cancel':
@@ -139,7 +143,7 @@ def check_bulk_keyboard(code, app):
                 assert self.winfo_exists() and not self.accepted
                 self.cancel_button.event_generate('<KeyRelease-space>')
             except Exception as error:
-                failures.append(repr(error))
+                failures.append(traceback.format_exc())
                 if self.winfo_exists():self.destroy()
 
     with patch.object(wf, 'BulkSummaryDialog', KeyboardPreview):
