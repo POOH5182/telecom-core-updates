@@ -127,7 +127,7 @@ def windows_ui():
                 app.deiconify();app.update()
                 node=code['NodeDialog'](app,app.store,h);node.field_survey_open();app.update()
                 dialog=next(w for w in node.winfo_children() if isinstance(w,wf.FieldSurveyDialog))
-                dialog.text.delete('1.0','end');dialog.text.insert('1.0','L\tR\n1\t1')
+                dialog.clipboard_clear();dialog.clipboard_append('L\tR\n1\t1');dialog.sheet.paste_from_a1()
                 dialog.inspect();app.update()
                 assert dialog.rows[0]['status']=='확인완료'
                 assert app.store.node_warning_summary()[h]['field']['done']==1

@@ -61,3 +61,13 @@ and authorization when delivering changes. Do not send messages to other people.
 - Cable-wide automatic locks derive from both enclosure endpoints. A single locked
   enclosure still protects its splices, core identities and numbering. Preserve
   read-only selection/copy and migrate the named SQLite lock triggers on open.
+- V60 field Excel A1 pastes merge cable columns and preserve unmentioned rows.
+  Comparison stays read-only. The explicit save action adds only compatible new
+  connections or missing metadata; differences stay pending for manual correction.
+  Preserve manual issue flags, backups, per-row conflict rollback and grouped undo.
+  Run tools/check_field_sheet.py including its Windows cell/clipboard gate.
+- V60 directional route review and Ctrl+F sources are planning/connection_routes.py
+  and planning/navigation.py, bundled before field_survey. Follow actual slot splices,
+  separate common facilities/cables from shared cores, and never mutate on preview.
+  Search uses user-facing IDs and preserves all disconnected core components.
+  Run tools/check_routes_find.py including its Windows keyboard/navigation gate.

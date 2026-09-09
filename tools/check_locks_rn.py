@@ -65,7 +65,7 @@ class LocksRNTests(unittest.TestCase):
         self.assertEqual({r['node_id'] for r in wf.field_check_rows(s)},{self.rn})
         engine=wf.FieldSurvey(s,self.rn);engine.save('CABLE\tRN내부\n1\tP1')
         self.assertEqual(wf.plan_snapshot(s.conn),old)
-        row=wf.FieldSurvey(s,self.rn).report()[0];self.assertEqual(row['status'],'불일치')
+        row=wf.FieldSurvey(s,self.rn).report()[0];self.assertEqual((row['status'],row['comparison']),('미확인','신규'))
         before=wf.plan_snapshot(s.conn);preview=wf.field_preview(s,self.rn,{row['key']})
         self.assertEqual(wf.plan_snapshot(s.conn),before)
         wf.field_apply(s,self.rn,preview['keys'],preview['revision'],preview['generation'])
@@ -170,8 +170,8 @@ def windows_ui():
                 assert app.load_scenario('before');s=app.store
                 nd=code['NodeDialog'](app,s,r);nd.field_survey_open();app.update()
                 fd=next(w for w in nd.winfo_children() if isinstance(w,wf.FieldSurveyDialog))
-                assert 'RN내부' in fd.text.get('1.0','end')
-                fd.text.delete('1.0','end');fd.text.insert('1.0','RN-CABLE\tRN내부\n1\tP1');fd.inspect();app.update()
+                assert 'RN내부' in fd.sheet.get_text()
+                fd.clipboard_clear();fd.clipboard_append('RN-CABLE\tRN내부\n1\tP1');fd.sheet.paste_from_a1();fd.inspect();app.update()
                 assert s.node_warning_summary()[r]['field']['done']==1
                 assert 'field' not in s.node_warning_summary().get(end,{})
                 assert not wf.field_check_rows(s)

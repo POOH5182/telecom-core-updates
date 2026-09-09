@@ -51,6 +51,10 @@ jobs:
         run: python tools/check_field_survey.py
       - name: 자동 잠금과 정보 복사·RN 내부 접속 검증
         run: python tools/check_locks_rn.py
+      - name: 현장 Excel 표 추가와 불일치 보존·수동 수정 검증
+        run: python tools/check_field_sheet.py
+      - name: 양방향 경로와 중복·통합 ID 찾기 검증
+        run: python tools/check_routes_find.py
       - name: 배포 파일 만들기
         run: python tools/build_release.py
       - name: Google 로그인 설정과 서버 접근 확인
