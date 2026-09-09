@@ -120,6 +120,12 @@ def windows_ui():
                 s.update_core(left,3,('EXPECTED','해지예상','cancel_expected','',''));s.connect(h,(left,3),(right,3))
                 app.refresh();app.update();assert '100.0%' in app.work_progress_text.cget('text')
                 first=code['CableDialog'](app,s,left);second=code['CableDialog'](app,s,right);node=code['NodeDialog'](app,s,h)
+                # Both routes are already assigned: choose them with the default
+                # "unassigned cables only" filter disabled, as a user would.
+                for value in node.assignment_filters.values():value.set(False)
+                node.left_var.set(next(label for label,cid in node.by_label.items() if cid==left))
+                node.right_var.set(next(label for label,cid in node.by_label.items() if cid==right));node.reload_all()
+                assert node.left_tree.exists('1') and node.right_tree.exists('1')
                 summary=code['NodeSummaryDialog'](node,s,h);allcores=code['AllCoreDialog'](app,s)
                 summary_row=next(iid for iid,slots in summary.row_slots.items() if (left,1) in slots)
                 app.update();second.identity_tree.item('1',values=(1,'SHARED','저장 전 입력 보존'));second.identity_undo_stack.append({1:('SHARED','원래 내용')})
