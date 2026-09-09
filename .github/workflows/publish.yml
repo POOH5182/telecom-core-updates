@@ -45,6 +45,8 @@ jobs:
         run: python tools/check_after_plan.py
       - name: Excel 빈칸 보존과 수정 이력 복원 검증
         run: python tools/check_edit_history.py
+      - name: GIS·현장 조사 비교와 도면 보존 검증
+        run: python tools/check_field_survey.py
       - name: 배포 파일 만들기
         run: python tools/build_release.py
       - name: Google 로그인 설정과 서버 접근 확인

@@ -184,12 +184,13 @@ def run():
         app.report_callback_exception=lambda *e:errors.append(str(e))
         key=new_drawing(app,c,'Synthetic drawing')
         a=app.store.add_node('first',0,0)
+        app.store.backup_to(app.scenario_path('gis'))
         app.store.backup_to(app.scenario_path('before'))
         app.store.add_node('after',100,0)
         app.store.backup_to(app.scenario_path('after'))
         c.sync_now();pump(app,c)
         contents=cloud.cloud_unpack(base64.b64decode(server.rows[key]['payload']))
-        assert set(contents)==cloud.CLOUD_FILES,'Before/after snapshots missing'
+        assert set(contents)==cloud.CLOUD_FILES,'GIS/field/after snapshots missing'
         assert c.entry()['base_revision']==2
 
         # A name-only change must synchronize without touching filenames or drawing payloads.
@@ -287,7 +288,7 @@ def run():
         assert not errors,errors
     if not HEADLESS:print('PASS Windows DPAPI, approval gate and Tk editor')
     print('PASS current, cached and remote-only drawing rename; name-only sync, validation, payload preservation and cross-PC name propagation')
-    print('PASS SQLite before/after bundle, lost-ACK retry, close flush, crash recovery, two-PC conflict preservation, stale-download protection and cloud undo history')
+    print('PASS SQLite GIS/field/after bundle, lost-ACK retry, close flush, crash recovery, two-PC conflict preservation, stale-download protection and cloud undo history')
 
 
 if __name__=='__main__':

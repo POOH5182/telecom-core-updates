@@ -483,7 +483,7 @@ class AfterPlanDialog(RememberedToplevel):
     """One workbench; all previews are read-only until the corresponding action."""
     def __init__(self, app):
         if app.scenario_kind()!='after':
-            messagebox.showinfo('후도면 작업실','먼저 상단의 「3 후도면 작성」을 눌러 후도면으로 전환하세요.',parent=app)
+            messagebox.showinfo('후도면 작업실','먼저 상단의 「4 후도면 작성」을 눌러 후도면으로 전환하세요.',parent=app)
             return
         super().__init__(app);self.app=app;self.service=AfterPlanner(app);self.proposal=None
         self.title('후도면 작업실 · 계획 → 점검 → 재배치 → 최종 작업표')

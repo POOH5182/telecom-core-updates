@@ -33,7 +33,7 @@ CLOUD_KEY = 'sb_publishable_hc5zIiTpjdTZLa9s_Oey8Q_qZH1cIko'
 CLOUD_CALLBACK = 'http://127.0.0.1:43851/callback'
 CLOUD_MAX_ZIP = 8 * 1024 * 1024
 CLOUD_MAX_EXPANDED = 128 * 1024 * 1024
-CLOUD_FILES = {'working.sqlite3', 'before.sqlite3', 'after.sqlite3'}
+CLOUD_FILES = {'working.sqlite3', 'gis.sqlite3', 'before.sqlite3', 'after.sqlite3'}
 
 
 class CloudError(Exception):
@@ -347,7 +347,7 @@ def cloud_bundle(store, scenario_folder):
     with tempfile.TemporaryDirectory() as temp:
         folder = Path(temp)
         store.backup_to(folder/'working.sqlite3')
-        for name in ('before','after'):
+        for name in ('gis','before','after'):
             source = Path(scenario_folder)/(name+'.sqlite3')
             if source.exists():
                 cloud_sqlite_copy(source,folder/source.name)
@@ -453,7 +453,7 @@ class CloudController:
         if not self.current:
             return ''
         stats=[]
-        for name in ('before','after'):
+        for name in ('gis','before','after'):
             p=self.app.scenario_path(name)
             stats.append([p.stat().st_mtime_ns,p.stat().st_size] if p.exists() else None)
         return json.dumps([self.app.store.data_revision(),stats,self.app.scenario_kind()])
@@ -776,7 +776,7 @@ class CloudController:
             dest=self.home/'scenarios'/stem
             dest.mkdir(parents=True,exist_ok=True)
             if scenario:
-                for kind in ('before','after'):
+                for kind in ('gis','before','after'):
                     if (scenario/(kind+'.sqlite3')).exists():
                         cloud_sqlite_copy(scenario/(kind+'.sqlite3'),dest/(kind+'.sqlite3'))
             store=self.ns['Store'](target)

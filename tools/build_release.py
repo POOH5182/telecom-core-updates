@@ -40,6 +40,10 @@ def prepare_payload():
         baseline = workflow.read_text(encoding='utf-8').split(marker)[0]
         planning_marker = '\n\n# BEGIN TELECOM AFTER PLANNER\n'
         baseline = baseline.split(planning_marker)[0]
+        field_marker = '\n\n# BEGIN TELECOM FIELD SURVEY\n'
+        baseline = baseline.split(field_marker)[0]
+        if version >= 58:
+            baseline += field_marker + (ROOT / 'planning' / 'field_survey.py').read_text(encoding='utf-8')
         if version >= 52:
             baseline += planning_marker + (ROOT / 'planning' / 'after_plan.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')

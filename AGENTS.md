@@ -49,3 +49,9 @@ and authorization when delivering changes. Do not send messages to other people.
 - History checkpoint restores use the existing 100-group undo/redo journal with
   a revision guard, pre-restore backup and one all-or-nothing transaction. Do not
   create a new edit branch for cursor movement. Run tools/check_edit_history.py.
+- V58 field investigation source lives in planning/field_survey.py, bundled before
+  the after planner. GIS uses gis.sqlite3; before.sqlite3 remains the field baseline
+  for after planning. Bundle/import/export all three snapshots plus working.sqlite3.
+  Comparing observations never rewires. Preserve unknown rows, local splice scope,
+  real-ID conflict refusal, fingerprint invalidation, atomic undo and pre-apply backup.
+  Run tools/check_field_survey.py including its Windows stage/click gate.
