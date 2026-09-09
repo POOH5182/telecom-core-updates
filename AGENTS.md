@@ -43,3 +43,9 @@ and authorization when delivering changes. Do not send messages to other people.
   annotations, RN ports, splice identities and survey/exception slot references.
   The history label `케이블 코어순서 교환` suppresses identity-annotation transport.
   Run `tools/check_after_plan.py` including its Windows UI gate before publishing.
+- V53 identity-sheet blank cells preserve existing values in both the clipboard
+  editor and Store.apply_core_identity_changes. Explicit deletion stays separate.
+  Retain empty row offsets and never turn a missing ID into splice deletion.
+- History checkpoint restores use the existing 100-group undo/redo journal with
+  a revision guard, pre-restore backup and one all-or-nothing transaction. Do not
+  create a new edit branch for cursor movement. Run tools/check_edit_history.py.
