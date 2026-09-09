@@ -88,6 +88,86 @@ def check_facility_headers(code, app):
     return rn, subscriber
 
 
+def check_bulk_keyboard(code, app):
+    wf = code['App'].__init__.__globals__['workflow']
+    store = app.store
+    a = store.add_node('Space 시작', 800, 300)
+    h = store.add_node('Space 함체', 1000, 300)
+    b = store.add_node('Space 끝', 1200, 300)
+    left = store.add_cable(a, h, 'SPACE-L', '12C', '기설')
+    right = store.add_cable(h, b, 'SPACE-R', '12C', '기설')
+    store.connect(h, (left, 1), (right, 1), temporary=True)
+    node = code['NodeDialog'](app, store, h)
+    sheet = code['BulkTableConnectDialog'](node, store, h)
+    header = ['코어ID', '코어명', '회선번호', '회선명', '가입자명', '중요여부', 'SPACE-L', 'SPACE-R']
+    row = ['SPACE-ID', 'Space 적용', '', '', '', '', '1', '1']
+    sheet._grow_columns(8)
+    sheet.data[0] = header
+    sheet.data[1] = row
+    sheet._configure_columns()
+    sheet.reload_grid()
+    failures = []
+    mode = ['apply']
+    original = wf.BulkSummaryDialog
+
+    class KeyboardPreview(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.after(40, self.drive)
+
+        def drive(self):
+            try:
+                expected = self.accept_button or self.cancel_button
+                assert self.focus_get() is expected, self.focus_get()
+                expected.event_generate('<KeyRelease-space>')
+                assert self.winfo_exists() and not self.accepted
+                if mode[0] == 'cancel':
+                    expected.event_generate('<Escape>')
+                    return
+                if mode[0] == 'blocked':
+                    assert self.accept_button is None
+                    assert str(self.title_label.cget('foreground')) == '#c62828'
+                    iid = self.table.get_children()[0]
+                    self.table.selection_set(iid)
+                    assert self.table.item(iid, 'values')[0] == 'BAD-ID'
+                    style = code['ttk'].Style(self)
+                    assert style.lookup(self.table.cget('style'), 'foreground', ('selected',)) == '#c62828'
+                # Verify Space also applies when keyboard focus is on Close.
+                self.cancel_button.focus_force()
+                self.update()
+                self.cancel_button.event_generate('<KeyPress-space>')
+                assert self.winfo_exists() and not self.accepted
+                self.cancel_button.event_generate('<KeyRelease-space>')
+            except Exception as error:
+                failures.append(repr(error))
+                if self.winfo_exists():self.destroy()
+
+    with patch.object(wf, 'BulkSummaryDialog', KeyboardPreview):
+        groups = len(store.history_rows())
+        sheet.run()
+        assert not failures, failures
+        assert store.core(left, 1)['core_id'] == 'SPACE-ID'
+        assert store.core(right, 1)['core_id'] == 'SPACE-ID'
+        assert len(store.history_rows()) == groups + 1
+        saved = wf.plan_snapshot(store.conn)
+        mode[0] = 'blocked'
+        sheet.data[2] = ['BAD-ID', '오류 행', '', '', '', '', '999', '2']
+        sheet.run()
+        assert not failures, failures
+        assert wf.plan_snapshot(store.conn) == saved
+        assert str(sheet.result_label.cget('foreground')) == '#c62828'
+        assert sheet.output_tree.get_children()
+        mode[0] = 'cancel'
+        sheet.data[2] = [''] * 8
+        sheet.data[1] = ['CANCEL-ID', '취소 검증', '', '', '', '', '2', '2']
+        sheet.run()
+        assert not failures, failures
+        assert wf.plan_snapshot(store.conn) == saved
+    sheet.destroy()
+    node.destroy()
+    print('PASS actual Excel inspection: popup focus, Space apply from Close, no accidental release apply, red selected errors, blocked no-write and Escape cancel')
+
+
 def main():
     if sys.platform != 'win32':
         raise RuntimeError('This release gate must run on the Windows runner.')
@@ -127,38 +207,41 @@ def main():
             lot_edit.lot_var.set('123')
             lot_edit.save_header()
             lot_edit.destroy()
+            # A prior release could store this field. Current enclosure edits
+            # preserve it internally while exposing LOT only on cables.
+            app.store.set_hamche_details(a, '', '', 'LEGACY-HAMCHE')
             node_edit = code['NodeDialog'](app, app.store, a)
             original_node = dict(app.store.node(a))
             groups = len(app.store.history_rows())
             node_edit.name_var.set('통합 저장 함체')
             node_edit.hamche_spec_var.set('12')
             node_edit.hamche_id_var.set('TEST-ID')
-            node_edit.hamche_lot_var.set('123')
+            assert 'hamche_lot_var' not in node_edit.__dict__
             node_edit.save_button.invoke()
             assert len(app.store.history_rows()) == groups + 1
             assert app.store.node(a)['name'] == '통합 저장 함체'
             assert node_edit.hamche_spec_var.get() == '12C'
             assert code['hamche_details'](app.store.node(a)) == ('12C', 'TEST-ID')
             node_edit.destroy()
-            assert code['hamche_lot_no'](app.store.node(a)) == '123'
+            assert code['hamche_lot_no'](app.store.node(a)) == 'LEGACY-HAMCHE'
             app.store.undo()
             assert dict(app.store.node(a)) == original_node
-            assert code['hamche_lot_no'](app.store.node(a)) == ''
+            assert code['hamche_lot_no'](app.store.node(a)) == 'LEGACY-HAMCHE'
             app.store.redo()
             properties = code['NodePropertiesDialog'](app, app.store, a)
-            assert properties.hamche_lot.get() == '123'
+            assert 'hamche_lot' not in properties.__dict__
             properties.hamche_spec.set('144C')
-            properties.hamche_lot.set('00123 A&B')
             properties.save()
             assert code['hamche_details'](app.store.node(a))[0] == '144C'
-            assert code['hamche_lot_no'](app.store.node(a)) == '00123 A&B'
+            assert code['hamche_lot_no'](app.store.node(a)) == 'LEGACY-HAMCHE'
             app.store.undo()
-            assert code['hamche_lot_no'](app.store.node(a)) == '123'
+            assert code['hamche_lot_no'](app.store.node(a)) == 'LEGACY-HAMCHE'
             app.store.redo()
 
-            def display(cable_lot, hamche_lot, cable_id_visible=False):
+            def display(cable_lot, cable_id_visible=False):
                 settings = code['DisplaySettingsDialog'](app)
-                for key, value in dict(cable_lot=cable_lot, hamche_lot=hamche_lot,
+                assert 'hamche_lot' not in settings.values
+                for key, value in dict(cable_lot=cable_lot,
                                        cable_id=cable_id_visible, hamche_spec=False,
                                        hamche_id=False).items():
                     settings.values[key].set(value)
@@ -170,24 +253,21 @@ def main():
                           if app.canvas.type(i) == 'text']
                 svg = ET.fromstring(app.drawing_svg())
                 printed = [t.text for t in svg.findall('{http://www.w3.org/2000/svg}text')]
+                assert not any('LEGACY-HAMCHE' in (text or '') for text in canvas + printed)
                 return canvas, printed
 
-            for labels in display(True, True):
+            for labels in display(True):
                 assert '144C =123=' in labels, labels
-                assert '=00123 A&B=' in labels, labels
-            for labels in display(False, True):
+            for labels in display(False):
                 assert '144C' in labels and '144C =123=' not in labels
-                assert '=00123 A&B=' in labels
-            for labels in display(True, False):
-                assert '144C =123=' in labels and '=00123 A&B=' not in labels
-            for labels in display(False, False, True):
-                assert '144C(CABLE-TEST)' in labels and '=00123 A&B=' not in labels
-            for labels in display(True, True, True):
+            for labels in display(False, True):
+                assert '144C(CABLE-TEST)' in labels
+            for labels in display(True, True):
                 assert '144C =123= (CABLE-TEST)' in labels
             assert code['hamche_detail_text'](app.store.node(b), app.display_options) == ''
             # Existing callers changing spec/ID must retain the new LOT value.
             app.store.set_hamche_details(a, 'NEW-SPEC', 'NEW-ID')
-            assert code['hamche_lot_no'](app.store.node(a)) == '00123 A&B'
+            assert code['hamche_lot_no'](app.store.node(a)) == 'LEGACY-HAMCHE'
             app.store.set_node_locked(a, True)
             try:
                 app.store.set_hamche_details(a, 'NEW-SPEC', 'NEW-ID', 'SHOULD-NOT-SAVE')
@@ -195,16 +275,17 @@ def main():
                 pass
             else:
                 raise AssertionError('Locked enclosure LOT was editable')
-            assert code['hamche_lot_no'](app.store.node(a)) == '00123 A&B'
+            assert code['hamche_lot_no'](app.store.node(a)) == 'LEGACY-HAMCHE'
             app.store.set_node_locked(a, False)
             rn, subscriber = check_facility_headers(code, app)
+            check_bulk_keyboard(code, app)
             app.update_idletasks()
             assert not errors, errors
             path = app.store.path
             app.on_close()
         store = code['Store'](path)
         assert code['cable_lot_no'](store.cable(cable_id)) == '123'
-        assert code['hamche_lot_no'](store.node(a)) == '00123 A&B'
+        assert code['hamche_lot_no'](store.node(a)) == 'LEGACY-HAMCHE'
         assert store.node(rn)['name'] == '최종 RN명'
         assert code['rn_details'](store.node(rn)) == ('RN-001', '00005678')
         assert store.node(subscriber)['name'] == '포항 가입자 001'
@@ -218,7 +299,7 @@ def main():
                 pass
         with InstanceLock(home):
             pass
-    print('PASS Windows Tk app, enclosure/cable LOT editors, independent display toggles, canvas/SVG, SQLite persistence, undo/redo, locks and instance lock')
+    print('PASS Windows Tk app, cable-only LOT display, facility headers, canvas/SVG, SQLite persistence, undo/redo, locks and instance lock')
 
 
 if __name__ == '__main__':
