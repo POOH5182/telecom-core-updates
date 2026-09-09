@@ -1,5 +1,6 @@
 """Cable-only step 1: exact minimum paths, manual choices and durable decisions."""
 import copy
+import csv
 import os
 from pathlib import Path
 import sys
@@ -177,12 +178,16 @@ def windows_ui():
                 path=Path(temp)/'routes.csv'
                 dialog.tabs.select(dialog.pages['1 케이블 경로'])
                 with patch.object(wf.filedialog,'asksaveasfilename',return_value=str(path)):dialog.export_table()
-                assert 'DETOUR-1' in path.read_text(encoding='utf-8-sig');assert 'CORE-1' in path.read_text(encoding='utf-8-sig')
+                with path.open(encoding='utf-8-sig',newline='') as handle:exported=list(csv.DictReader(handle))
+                exported_core=next(r for r in exported if r['코어ID']=='CORE-1')
+                # New cables receive the app's existing NEW1/NEW2 user-facing IDs.
+                assert exported_core['케이블 순서']==' → '.join(s.cable(i[k])['cable_id'] for k in order)
+                assert exported_core['지정 방법']=='직접 지정'
                 dialog.destroy();app.update();assert not app.highlight_cables
                 reopened=wf.AfterPlanDialog(app);app.update();panel=reopened.route_panel
                 row_id=next(k for k,r in panel.visible.items() if r['core_id']=='CORE-1');panel.cores.selection_set(row_id);app.update()
                 assert panel.mode=='확정' and panel.problem['saved_ok'];assert set(panel.draft['cables'])=={i[k] for k in order}
-                reopened.destroy();assert not errors,errors
+                assert not errors,errors # Leave the workbench open to exercise whole-app shutdown.
             finally:app.on_close()
     print('PASS Windows step 1 core list, minimum recommendation, sorting, NOK, ordered map-click detour, draft/back/OK, CSV, reopen and no allocation')
 

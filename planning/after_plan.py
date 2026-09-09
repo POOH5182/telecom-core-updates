@@ -736,7 +736,9 @@ class AfterPlanDialog(RememberedToplevel):
         if path:plan_export_csv(path,self.headers[key],self.values.get(key,[]));messagebox.showinfo('CSV 저장','현재 필터에 표시된 표를 저장했습니다.',parent=self)
 
     def destroy(self):
-        if getattr(self.app,'highlight_owner',None) is self:self.app.stop_highlight_blink(clear=True)
+        if getattr(self.app,'highlight_owner',None) is self:
+            try:self.app.stop_highlight_blink(clear=True)
+            except tk.TclError:pass # The main canvas may already be gone during application shutdown.
         super().destroy()
 
 
