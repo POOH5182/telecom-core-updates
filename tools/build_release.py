@@ -44,6 +44,10 @@ def prepare_payload():
         baseline = baseline.split(field_marker)[0]
         route_marker = '\n\n# BEGIN TELECOM CONNECTION ROUTES\n'
         baseline = baseline.split(route_marker)[0]
+        completion_marker = '\n\n# BEGIN TELECOM COMPLETION\n'
+        baseline = baseline.split(completion_marker)[0]
+        if version >= 61:
+            baseline += completion_marker + (ROOT / 'planning' / 'completion.py').read_text(encoding='utf-8')
         if version >= 60:
             baseline += route_marker + (ROOT / 'planning' / 'connection_routes.py').read_text(encoding='utf-8')
             baseline += '\n\n' + (ROOT / 'planning' / 'navigation.py').read_text(encoding='utf-8')

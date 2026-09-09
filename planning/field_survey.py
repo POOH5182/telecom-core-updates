@@ -360,7 +360,7 @@ def field_apply(store,node_id,keys,expected_revision,expected_generation):
 
 def field_summary(store,node_id,record=None):
     if not field_required(store,store.node(node_id)):return {'done':0,'pending':0,'issues':0,'total':0}
-    rows=FieldSurvey(store,node_id,record).report();counts=Counter(r['status'] for r in rows)
+    rows=[r for r in FieldSurvey(store,node_id,record).report() if completion_scope(store,r['slots']) or r.get('errors')];counts=Counter(r['status'] for r in rows)
     return {'done':counts['확인완료'],'pending':counts['미확인'],'issues':counts['불일치']+counts['이상'],'total':len(rows)}
 
 
@@ -369,7 +369,7 @@ def field_check_rows(store):
     for node in store.nodes():
         if not field_required(store,node):continue
         for row in FieldSurvey(store,node['id'],records.get(node['id'],{})).report():
-            if row['status']=='확인완료':continue
+            if row['status']=='확인완료' or (not row.get('errors') and not completion_scope(store,row['slots'])):continue
             for core_id in row['core_ids'] or ['']:
                 slot=next((s for s in row['slots'] if (store.core(*s) or {}).get('core_id')==core_id),row['slots'][0] if row['slots'] else ('',''))
                 result.append({'level':'오류','category':'현장 '+row['status'],'location':node['name'],'target':'',

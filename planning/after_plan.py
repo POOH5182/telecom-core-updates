@@ -100,6 +100,7 @@ class AfterPlanner:
         current, net, before, old, data = self.snapshot()
         ids = sorted(set(net.present_ids) | (old.present_ids if old else set()) | set(data['plans']))
         rows, global_issues = [], []
+        connections=completion_report(self.store)
         if old is None: global_issues.append('전도면 기준본이 없습니다. 전/후관리에서 기준본을 먼저 저장하세요.')
         if self.store.conn.execute('PRAGMA foreign_key_check').fetchone(): global_issues.append('시설·케이블 참조 오류: 파일·출력의 데이터점검을 실행하세요.')
         for c in current['cables']:
@@ -135,8 +136,14 @@ class AfterPlanner:
                              '예외' in json.loads(net.annotations.get(core_id, {}).get('labels', '[]'))
                              for s in actual['slots']))
             notes = list(actual['result']['notes']) if actual else ['후도면에서 코어ID를 찾지 못함']
-            # Core exception is a separate review bucket, never an error/unassigned count.
-            if exception: notes = ['예외코어: 연결 점검 집계 제외, 사유 확인 필요']
+            policy=connections['by_id'].get(core_id)
+            required=policy['required'] if policy is not None else True
+            # After-stage exceptions/broken cores with IDs still require a complete route.
+            if policy is not None:
+                notes=list(policy['reason_items']) if required else ['완료율 제외 · '+policy['excluded_reason']]
+                if required and actual:notes.extend(n for n in actual['result']['notes'] if '코어내역 불일치' in n)
+            if not required: notes=[]
+
             if kind != '연결 필요':
                 notes = [] if plan.get('reason', '').strip() else ['처리 구분 사유 필요']
                 if kind == '폐지 예정' and actual: notes.append('폐지 잔존: 후도면의 사용 경로에 남아 있음')
@@ -153,14 +160,14 @@ class AfterPlanner:
             review = data['reviews'].get(core_id, {})
             reviewed = review.get('token') == signature and bool(review.get('reason', '').strip())
             needs_review = bool(change or exception or kind != '연결 필요')
-            blocking = [n for n in notes if not (exception and n.startswith('예외코어:'))]
+            blocking = list(notes)
             if needs_review and not reviewed: blocking.append('변경·처리 사유 확인 필요')
             status = '확인 완료' if not blocking else ('예외 확인' if exception else '조치 필요')
             if not blocking and kind != '연결 필요': status = kind+' 확인'
             if not blocking and exception: status = '예외 확인 완료'
             rows.append(dict(core_id=core_id, detail=(actual or prev or {}).get('detail', ''),
                              before=prev, after=actual, change=' / '.join(change) or '유지',
-                             plan=plan, kind=kind, exception=exception, reviewed=reviewed,
+                             plan=plan, kind=kind, exception=exception, reviewed=reviewed,connection_required=required,connection_excluded=(policy or {}).get('excluded_reason',''),
                              signature=signature, notes=list(dict.fromkeys(notes+blocking)),
                              blocking=list(dict.fromkeys(blocking)), status=status,
                              complete=not blocking))
@@ -171,11 +178,12 @@ class AfterPlanner:
                         data['plans'], data['fixed_slots'], data['fixed_ids']])
         stages = [data['stages'].get(name, {}).get('token') == token for name in PLAN_STAGES]
         done = sum(r['complete'] for r in rows)
-        final = data.get('final', {}).get('token') == token and all(stages) and bool(rows) and done==len(rows) and not global_issues
+        connection_ready=connections['done']==connections['total']
+        final = data.get('final', {}).get('token') == token and all(stages) and bool(rows) and done==len(rows) and not global_issues and connection_ready
         return dict(rows=rows, issues=list(dict.fromkeys(global_issues)), capacity=capacity,
                     total=len(rows), done=done, exceptions=sum(r['exception'] for r in rows),
                     token=token, stages=stages, final=final, net=net, old=old,
-                    data=data, ready=bool(rows) and done == len(rows) and not global_issues)
+                    data=data, connection=connections, ready=bool(rows) and done == len(rows) and not global_issues and connection_ready)
 
     def capacity(self, current, net, data):
         by_cable = defaultdict(list)
@@ -588,10 +596,10 @@ class AfterPlanDialog(RememberedToplevel):
 
     def refresh(self):
         self.report=self.service.report();r=self.report
-        self.summary.set(f"전체 {r['total']}개 · 확인 완료 {r['done']}개 · 조치/미확인 {r['total']-r['done']}개 · 예외 {r['exceptions']}개 · 공통 오류 {len(r['issues'])}건")
+        self.summary.set("필수 코어 연결 "+completion_rate_text(r["connection"])+f" · 집계 제외 {r['connection']['excluded']}개 · 작업 검토 {r['done']}/{r['total']} · 공통 오류 {len(r['issues'])}건")
         for i,label in enumerate(self.stage_labels):label.configure(text='✓ 확인 완료' if r['stages'][i] else '○ 미확인 / 변경 시 재확인',foreground='#1b5e20' if r['stages'][i] else '#9a6700')
         self.issue_text.configure(state='normal');self.issue_text.delete('1.0','end');self.issue_text.insert('1.0','\n'.join(r['issues']) or '공통 구조 오류 없음. 아래 코어별 항목도 확인하세요.');self.issue_text.configure(state='disabled')
-        self.render_rows();self.fill('check',[(x['status'],x['core_id'],x['detail'],' / '.join(x['notes']) or '끝단·경로 정상',r['data']['reviews'].get(x['core_id'],{}).get('reason','')) for x in r['rows']],['except' if x['exception'] else 'done' if x['complete'] else 'issue' for x in r['rows']])
+        self.render_rows();self.fill('check',[(x['status'],x['core_id'],x['detail'],' / '.join(x['notes']) or ('완료율 제외 · '+x['connection_excluded'] if not x['connection_required'] else '끝단·경로 정상'),r['data']['reviews'].get(x['core_id'],{}).get('reason','')) for x in r['rows']],['except' if x['exception'] else 'done' if x['complete'] else 'issue' for x in r['rows']])
         self.fill('capacity',[(x['label'],x['total'],x['used'],x['reserved'],x['free'],x['planned'],x['shortage'],'잠금' if x['locked'] else '') for x in r['capacity']],['issue' if x['shortage'] else 'done' for x in r['capacity']])
         fixed=[]
         for key,reason in r['data']['fixed_slots'].items():fixed.append(plan_number_label(r['net'],tuple(json.loads(key)))+' : '+reason)

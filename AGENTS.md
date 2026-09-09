@@ -71,3 +71,14 @@ and authorization when delivering changes. Do not send messages to other people.
   separate common facilities/cables from shared cores, and never mutate on preview.
   Search uses user-facing IDs and preserves all disconnected core components.
   Run tools/check_routes_find.py including its Windows keyboard/navigation gate.
+- V61 completion source lives in planning/completion.py and is bundled before
+  connection_routes. Use completion_report for drawing, incomplete-list, field
+  eligibility and phase connection counts. Count each core ID once; an ID-less
+  signal/expected-cancellation slot is its own incomplete target. Before excludes
+  exception/broken and temporary without ON; after excludes cancelled and temporary
+  without ON. After expected cancellation is required. Apply exclusions first.
+- Shared annotation/signal edits repaint existing cable, enclosure, summary and
+  all-core rows through App.refresh, including undo/redo. Do not rebuild ID/name
+  drafts or clear their edit history during repaint. Cancelled rows stay grey even
+  when incomplete or also marked error. Run tools/check_completion.py including
+  its Windows dialog/draft-preservation gate before publishing.

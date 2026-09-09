@@ -108,7 +108,9 @@ class PlannerTest(unittest.TestCase):
         update(self.store,self.big,5,{'core_id':'EX','detail':'예외','status1':'exception'})
         row=self.row('EX');self.assertTrue(row['exception']);self.assertEqual(row['status'],'예외 확인')
         self.service.review(['EX'],'미사용 인입 예외 확인',self.service.report()['token'])
-        self.assertEqual(self.row('EX')['status'],'예외 확인 완료')
+        self.assertFalse(self.row('EX')['complete']) # After-stage exception IDs still require their route.
+        self.assertTrue(self.row('EX')['connection_required'])
+        self.assertTrue(any('미접속' in note for note in self.row('EX')['notes']))
         update(self.store,self.big,5,{'detail':'변경된 예외 내역'})
         self.assertFalse(self.row('EX')['complete'])
         update(self.store,self.big,6,{'core_id':'SIG','signal':'exception'})
