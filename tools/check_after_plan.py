@@ -175,13 +175,18 @@ def windows_ui():
     if sys.platform!='win32':return
     with tempfile.TemporaryDirectory() as temp:
         os.environ['TELECOM_APP_HOME']=temp;errors=[]
-        with patch.object(code['messagebox'],'showerror',side_effect=lambda *a,**k:errors.append(str(a))):
+        with patch.object(code['messagebox'],'showerror',side_effect=lambda *a,**k:errors.append(str(a))), \
+             patch.object(code['messagebox'],'showinfo',side_effect=lambda *a,**k:errors.append(str(a))):
             app=code['App']();app.withdraw();app.report_callback_exception=lambda *args:errors.append(str(args))
             a=app.store.add_node('검증 A',0,0);h=app.store.add_node('검증 접속',100,0);b=app.store.add_node('검증 B',200,0)
             big=app.store.add_cable(a,h,'BIG','12C','기설');small=app.store.add_cable(h,b,'SMALL','6C','기설')
             update(app.store,big,1,{'core_id':'GUI-1','detail':'UI 검증'});app.store.connect(h,(big,1),(small,2))
+            assert app.load_scenario('before')
+            wf.FieldSurvey(app.store,a).save('BIG\n1')
+            wf.FieldSurvey(app.store,h).save('BIG\tSMALL\n1\t2')
+            wf.FieldSurvey(app.store,b).save('SMALL\n2')
             app.save_current_drawing(silent=True)
-            with patch.object(code['messagebox'],'askyesno',return_value=True):app.load_scenario('after')
+            with patch.object(code['messagebox'],'askyesno',return_value=True):assert app.load_scenario('after')
             dialog=wf.AfterPlanDialog(app);app.update()
             assert len(dialog.tabs.tabs())==6
             assert dialog.report['total']==1

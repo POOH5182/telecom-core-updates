@@ -18,7 +18,9 @@ permissions:
 
 concurrency:
   group: telecom-release
-  cancel-in-progress: false
+  # A newer source revision replaces obsolete checks. Publishing remains
+  # idempotent and resumes a draft only when both asset digests match.
+  cancel-in-progress: true
 
 jobs:
   release:
