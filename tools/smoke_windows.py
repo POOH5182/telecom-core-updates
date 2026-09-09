@@ -168,6 +168,90 @@ def check_bulk_keyboard(code, app):
     print('PASS actual Excel inspection: popup focus, Space apply from Close, no accidental release apply, red selected errors, blocked no-write and Escape cancel')
 
 
+def prepare_route_checks(code, store):
+    a = store.add_node('경로 시작', 1400, 0)
+    h = store.add_node('경로 함체', 1600, 0)
+    b = store.add_node('경로 끝', 1800, 0)
+    c = store.add_node('분리 시작', 2000, 400)
+    d = store.add_node('분리 끝', 2200, 400)
+    left = store.add_cable(a, h, 'CHECK-L', '12C', '기설')
+    right = store.add_cable(h, b, 'CHECK-R', '6C', '기설')
+    separate = store.add_cable(c, d, 'CHECK-SEPARATE', '6C', '기설')
+    store.update_core(left, 3, ('CHECK-ID', '', 'normal', '', 'off'))
+    store.connect(h, (left, 3), (right, 5))
+    store.update_core(separate, 2, ('CHECK-ID', '', 'normal', '', 'off'))
+    store.update_core(left, 4, ('CHECK-ID-OTHER', '', 'normal', '', 'off'))
+    store.update_core(left, 5, ('', 'ID 없는 내역', '', '', ''))
+    store.connect(h, (left, 6), (right, 6), temporary=True)
+    temporary = store.core(left, 6)['core_id']
+    store.conn.execute('INSERT INTO survey_rows VALUES(?,?,?,?,?,?,?,?,?)',
+                       ('check-survey', h, left, 4, right, 5, 0, '', ''))
+    store.conn.commit()
+    rows = store.before_drawing_check_rows()
+    assert any(r['category'] == '코어 경로' and r['core_id'] == 'CHECK-ID' for r in rows)
+    assert any(r['category'] == '임시코어' and r['core_id'] == temporary for r in rows)
+    missing = [r for r in rows if r['category'] == '코어 입력' and not r['core_id']]
+    assert any(r['cable_id'] == left and r['core_index'] == 5 for r in missing)
+    mismatches = [r for r in rows if '일괄입력 오류: 오류코어: 왼쪽' in r['message']]
+    assert {r['core_id'] for r in mismatches} == {'CHECK-ID', 'CHECK-ID-OTHER'}
+    assert all(r['core_id'] for r in rows if r['category'] in ('코어 연결', '코어 경로', '임시코어'))
+    return {left: '3번', right: '5번', separate: '2번'}
+
+
+def check_route_checks(code, app):
+    expected = prepare_route_checks(code, app.store)
+    app.refresh()
+    wf = code['App'].__init__.__globals__['workflow']
+    saved = wf.plan_snapshot(app.store.conn)
+
+    def click(window, iid, column):
+        window.tree.see(iid)
+        app.update()
+        x, y, width, height = window.tree.bbox(iid, column)
+        window.tree.event_generate('<ButtonPress-1>', x=x + width // 2, y=y + height // 2)
+        window.tree.event_generate('<ButtonRelease-1>', x=x + width // 2, y=y + height // 2)
+        app.update()
+
+    def check_highlight(window, view):
+        assert app.highlight_owner is window
+        assert app.highlight_core_labels == expected, app.highlight_core_labels
+        assert app.highlight_cable_colors == {cid: '#ff7a00' for cid in expected}
+        assert len(view['groups']) == 2, view
+        texts = [window.diagram.itemcget(i, 'text') for i in window.diagram.find_all()
+                 if window.diagram.type(i) == 'text']
+        assert any('CHECK-L(3번 코어)' in text for text in texts), texts
+        assert any('CHECK-R(5번 코어)' in text for text in texts), texts
+        assert any('CHECK-SEPARATE(2번 코어)' in text for text in texts), texts
+
+    window = code['ConnectionListDialog'](app, app.store, mode='incomplete')
+    iid = str(next(i for i, r in enumerate(window.entries) if r['core_id'] == 'CHECK-ID'))
+    click(window, iid, 'core')
+    check_highlight(window, window._error_trace_view)
+    window.destroy()
+    app.update()
+    assert not app.highlight_core_labels and not app.highlight_cables
+    window = code['BeforeDrawingCheckDialog'](app, app.store)
+    assert window.tree.heading('core_id', 'text') == '코어ID'
+    iid = str(next(i for i, r in enumerate(window.visible) if r['core_id'] == 'CHECK-ID'))
+    assert window.tree.item(iid, 'values')[3] == 'CHECK-ID'
+    click(window, iid, 'core_id')
+    check_highlight(window, window._trace_view)
+    missing = str(next(i for i, r in enumerate(window.visible)
+                       if not r['core_id'] and r['category'] == '코어 입력'))
+    click(window, missing, 'core_id')
+    assert not app.highlight_cables and not window._trace_view
+    assert '코어ID가 없습니다' in window.trace_summary.get()
+    click(window, iid, 'core_id')
+    window.filter.set('경고')
+    window.show_rows()
+    app.update()
+    assert not app.highlight_cables and not window._trace_view
+    window.destroy()
+    app.update()
+    assert wf.plan_snapshot(app.store.conn) == saved
+    print('PASS real incomplete/completeness row clicks: exact core IDs, split paths, cable/core labels, orange highlight and selection/filter/close cleanup; no drawing writes')
+
+
 def main():
     if sys.platform != 'win32':
         raise RuntimeError('This release gate must run on the Windows runner.')
@@ -279,6 +363,7 @@ def main():
             app.store.set_node_locked(a, False)
             rn, subscriber = check_facility_headers(code, app)
             check_bulk_keyboard(code, app)
+            check_route_checks(code, app)
             app.update_idletasks()
             assert not errors, errors
             path = app.store.path
