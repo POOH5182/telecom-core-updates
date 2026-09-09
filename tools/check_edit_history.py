@@ -50,6 +50,9 @@ class EditHistoryTests(unittest.TestCase):
         self.assertEqual(s.core(self.right,4)['detail'],'이름만 변경');self.assertEqual(s.core(self.left,4)['core_id'],'REAL-4')
         before=self.snapshot();revision=s.data_revision();s.apply_core_identity_changes(self.left,[(i,'  ','\t') for i in range(1,6)])
         self.assertEqual(self.snapshot(),before);self.assertEqual(s.data_revision(),revision)
+        with s.action('기존 공백 포함 내역 시험'):
+            s.conn.execute('UPDATE cores SET detail=? WHERE cable_id=? AND core_index=1',('  원본 내역  ',self.left))
+        before=self.snapshot();s.apply_core_identity_changes(self.left,[(1,'','')]);self.assertEqual(self.snapshot(),before)
 
     def test_real_id_conflict_preserved_and_preview_has_no_disconnect(self):
         s=self.store;s.apply_core_identity_changes(self.left,[(4,'REAL-4','기존')])
