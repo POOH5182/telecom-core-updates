@@ -293,7 +293,7 @@ class FieldResolutionDialog(RememberedToplevel):
         self.title('현장 비교 · 사용할 내역 선택 후 연결 수정');self.geometry('1260x810');self.minsize(950,650);self.transient(parent);self.grab_set()
         ttk.Label(self,text='각 현장 연결에 사용할 내역을 지정하세요. 서로 바뀐 번호는 관련 행을 함께 선택해 한 번에 수정합니다. 기존 GIS·변경 전 내역은 보존됩니다.',padding=10,wraplength=1180).pack(fill='x')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
-        self.tree=ttk.Treeview(frame,columns=('row','link','old','id','detail'),show='headings',height=7)
+        self.tree=SortableTreeview(frame,columns=('row','link','old','id','detail'),show='headings',height=7)
         for col,title,width in zip(('row','link','old','id','detail'),('조사행','현장 연결','현재 코어ID','사용할 코어ID','사용할 코어명'),(65,370,220,170,280)):
             self.tree.heading(col,text=title);self.tree.column(col,width=width,minwidth=60)
         self.tree.pack(side='left',fill='both',expand=True);scroll=ttk.Scrollbar(frame,orient='vertical',command=self.tree.yview);scroll.pack(side='right',fill='y');self.tree.configure(yscrollcommand=scroll.set)
@@ -366,7 +366,7 @@ class FieldArchiveDialog(RememberedToplevel):
         super().__init__(parent);self.app=top_app(parent);self.store=store;self.node_id=node_id;self.generation=store._view_generation;self.items=[]
         node=store.node(node_id);self.title((node['name'] if node else '함체')+' · 수정이력·보존내역');self.geometry('1160x780')
         self.summary=tk.StringVar();ttk.Label(self,textvariable=self.summary,padding=10,wraplength=1100).pack(fill='x')
-        self.tree=ttk.Treeview(self,columns=('type','time','id','detail','reason'),show='headings',height=9)
+        self.tree=SortableTreeview(self,columns=('type','time','id','detail','reason'),show='headings',height=9)
         for col,title,width in zip(('type','time','id','detail','reason'),('구분','시간','코어ID','보존 내역','근거'),(130,160,140,280,360)):
             self.tree.heading(col,text=title);self.tree.column(col,width=width,minwidth=60)
         self.tree.pack(fill='both',expand=True,padx=8);self.tree.bind('<<TreeviewSelect>>',self.pick)

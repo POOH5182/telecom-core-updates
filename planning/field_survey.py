@@ -418,10 +418,10 @@ class FieldSurveySheet(ttk.Frame):
         bar=ttk.Frame(self);bar.pack(fill='x',pady=(0,5))
         for label,command in [('Excel 전체표 추가 (A1)',self.paste_from_a1),('열 추가',self.add_column),('행 10개 추가',self.add_rows),('선택 셀 지우기',self.clear_cell),('표 복사',self.copy_all),('입력 실행취소',self.undo),('입력 다시실행',lambda:self.undo(redo=True))]:
             ttk.Button(bar,text=label,command=command).pack(side='left',padx=2)
-        ttk.Label(bar,text='더블클릭 수정 · Enter/Tab 이동',foreground='#555').pack(side='right')
+        ttk.Label(bar,text='제목 클릭: ▲ → ▼ → 기본 · 붙여넣기: 원래 행번호 기준',foreground='#555').pack(side='right')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True)
         style=ttk.Style(self);style.configure('Field.Excel.Treeview',rowheight=24)
-        self.tree=ttk.Treeview(frame,show='tree headings',selectmode='browse',height=8,style='Field.Excel.Treeview')
+        self.tree=SortableTreeview(frame,pinned_items=('1',),before_sort=self.commit_editor,editor_active=lambda:self.editor is not None,show='tree headings',selectmode='browse',height=8,style='Field.Excel.Treeview')
         self.tree.grid(row=0,column=0,sticky='nsew');frame.rowconfigure(0,weight=1);frame.columnconfigure(0,weight=1)
         y=ttk.Scrollbar(frame,orient='vertical',command=self.tree.yview);y.grid(row=0,column=1,sticky='ns')
         x=ttk.Scrollbar(frame,orient='horizontal',command=self.tree.xview);x.grid(row=1,column=0,sticky='ew')
@@ -511,6 +511,7 @@ class FieldSurveySheet(ttk.Frame):
             cells=field_table(raw)
             if not cells:return 'break'
             row,col=self.active_cell
+            self.tree.reset_sort()
             if (row,col)==(0,0) and len(cells)>1:
                 merged,counts=field_merge_sheet(self.engine,self.get_text(),raw)
                 self.set_text(merged,remember=True)
@@ -586,7 +587,7 @@ class FieldSurveyDialog(RememberedToplevel):
         self.summary=tk.StringVar();ttk.Label(self,textvariable=self.summary,padding=(10,0,10,6),foreground='#1769aa').pack(fill='x')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
         columns=('status','treatment','gis','row','id','baseline','observed','current','reason')
-        self.tree=ttk.Treeview(frame,columns=columns,show='headings',selectmode='extended',height=7)
+        self.tree=SortableTreeview(frame,columns=columns,show='headings',selectmode='extended',height=7)
         for col,label,width in zip(columns,('확인상태','처리상태','GIS 기준과 비교','조사행','현재 코어ID','GIS 기준 연결','현장 조사 연결','현재 도면 연결','다른 번호·확인내용'),(90,115,120,55,145,245,245,245,420)):
             self.tree.heading(col,text=label);self.tree.column(col,width=width,minwidth=60)
         for status,ink in FIELD_COLORS.items():self.tree.tag_configure(status,foreground=ink)

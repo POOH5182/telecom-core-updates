@@ -163,7 +163,7 @@ class ConnectionRouteDialog(RememberedToplevel):
             heading=tk.StringVar();self.headings.append(heading)
             ttk.Label(frame,textvariable=heading,foreground=CONNECTION_ROUTE_COLORS[i],wraplength=570).pack(fill='x')
             holder=ttk.Frame(frame);holder.pack(fill='both',expand=True)
-            columns=('from','cable','index','id','to','note');tree=ttk.Treeview(holder,columns=columns,show='headings',height=6)
+            columns=('from','cable','index','id','to','note');tree=SortableTreeview(holder,columns=columns,show='headings',height=6)
             for key,label,width in zip(columns,('출발 시설','케이블ID / 규격','코어번호','코어ID','도착 시설','확인내용'),(130,180,75,125,130,150)):
                 tree.heading(key,text=label);tree.column(key,width=width,minwidth=60,stretch=False)
             tree.tag_configure('overlap',foreground='#c62828');tree.tag_configure('cable',foreground='#a16207')
@@ -178,7 +178,7 @@ class ConnectionRouteDialog(RememberedToplevel):
         sy=ttk.Scrollbar(frame,orient='vertical',command=self.diagram.yview);sy.grid(row=0,column=1,sticky='ns');self.diagram.configure(xscrollcommand=sx.set,yscrollcommand=sy.set)
         if changes:
             cp=ttk.Frame(book);book.add(cp,text='반영할 변경 내용')
-            ct=ttk.Treeview(cp,columns=('action','slot','detail'),show='headings')
+            ct=SortableTreeview(cp,columns=('action','slot','detail'),show='headings')
             for key,label in zip(('action','slot','detail'),('처리','케이블·코어번호','내용')):ct.heading(key,text=label);ct.column(key,width=300)
             ct.pack(side='left',fill='both',expand=True);cy=ttk.Scrollbar(cp,orient='vertical',command=ct.yview);cy.pack(side='right',fill='y');ct.configure(yscrollcommand=cy.set)
             for row in changes:ct.insert('','end',values=row)

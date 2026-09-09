@@ -126,7 +126,7 @@ class CompletionTargetsDialog(TableDialog):
     def locate(self,event=None):
         selected=self.table.selection()
         if not selected or not self.app or self.app.store is not self.store:return
-        row=self.entries[self.table.index(selected[0])];cid=row['core_id']
+        row=self.entries[self.row_indices[selected[0]]];cid=row['core_id']
         if row.get('pending_nodes'):FieldArchiveDialog(self,self.store,row['pending_nodes'][0]);return
         if cid:reveal_search_result(self.app,dict(core_id=cid,kind='코어ID',identifier=cid),owner=self)
         elif row['slots']:

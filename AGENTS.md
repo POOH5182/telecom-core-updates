@@ -96,3 +96,14 @@ and authorization when delivering changes. Do not send messages to other people.
   suppresses annotation transport so one old ID's labels cannot leak to another.
   Never bypass enclosure locks or edit unrelated components merely by equal ID.
   Run tools/check_field_compare.py including its Windows compare/edit gate.
+- V63 display sorting lives in planning/table_sort.py, bundled before completion.
+  Use SortableTreeview for drawing tables. Heading clicks cycle ascending,
+  descending and original insertion order; sort by moving stable item IDs only.
+  Never map a sorted row back to source data with Treeview.index. TableDialog's
+  row_indices map preserves this relationship for completion-route selection.
+  Keep inline editors anchored to their physical row IDs; commit on heading clicks
+  without reloading drafts. Background repaint must not commit an open editor.
+  Pin spreadsheet title row 1. Multirow identity paste and Excel-grid paste restore
+  default order and retain physical row offsets, blanks and original source data.
+  Clipboard/export headings use heading_text to exclude sort arrows from cable IDs.
+  Run tools/check_table_sort.py including its Windows click/edit/paste/trace gate.

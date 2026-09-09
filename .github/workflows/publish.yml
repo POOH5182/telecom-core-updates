@@ -59,6 +59,8 @@ jobs:
         run: python tools/check_completion.py
       - name: GIS 원본 비교·내역 교체·보존과 함체 수정 화면 검증
         run: python tools/check_field_compare.py
+      - name: 표 제목 3단계 정렬과 코어 수정·붙여넣기·경로 보존 검증
+        run: python tools/check_table_sort.py
       - name: 배포 파일 만들기
         run: python tools/build_release.py
       - name: Google 로그인 설정과 서버 접근 확인

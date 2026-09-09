@@ -86,7 +86,7 @@ class DrawingFindDialog(RememberedToplevel):
         ttk.Button(bar,text='도면 보기 / 닫기',command=self.destroy).pack(side='right',padx=6)
         ttk.Label(self,text='ID 또는 이름 일부를 입력하고 Enter · 결과를 클릭하면 이동·선택 · 코어ID는 서로 끊어진 구간도 모두 표시합니다.',padding=(8,0,8,6)).pack(fill='x')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
-        self.tree=ttk.Treeview(frame,columns=('kind','id','title','location'),show='headings',height=8)
+        self.tree=SortableTreeview(frame,columns=('kind','id','title','location'),show='headings',height=8)
         for key,label,width in zip(('kind','id','title','location'),('구분','ID','이름·코어내역','위치 / 경로'),(100,180,260,440)):
             self.tree.heading(key,text=label);self.tree.column(key,width=width,minwidth=70)
         self.tree.grid(row=0,column=0,sticky='nsew');frame.rowconfigure(0,weight=1);frame.columnconfigure(0,weight=1)

@@ -46,6 +46,10 @@ def prepare_payload():
         baseline = baseline.split(route_marker)[0]
         completion_marker = '\n\n# BEGIN TELECOM COMPLETION\n'
         baseline = baseline.split(completion_marker)[0]
+        sort_marker = '\n\n# BEGIN TELECOM TABLE SORT\n'
+        baseline = baseline.split(sort_marker)[0]
+        if version >= 63:
+            baseline += sort_marker + (ROOT / 'planning' / 'table_sort.py').read_text(encoding='utf-8')
         if version >= 61:
             baseline += completion_marker + (ROOT / 'planning' / 'completion.py').read_text(encoding='utf-8')
         if version >= 60:

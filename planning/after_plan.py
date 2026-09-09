@@ -522,7 +522,7 @@ class AfterPlanDialog(RememberedToplevel):
 
     def table(self, page, key, headers, widths=None):
         box=ttk.Frame(page);box.pack(fill='both',expand=True,pady=5)
-        tree=ttk.Treeview(box,columns=list(range(len(headers))),show='headings',selectmode='extended')
+        tree=SortableTreeview(box,columns=list(range(len(headers))),show='headings',selectmode='extended')
         for i,title in enumerate(headers):tree.heading(i,text=title);tree.column(i,width=(widths[i] if widths else 160),minwidth=65,stretch=False)
         y=ttk.Scrollbar(box,orient='vertical',command=tree.yview);x=ttk.Scrollbar(box,orient='horizontal',command=tree.xview)
         tree.configure(yscrollcommand=y.set,xscrollcommand=x.set);tree.grid(row=0,column=0,sticky='nsew');y.grid(row=0,column=1,sticky='ns');x.grid(row=1,column=0,sticky='ew')
