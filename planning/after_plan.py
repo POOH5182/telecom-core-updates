@@ -738,7 +738,7 @@ class PlanEditor(RememberedToplevel):
         for slot,r in net.slots.items():
             if not slot[0].startswith('PORT:'):continue
             nid=slot[0][5:];node=net.nodes[nid];label=str(r.get('label') or '')
-            mode='terminal' if terminal_marked(node) else 'rn' if node['type']=='rn' and (label.upper()=='IN' or label.upper().startswith(('MP','SP'))) else None
+            mode=port_endpoint_kind(node)
             if mode:self.end_map[f"{node['name']} · {label} [{nid}]"]=plan_slot_key([mode,nid,label.upper()])
         self.ends=[]
         for i in range(2):

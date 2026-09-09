@@ -131,7 +131,7 @@ def windows_ui():
                 dialog.inspect();app.update()
                 assert dialog.rows[0]['status']=='확인완료'
                 assert app.store.node_warning_summary()[h]['field']['done']==1
-                assert app.store.before_drawing_check_rows() # Endpoint field checks still pending.
+                assert not [r for r in app.store.before_drawing_check_rows() if r['level']=='오류'] # Terminal enclosures no longer require field acknowledgement.
                 dialog.destroy();node.destroy()
                 wf.FieldSurvey(app.store,a).save('L\n1');wf.FieldSurvey(app.store,b).save('R\n1')
                 assert not [r for r in app.store.before_drawing_check_rows() if r['level']=='오류'],app.store.before_drawing_check_rows()

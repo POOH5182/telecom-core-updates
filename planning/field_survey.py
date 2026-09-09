@@ -23,6 +23,14 @@ def field_records(store):
     return copy.deepcopy(state(store).get('field_surveys',{}))
 
 
+def field_required(store,node,cable_count=None):
+    if not node:return False
+    if node['type']=='rn':return True
+    if node['type']!='hamche':return False
+    if cable_count is None:cable_count=sum(str(c['spec'] or '').strip()!='드랍' for c in store.node_cables(node['id']))
+    return not cable_terminal(node,cable_count)
+
+
 def field_writable(store,node_id):
     row=store.conn.execute("SELECT value FROM meta WHERE key='active_scenario'").fetchone()
     if row and row[0]!='before':raise ValueError('2단계 전도면(현장반영)에서 조사자료를 입력하세요.')
@@ -40,12 +48,17 @@ class FieldSurvey:
         self.slots={}
         for cid in self.cables:
             self.slots.update({(cid,int(r['core_index'])):dict(r) for r in store.cores(cid)})
+        self.port_key='PORT:'+node_id if node and node['type']=='rn' else None
+        if self.port_key:
+            self.slots.update({(self.port_key,int(r['core_index'])):dict(r) for r in store.cores(self.port_key)})
         self.pairs={field_pair(((r['cable1_id'],r['core1_index']),(r['cable2_id'],r['core2_index'])))
                     for r in store.conn.execute('SELECT * FROM splices WHERE node_id=?',(node_id,))}
 
     def label(self,slots):
         out=[]
         for cid,index in slots:
+            if cid==self.port_key:
+                out.append('RN내부 / '+str(self.slots.get((cid,index),{}).get('label') or index));continue
             cable=self.cables.get(cid)
             name=(cable.get('cable_id') or cable.get('spec') or cid) if cable else cid
             out.append(f'{name} / {index}번')
@@ -60,7 +73,7 @@ class FieldSurvey:
     def matches(self,pair):
         if len(pair)==1:
             return self.terminal and not any(pair[0] in p for p in self.pairs) and bool(str(self.slots.get(pair[0],{}).get('core_id') or '').strip())
-        if len(pair)!=2 or pair not in self.pairs:return False
+        if len(pair)!=2 or pair not in self.pairs or pair[0][0]==pair[1][0] or any(s not in self.slots for s in pair):return False
         if any(sum(slot in p for p in self.pairs)!=1 for slot in pair):return False
         ids={str(self.slots.get(slot,{}).get('core_id') or '').strip() for slot in pair}
         return len(ids)==1 and '' not in ids
@@ -71,12 +84,14 @@ class FieldSurvey:
         headers=[v.strip() for v in table[0]];resolved=[];header_errors=[]
         for col,header in enumerate(headers,1):
             if not header:resolved.append(None);continue
+            if self.port_key and ''.join(header.lower().split()) in ('rn내부','rn내부포트','rn포트',self.port_key.lower()):
+                resolved.append(self.port_key);continue
             cable,error=self.store.resolve_node_cable(self.node_id,header)
             cid=cable['id'] if cable and cable['id'] in self.cables else None
             resolved.append(cid)
             if not cid:header_errors.append(f'{col}열: {error or "이 함체의 일반 케이블이 아닙니다."}')
         actual=[c for c in resolved if c]
-        if len(actual)<(1 if self.terminal else 2):header_errors.append('서로 다른 케이블ID가 2개 이상 필요합니다. 말단 함체는 1개도 가능합니다.')
+        if len(actual)<(1 if self.terminal else 2):header_errors.append('서로 다른 연결 대상이 2개 이상 필요합니다. RN 내부 접속은 RN내부 열을 추가하세요.')
         if len(actual)!=len(set(actual)):header_errors.append('같은 케이블ID를 여러 열에 입력했습니다.')
         rows=[]
         for number,values in enumerate(table[1:],2):
@@ -86,9 +101,10 @@ class FieldSurvey:
                 value=value.strip()
                 if not value:continue
                 if col>=len(resolved) or not resolved[col]:errors.append(f'{col+1}열 케이블ID를 확인하세요.');continue
-                try:index=int(value)
-                except ValueError:errors.append(f'{col+1}열 "{value}": 코어번호 하나를 숫자로 입력하세요.');continue
                 cid=resolved[col]
+                port_index=next((index for (owner,index),row in self.slots.items() if owner==self.port_key and str(row.get('label') or '').upper()==value.upper()),None) if cid==self.port_key else None
+                try:index=port_index if port_index is not None else int(value)
+                except ValueError:errors.append(f'{col+1}열 "{value}": 코어번호 하나를 숫자로 입력하세요.');continue
                 if (cid,index) not in self.slots:errors.append(f'{col+1}열 {index}번: 케이블 규격 범위 밖입니다.');continue
                 slots.append((cid,index))
             if len(slots)==1 and self.terminal:pass
@@ -189,6 +205,7 @@ def field_apply(store,node_id,keys,expected_revision,expected_generation):
 
 
 def field_summary(store,node_id,record=None):
+    if not field_required(store,store.node(node_id)):return {'done':0,'pending':0,'issues':0,'total':0}
     rows=FieldSurvey(store,node_id,record).report();counts=Counter(r['status'] for r in rows)
     return {'done':counts['확인완료'],'pending':counts['미확인'],'issues':counts['불일치']+counts['이상'],'total':len(rows)}
 
@@ -196,7 +213,7 @@ def field_summary(store,node_id,record=None):
 def field_check_rows(store):
     records=field_records(store);result=[]
     for node in store.nodes():
-        if node['type']!='hamche':continue
+        if not field_required(store,node):continue
         for row in FieldSurvey(store,node['id'],records.get(node['id'],{})).report():
             if row['status']=='확인완료':continue
             for core_id in row['core_ids'] or ['']:
@@ -234,10 +251,12 @@ class FieldSurveyDialog(RememberedToplevel):
         super().__init__(parent);self.app=top_app(parent);self.store=store;self.node_id=node_id
         self.generation=getattr(store,'_view_generation',0);self.rows=[];self.visible=[];self.token=None
         self.title('현장 선번조사 · '+store.node(node_id)['name']);self.geometry('1260x820');self.minsize(950,600)
-        ttk.Label(self,text='첫 행: 케이블ID / 아래: 같은 행에 연결된 두 코어번호. 끝단·말단 함체는 코어번호 하나로 말단 확인합니다. 미조사 칸은 비워 두세요.',padding=10).pack(fill='x')
+        ttk.Label(self,text='첫 행: 케이블ID / 아래: 같은 행에 연결된 두 코어번호. RN은 RN내부 열에 포트명(IN·MP1·SP1·P1 등) 또는 포트번호를 입력하세요. 말단 함체는 현장 확인 대상에서 제외됩니다.',padding=10,wraplength=1220).pack(fill='x')
         self.text=tk.Text(self,height=8,wrap='none',font=('Consolas',11),undo=True);self.text.pack(fill='x',padx=8)
         record=field_records(store).get(node_id,{})
-        raw=record.get('text') or '\t'.join(str(c['cable_id'] or store.opposite_name(c,node_id)) for c in store.node_cables(node_id) if c['spec']!='드랍')+'\n'
+        headers=[str(c['cable_id'] or store.opposite_name(c,node_id)) for c in store.node_cables(node_id) if c['spec']!='드랍']
+        if store.node(node_id)['type']=='rn':headers.append('RN내부')
+        raw=record.get('text') or '\t'.join(headers)+'\n'
         self.text.insert('1.0',raw)
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         ttk.Button(bar,text='검사·조사 저장 (일치행 확인)',command=self.inspect).pack(side='left',padx=3)

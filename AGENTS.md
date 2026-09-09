@@ -55,3 +55,9 @@ and authorization when delivering changes. Do not send messages to other people.
   Comparing observations never rewires. Preserve unknown rows, local splice scope,
   real-ID conflict refusal, fingerprint invalidation, atomic undo and pre-apply backup.
   Run tools/check_field_survey.py including its Windows stage/click gate.
+- V59 RN endpoints require a real internal-port splice. The legacy RN terminal
+  flag never ends a dangling cable. Field checks exclude terminal enclosures and
+  include RN cable/internal-port observations. Run tools/check_locks_rn.py.
+- Cable-wide automatic locks derive from both enclosure endpoints. A single locked
+  enclosure still protects its splices, core identities and numbering. Preserve
+  read-only selection/copy and migrate the named SQLite lock triggers on open.
