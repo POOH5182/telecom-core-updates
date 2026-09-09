@@ -1,5 +1,6 @@
 """Exercise real Windows/Tk initialization and the requested LOT editor before publishing."""
 import json
+import csv
 import os
 from pathlib import Path
 import runpy
@@ -236,10 +237,36 @@ def check_route_checks(code, app):
     assert not app.highlight_core_labels and not app.highlight_cables
     window = code['BeforeDrawingCheckDialog'](app, app.store)
     assert window.tree.heading('core_id', 'text') == '코어ID'
+    ids = [r['core_id'] for r in window.rows if r['core_id']]
+    assert len(ids) == len(set(ids)), ids
     iid = str(next(i for i, r in enumerate(window.visible) if r['core_id'] == 'CHECK-ID'))
     assert window.tree.item(iid, 'values')[3] == 'CHECK-ID'
     click(window, iid, 'core_id')
     check_highlight(window, window._trace_view)
+    grouped = window.selected_row()
+    members = [r for r in app.store.before_drawing_check_rows() if r['core_id'] == 'CHECK-ID']
+    assert len(members) > 1 and list(grouped['_check_items']) == members
+    assert all(r['message'] in window.issue_details.get('1.0', 'end') for r in members)
+    # Reordering the grouped list still opens the selected diagnostic's cable.
+    window.tree.cycle_sort('core_id'); window.tree.cycle_sort('core_id'); app.update()
+    click(window, iid, 'core_id'); check_highlight(window, window._trace_view)
+    destination = next(i for i, r in enumerate(members) if r['cable_id'] in expected and not r['category'].startswith('현장 '))
+    window.issue_location.current(destination)
+    opened = []
+    namespace = type(window).__init__.__globals__
+    with patch.dict(namespace, open_detail_dialog=lambda parent, store, kind, key: opened.append((kind, key))):
+        window.open_selected()
+    assert opened == [('cable', members[destination]['cable_id'])]
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / 'completion.csv'
+        with patch.object(code['filedialog'], 'asksaveasfilename', return_value=str(path)), \
+             patch.object(code['messagebox'], 'showinfo', return_value=None):
+            window.csv_save()
+        with path.open(encoding='utf-8-sig', newline='') as file:
+            exported = list(csv.reader(file))[1:]
+        matches = [r for r in exported if r[3] == 'CHECK-ID']
+        assert len(matches) == 1 and all(r['message'] in matches[0][4] for r in members)
+    window.tree.reset_sort(); app.update()
     missing = str(next(i for i, r in enumerate(window.visible)
                        if not r['core_id'] and r['category'] == '코어 입력'))
     click(window, missing, 'core_id')
@@ -250,10 +277,16 @@ def check_route_checks(code, app):
     window.show_rows()
     app.update()
     assert not app.highlight_cables and not window._trace_view
+    assert not window.issue_location.get()
+    assert all(r['level'] == '경고' for r in window.visible)
+    assert len({r['core_id'] for r in window.visible if r['core_id']}) == sum(bool(r['core_id']) for r in window.visible)
+    window.filter.set('전체'); window.reload(); app.update()
+    assert len([r for r in window.rows if r['core_id'] == 'CHECK-ID']) == 1
     window.destroy()
     app.update()
     assert wf.plan_snapshot(app.store.conn) == saved
     print('PASS real incomplete/completeness row clicks: exact core IDs, split paths, cable/core labels, orange highlight and selection/filter/close cleanup; no drawing writes')
+    print('PASS unique completeness core IDs, all reasons, selected issue location, sorted route selection and one-row-per-core CSV export')
 
 
 def main():

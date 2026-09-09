@@ -112,6 +112,31 @@ def completion_rate_text(report):
     return '대상 없음' if report['rate'] is None else f"{report['rate']:.1f}% ({report['done']}/{report['total']})"
 
 
+def completion_check_groups(rows):
+    """One displayed row per exact core ID; retain every diagnostic and location.
+
+    ID-less slot/facility issues remain independent. This is a read-only display
+    projection; the original diagnostics still govern the before/after gate.
+    """
+    grouped={};priority={'오류':0,'경고':1,'확인':2}
+    for index,source in enumerate(rows):
+        row=dict(source);cid=str(row.get('core_id') or '').strip()
+        key=('core',cid) if cid else ('issue',index)
+        grouped.setdefault(key,[]).append(row)
+    result=[]
+    for (kind,key),items in grouped.items():
+        row=dict(items[0]);row['_check_items']=tuple(items)
+        row['level']=min((r['level'] for r in items),key=lambda v:priority.get(v,9))
+        if kind=='core':
+            row['core_id']=key
+            row['category']=' / '.join(dict.fromkeys(r['category'] for r in items))
+            row['location']=' / '.join(dict.fromkeys(r['location'] for r in items))
+            if len(items)>1:
+                row['message']='\n\n'.join(f"{i}. [{r['level']} · {r['category']}] {r['location']}\n{r['message']}" for i,r in enumerate(items,1))
+        result.append(row)
+    return sorted(result,key=lambda r:priority.get(r['level'],9))
+
+
 class CompletionTargetsDialog(TableDialog):
     def __init__(self,parent,store):
         self.app=top_app(parent);self.store=store;report=completion_report(store)

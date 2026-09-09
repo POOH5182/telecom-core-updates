@@ -140,6 +140,37 @@ def field_resolution_candidates(store,node_id,keys):
     return result
 
 
+def field_auto_identity(store,node_id,row):
+    """Read-only default for the reviewed editor: both ID AND name must agree."""
+    pair=row['slots']
+    if row.get('errors') or len(pair)!=2:return None,'연결 선번 확인 필요'
+    members=[store.core(*slot) for slot in pair]
+    if any(not item for item in members):return None,'양쪽 코어정보 확인 필요'
+    ids={str(item.get('core_id') or '').strip() for item in members}
+    names={str(item.get('detail') or '').strip() for item in members}
+    if '' in ids or any(cid.startswith('임시-') for cid in ids):return None,'양쪽의 실제 코어ID 확인 필요'
+    if len(ids)!=1:return None,'코어ID 다름 · 자동선택 보류'
+    if '' in names:return None,'코어명 빈칸 · 자동선택 보류'
+    if len(names)!=1:return None,'코어명 다름 · 자동선택 보류'
+    cid=next(iter(ids));name=next(iter(names))
+    if (row.get('input_core_id') and row['input_core_id']!=cid) or (row.get('input_detail') and row['input_detail']!=name):
+        return None,'조사표의 코어ID·코어명과 다름 · 자동선택 보류'
+    route=connection_route_report(store,node_id,*pair)
+    if route['issues']:return None,'양방향 경로 확인 필요 · 자동선택 보류'
+    scope={slot for side in route['sides'] for slot in side['slots']}
+    records=[store.core(*slot) for slot in sorted(scope)]
+    if any(not item or (str(item.get('core_id') or '').strip(),str(item.get('detail') or '').strip())!=(cid,name) for item in records):
+        return None,'연결 경로의 코어ID·코어명과 다름 · 자동선택 보류'
+    # The existing resolution action also copies state/signal; never choose
+    # arbitrarily between different values on otherwise matching identities.
+    choice=dict(members[0]);choice.update(core_id=cid,detail=name)
+    for key in ('status1','status2','signal'):
+        known={str(item.get(key) or '').strip() for item in records}-{'','unknown'}
+        if len(known)>1:return None,'상태·신호가 달라 확인 필요'
+        choice[key]=next(iter(known),'')
+    return choice,'양쪽 코어ID·코어명 모두 일치 · 자동선택'
+
+
 def field_resolve(store,node_id,choices,reason,expected_revision,expected_generation):
     """Only explicitly reviewed choices can replace real IDs on affected routes."""
     field_writable(store,node_id)
@@ -289,9 +320,9 @@ class FieldComparisonPanel(ttk.Frame):
 class FieldResolutionDialog(RememberedToplevel):
     def __init__(self,parent,rows):
         super().__init__(parent);self.parent=parent;self.app=parent.app;self.store=parent.store;self.node_id=parent.node_id
-        self.rows=rows;self.choices={};self.previous_grab=self.grab_current();self.generation=self.store._view_generation;self.revision=self.store.data_revision()
+        self.rows=rows;self.choices={};self.auto_notes={};self.previous_grab=self.grab_current();self.generation=self.store._view_generation;self.revision=self.store.data_revision()
         self.title('현장 비교 · 사용할 내역 선택 후 연결 수정');self.geometry('1260x810');self.minsize(950,650);self.transient(parent);self.grab_set()
-        ttk.Label(self,text='각 현장 연결에 사용할 내역을 지정하세요. 서로 바뀐 번호는 관련 행을 함께 선택해 한 번에 수정합니다. 기존 GIS·변경 전 내역은 보존됩니다.',padding=10,wraplength=1180).pack(fill='x')
+        ttk.Label(self,text='자동 내역선택은 양쪽 코어ID와 코어명이 모두 같을 때만 합니다. 다르거나 빈칸이면 직접 지정하세요. 서로 바뀐 번호는 관련 행을 함께 선택해 수정합니다. 기존 GIS·변경 전 내역은 보존됩니다.',padding=10,wraplength=1180).pack(fill='x')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
         self.tree=SortableTreeview(frame,columns=('row','link','old','id','detail'),show='headings',height=7)
         for col,title,width in zip(('row','link','old','id','detail'),('조사행','현장 연결','현재 코어ID','사용할 코어ID','사용할 코어명'),(65,370,220,170,280)):
@@ -313,10 +344,8 @@ class FieldResolutionDialog(RememberedToplevel):
         self.reason=tk.StringVar();ttk.Entry(bottom,textvariable=self.reason).pack(side='left',fill='x',expand=True,padx=6)
         ttk.Button(bottom,text='변경 범위·경로 확인',command=self.preview).pack(side='left',padx=5);ttk.Button(bottom,text='닫기',command=self.destroy).pack(side='left')
         for index,row in enumerate(rows):
-            ids=set(row['core_ids'])
-            if len(ids)==1:
-                candidate=next((c for c in self.candidates if c['core_id'] in ids),None)
-                if candidate and (not row.get('input_core_id') or row['input_core_id']==candidate['core_id']):self.choices[row['key']]=dict(candidate)
+            candidate,note=field_auto_identity(self.store,self.node_id,row);self.auto_notes[row['key']]=note
+            if candidate:self.choices[row['key']]=candidate
             choice=self.choices.get(row['key'],{})
             self.tree.insert('','end',iid=str(index),values=(row['row'],row['observed'],' / '.join(row['core_ids']),choice.get('core_id','선택 필요'),choice.get('detail','')))
         if rows:self.tree.selection_set('0');self.pick()
@@ -327,7 +356,7 @@ class FieldResolutionDialog(RememberedToplevel):
         if not selected:return
         row=self.rows[int(selected[0])];choice=self.choices.get(row['key'],{})
         self.base=dict(choice);self.id_var.set(choice.get('core_id',''));self.detail_var.set(choice.get('detail',''));self.source.set('')
-        field_set_text(self.evidence,'GIS: '+row['baseline_connection']+'\n'+row['baseline_detail']+'\n\n현장: '+row['observed']+'\n차이: '+row['difference_text']+'\n현재: '+row['current_detail'])
+        field_set_text(self.evidence,'내역선택: '+self.auto_notes.get(row['key'],'직접 지정')+'\n\nGIS: '+row['baseline_connection']+'\n'+row['baseline_detail']+'\n\n현장: '+row['observed']+'\n차이: '+row['difference_text']+'\n현재: '+row['current_detail'])
 
     def source_changed(self,event=None):
         self.base=dict(self.labels.get(self.source.get(),{}));self.id_var.set(self.base.get('core_id',''));self.detail_var.set(self.base.get('detail',''))
@@ -340,6 +369,7 @@ class FieldResolutionDialog(RememberedToplevel):
         row=self.rows[int(selected[0])];choice=dict(self.base) if self.base.get('core_id')==cid else {}
         choice.update(core_id=cid,detail=self.detail_var.get().strip());self.choices[row['key']]=choice
         values=list(self.tree.item(selected[0],'values'));values[-2:]=[cid,choice['detail']];self.tree.item(selected[0],values=values)
+        self.auto_notes[row['key']]='사용자가 내역 직접 지정';self.pick()
 
     def preview(self):
         try:

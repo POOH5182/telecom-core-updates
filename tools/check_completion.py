@@ -101,6 +101,40 @@ class CompletionTests(unittest.TestCase):
         self.connect(4);wf.FieldSurvey(self.store,self.h).save('LEFT\tRIGHT\n4\t4')
         self.assertFalse([r for r in self.store.before_drawing_check_rows() if r['level']=='오류'])
 
+    def test_check_list_groups_core_ids_without_losing_diagnostics_or_changing_progress(self):
+        s=self.store
+        for cable in (self.left,self.right):s.update_core(cable,1,('SHARED','','normal','','on'))
+        self.core(2,'OTHER','on')
+        before=self.snapshot();progress=self.report()
+        raw=s.before_drawing_check_rows();original=[dict(r) for r in raw]
+        grouped=wf.completion_check_groups(raw)
+        ids=[r['core_id'] for r in grouped if r['core_id']]
+        self.assertEqual(len(ids),len(set(ids)))
+        self.assertEqual(set(ids),{r['core_id'] for r in raw if r['core_id']})
+        members=[r for r in raw if r['core_id']=='SHARED']
+        self.assertGreater(len(members),2)
+        self.assertTrue(any(r['level']=='오류' for r in members))
+        self.assertTrue(any(r['level']=='경고' for r in members))
+        row=next(r for r in grouped if r['core_id']=='SHARED')
+        self.assertEqual(row['level'],'오류');self.assertEqual(list(row['_check_items']),members)
+        for issue in members:
+            self.assertIn(issue['message'],row['message']);self.assertIn(issue['location'],row['location'])
+        self.assertEqual(len([r for r in grouped if not r['core_id']]),len([r for r in raw if not r['core_id']]))
+        self.assertEqual(raw,original);self.assertEqual(self.snapshot(),before)
+        self.assertEqual((self.report()['total'],self.report()['done']),(progress['total'],progress['done']))
+
+    def test_grouping_keeps_anonymous_issues_and_similar_ids_separate(self):
+        def item(cid,location,level='경고',**kwargs):
+            return dict(core_id=cid,location=location,level=level,category='코어 입력',message=location+' 확인',**kwargs)
+        rows=[item('ID-1','A',cable_id='a'),item('ID-01','B',cable_id='b'),
+              item('ID-1','RN','오류',cable_id='PORT:rn',node_id='rn',core_index=1),
+              item('','ID 없는 번호 1',core_index=1),item('','ID 없는 번호 2',core_index=2),item('','시설 자체 오류')]
+        grouped=wf.completion_check_groups(rows)
+        self.assertEqual(len(grouped),5)
+        same=next(r for r in grouped if r['core_id']=='ID-1')
+        self.assertEqual(same['level'],'오류');self.assertEqual(same['_check_items'][1]['cable_id'],'PORT:rn')
+        self.assertEqual([r['location'] for r in grouped if not r['core_id']],['ID 없는 번호 1','ID 없는 번호 2','시설 자체 오류'])
+
 
 def windows_ui():
     if sys.platform!='win32':return

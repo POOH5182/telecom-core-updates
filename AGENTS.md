@@ -107,3 +107,14 @@ and authorization when delivering changes. Do not send messages to other people.
   default order and retain physical row offsets, blanks and original source data.
   Clipboard/export headings use heading_text to exclude sort arrows from cable IDs.
   Run tools/check_table_sort.py including its Windows click/edit/paste/trace gate.
+- V64 completeness tables use completion_check_groups to show each exact nonempty
+  core ID once, preserving every diagnostic/location in _check_items. Anonymous
+  slot/facility issues stay separate. Highest severity drives group filtering;
+  full reasons, source-location navigation and grouped CSV must remain available.
+  Do not suppress raw Store diagnostics or change completion/handoff policy.
+- Reviewed field-editor automatic defaults use field_auto_identity: both real
+  core IDs and nonempty names must match, including the actual outward routes
+  and supplied survey values. A name-only or ID-only match is insufficient.
+  Known conflicting state/signal requires review; blank values must not erase
+  known values. Manual reviewed correction remains available. Run completion,
+  field comparison and Windows smoke gates before publishing.
