@@ -59,6 +59,8 @@ def prepare_payload():
             baseline += field_marker + (ROOT / 'planning' / 'field_survey.py').read_text(encoding='utf-8')
         if version >= 62:
             baseline += '\n\n# BEGIN TELECOM FIELD COMPARISON\n' + (ROOT / 'planning' / 'field_compare.py').read_text(encoding='utf-8')
+        if version >= 67:
+            baseline += '\n\n# BEGIN TELECOM FIELD OVERLAY\n' + (ROOT / 'planning' / 'field_overlay.py').read_text(encoding='utf-8')
         if version >= 52:
             baseline += planning_marker + (ROOT / 'planning' / 'after_plan.py').read_text(encoding='utf-8')
         if version >= 66:

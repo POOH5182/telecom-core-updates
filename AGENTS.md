@@ -136,3 +136,24 @@ and authorization when delivering changes. Do not send messages to other people.
   changes. OK confirms the full ordered route; partial drafts never count done.
   Step 2 allocation is deliberately unspecified. Run tools/check_after_routes.py
   including its Windows list/map/NOK/draft/OK/reopen/CSV gate before publishing.
+
+- V67 field-first topology import lives in planning/field_overlay.py, bundled
+  after field_compare. The primary field survey action and Ctrl+S use its
+  preview/backup/atomic commit. Partial input preserves all unmentioned pairs;
+  only conflicting splices at the selected facility may change. Differing real
+  IDs never block this explicit topology overlay and are never rewritten by it.
+  Register blank newly observed slots as temporary cores, preserving existing
+  names, state, signal and real IDs. Do not propagate identities to remote slots.
+- Local OK/NOT OK belongs in each field_surveys record, keyed by connection with
+  evidence/topology/core-ID fingerprints. Never store it as a shared annotation.
+  GIS match is automatic OK only with matching current allocation and core IDs;
+  names are ignored. Missing/different evidence is NOT OK until manual review.
+  Manual OK requires locally coherent actual splices and IDs and becomes stale
+  after relevant changes. Preserve GIS snapshots and overlay before/after logs.
+- Overlay-enabled field completion uses local checks plus existing required-core
+  exclusions. Node endpoint columns and right-click decisions must remain local;
+  counts have an independent field_checks view toggle for canvas and SVG. Keep
+  terminal-enclosure exclusion and RN internal-port rules. Legacy additive APIs
+  remain for compatibility, but the user-facing field-save action uses overlay.
+  Run check_field_overlay.py including Windows UI, and the existing field,
+  completion, sorting and release gates before publication.

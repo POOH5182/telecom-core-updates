@@ -308,7 +308,7 @@ class FieldComparisonPanel(ttk.Frame):
     def show(self,row):
         if self.key!=row['key']:self.note.set(row.get('note',''))
         self.key=row['key']
-        self.status.set(row['baseline_relation']+' · '+row['treatment']+' · '+row['difference_text'])
+        self.status.set(row.get('local_status','')+' · '+row.get('local_reason','')+' · '+row['baseline_relation']+' · '+row['difference_text'])
         baseline=self.dialog.reference or {}
         field_set_text(self.texts[0],baseline.get('source','기준 없음')+' · '+baseline.get('time','')+'\n'+row['baseline_connection']+'\n\n'+row['baseline_detail'])
         field_set_text(self.texts[1],row['field_detail']+'\n\n차이\n'+('\n'.join(row['differences']) or row['reason'])+'\n\n관련 메모\n'+(row['related_notes'] or '없음'))
@@ -428,7 +428,7 @@ class FieldArchiveDialog(RememberedToplevel):
         for row in sorted(pending,key=lambda r:r['state']!='대기'):
             self.items.append(('pending',row));self.tree.insert('','end',iid=str(len(self.items)-1),values=('내역 배정'+row['state'],row['time'],row['core_id'],row.get('detail',''),row.get('review') or row['reason']))
         for row in reversed(record.get('corrections',[])):
-            self.items.append(('correction',row));self.tree.insert('','end',iid=str(len(self.items)-1),values=('연결·내역 수정',row['time'],' / '.join(dict.fromkeys(c['core_id'] for c in row.get('choices',{}).values())),f"변경 전 {len(row.get('preserved',[]))}개 위치 보존",row['reason']))
+            self.items.append(('correction',row));self.tree.insert('','end',iid=str(len(self.items)-1),values=(row.get('kind','연결·내역 수정'),row['time'],' / '.join(dict.fromkeys(c['core_id'] for c in row.get('choices',{}).values())),f"변경 전 {len(row.get('preserved',[]))}개 위치 보존",row['reason']))
         self.summary.set(f"배정대기 {sum(p['state']=='대기' for p in pending)}개 · 수정기록 {len(record.get('corrections',[]))}건 · 원래 내역은 처리 후에도 기록에 남습니다.")
         if self.items:self.tree.selection_set('0');self.pick()
 
@@ -439,6 +439,7 @@ class FieldArchiveDialog(RememberedToplevel):
         if kind=='pending':lines.extend(['원래 코어ID: '+row['core_id'],'처리: '+row['state'],'확인 근거: '+row.get('review','')]);saved=row.get('rows',[])
         else:
             for observed in row.get('survey',[]):lines.extend(['GIS: '+observed.get('baseline_connection',''),'현장: '+observed['observed'],'차이: '+observed.get('difference_text','')])
+            for change in row.get('changes',[]):lines.append(' · '.join(map(str,change)))
             saved=row.get('preserved',[])
         lines.append('\n변경 전 보존내역')
         for item in saved:lines.append(item.get('position','')+' : '+field_identity_text(item))

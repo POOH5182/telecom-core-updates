@@ -256,6 +256,7 @@ class FieldSurvey:
                             'status':'미확인','observed':'조사자료 없음','current':self.label(pair),'gis':'—','matching':False,'addition':False,'comparison':'미조사',
                             'core_ids':sorted({str(self.slots.get(s,{}).get('core_id') or '').strip() for s in pair}-{''}),
                             'reason':'조사표에 없는 기존 연결·사용 코어입니다. 현장에서 확인해 입력하세요.'})
+        results=field_local_enrich(self,results)
         return field_enrich_comparison(self,results) if compare else results
 
     def save(self,raw,gis_pairs=None):
@@ -363,7 +364,10 @@ def field_apply(store,node_id,keys,expected_revision,expected_generation):
 
 def field_summary(store,node_id,record=None):
     if not field_required(store,store.node(node_id)):return {'done':0,'pending':0,'issues':0,'total':0}
-    rows=[r for r in FieldSurvey(store,node_id,record).report(compare=False) if completion_scope(store,r['slots']) or r.get('errors')];counts=Counter(r['status'] for r in rows)
+    engine=FieldSurvey(store,node_id,record)
+    rows=[r for r in engine.report(compare=False) if completion_scope(store,r['slots']) or r.get('errors')];counts=Counter(r['status'] for r in rows)
+    if engine.record.get('overlay_mode'):
+        counts=Counter({'확인완료':sum(r['local_status']=='OK' for r in rows),'불일치':sum(r['local_status']!='OK' for r in rows)})
     preserved=sum(p.get('state')=='대기' and completion_policy(p.get('rows',[]),completion_kind(store))['required'] for p in (record or field_records(store).get(node_id,{})).get('pending_identities',[]))
     return {'done':counts['확인완료'],'pending':counts['미확인'],'issues':counts['불일치']+counts['이상']+preserved,'total':len(rows)+preserved}
 
@@ -373,11 +377,12 @@ def field_check_rows(store):
     for node in store.nodes():
         if not field_required(store,node):continue
         for row in FieldSurvey(store,node['id'],records.get(node['id'],{})).report(compare=False):
-            if row['status']=='확인완료' or (not row.get('errors') and not completion_scope(store,row['slots'])):continue
+            overlay=records.get(node['id'],{}).get('overlay_mode')
+            if (row['local_status']=='OK' if overlay else row['status']=='확인완료') or (not row.get('errors') and not completion_scope(store,row['slots'])):continue
             for core_id in row['core_ids'] or ['']:
                 slot=next((s for s in row['slots'] if (store.core(*s) or {}).get('core_id')==core_id),row['slots'][0] if row['slots'] else ('',''))
-                result.append({'level':'오류','category':'현장 '+row['status'],'location':node['name'],'target':'',
-                               'message':row['observed']+' · '+row['current']+' · '+row['reason'],
+                result.append({'level':'오류','category':'현장 '+(row['local_status'] if overlay else row['status']),'location':node['name'],'target':'',
+                               'message':row['observed']+' · '+row['current']+' · '+(row['local_reason'] if overlay else row['reason']),
                                'node_id':node['id'],'cable_id':slot[0],'core_index':slot[1],'core_id':core_id})
     for item in field_pending_identities(store):
         if not completion_policy(item.get('rows',[]),completion_kind(store))['required']:continue
@@ -465,7 +470,7 @@ class FieldSurveySheet(ttk.Frame):
         for row in rows:
             iid=str(row['row'])
             if iid=='1' or not self.tree.exists(iid):continue
-            tag='difference' if row['status'] in ('이상','불일치') else 'addition' if row.get('addition') else ''
+            tag='difference' if row.get('local_status')=='NOT OK' or row['status'] in ('이상','불일치') else 'addition' if row.get('addition') else ''
             self.tree.item(iid,tags=(tag,) if tag else ())
     def select_cell(self,event):
         iid=self.tree.identify_row(event.y);col=self.tree.identify_column(event.x)
@@ -555,7 +560,7 @@ class FieldSurveySheet(ttk.Frame):
 
 
 class FieldSurveyDialog(RememberedToplevel):
-    FILTERS=('전체','확인완료','미확인','불일치','이상','GIS와 다른 항목','수정 대기','수정·확인 완료')
+    FILTERS=('전체','OK','NOT OK','확인완료','미확인','불일치','이상','GIS와 다른 항목','수정 대기','수정·확인 완료')
     def __init__(self,parent,store,node_id):
         super().__init__(parent);self.app=top_app(parent);self.store=store;self.node_id=node_id
         self.generation=getattr(store,'_view_generation',0);self.rows=[];self.visible=[];self.token=None
@@ -567,14 +572,14 @@ class FieldSurveyDialog(RememberedToplevel):
         if store.node(node_id)['type']=='rn':headers.append('RN내부')
         raw=record.get('text') or field_table_text([headers])
         self.sheet=FieldSurveySheet(self,FieldSurvey(store,node_id,reference=self.reference),raw);self.sheet.pack(fill='both',expand=True,padx=8)
-        ttk.Label(self,text='비교만 저장: 연결·내역 유지, GIS와 현장 차이를 보관합니다. 행 선택 → 아래 GIS/현장/현재 비교 → 연결·내역 직접 수정. 수정 후에도 GIS 원본과 차이는 남습니다.',padding=(10,6),wraplength=1380).pack(fill='x')
+        ttk.Label(self,text='현장 선번 반영 → NOT OK 선택 → 양방향·GIS 내역 비교 → 연결·내역 직접 수정 → 선택 OK. 입력하지 않은 접속은 유지하며 신규 빈 배분은 임시코어로 등록합니다. OK는 이 함체에만 적용됩니다.',padding=(10,6),wraplength=1380).pack(fill='x')
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         ttk.Button(bar,text='비교만 저장',command=lambda:self.inspect(add_new=False)).pack(side='left',padx=3)
-        ttk.Button(bar,text='검사·저장 (신규 연결 추가)',command=self.inspect).pack(side='left',padx=3)
-        ttk.Button(bar,text='선택 확인',command=lambda:self.mark('확인')).pack(side='left',padx=3)
-        ttk.Button(bar,text='선택 미확인',command=lambda:self.mark('미확인')).pack(side='left',padx=3)
-        ttk.Button(bar,text='선택 이상표시',command=lambda:self.mark('이상')).pack(side='left',padx=3)
-        ttk.Button(bar,text='선택 현장대로 반영',command=self.apply_selected).pack(side='left',padx=8)
+        self.overlay_button=ttk.Button(bar,text='현장 선번 반영·저장',command=self.overlay);self.overlay_button.pack(side='left',padx=3)
+        ttk.Button(bar,text='선택 OK',command=lambda:self.mark('OK')).pack(side='left',padx=3)
+        ttk.Button(bar,text='선택 NOT OK',command=lambda:self.mark('NOT OK')).pack(side='left',padx=3)
+        ttk.Button(bar,text='NOT OK 사유',command=lambda:self.mark('NOT OK 메모')).pack(side='left',padx=3)
+        ttk.Button(bar,text='선택 선번만 반영',command=lambda:self.overlay(selected=True)).pack(side='left',padx=8)
         ttk.Button(bar,text='선택 행 표에서 수정',command=self.edit_selected).pack(side='left',padx=3)
         more=ttk.Frame(self,padding=(8,0,8,5));more.pack(fill='x')
         ttk.Button(more,text='선택 연결·내역 직접 수정',command=self.resolve_selected).pack(side='left',padx=3)
@@ -588,9 +593,9 @@ class FieldSurveyDialog(RememberedToplevel):
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
         columns=('status','treatment','gis','row','id','baseline','observed','current','reason')
         self.tree=SortableTreeview(frame,columns=columns,show='headings',selectmode='extended',height=7)
-        for col,label,width in zip(columns,('확인상태','처리상태','GIS 기준과 비교','조사행','현재 코어ID','GIS 기준 연결','현장 조사 연결','현재 도면 연결','다른 번호·확인내용'),(90,115,120,55,145,245,245,245,420)):
+        for col,label,width in zip(columns,('함체별 OK','처리상태','GIS 기준과 비교','조사행','현재 코어ID','GIS 기준 연결','현장 조사 연결','현재 도면 연결','다른 번호·확인내용'),(90,115,120,55,145,245,245,245,420)):
             self.tree.heading(col,text=label);self.tree.column(col,width=width,minwidth=60)
-        for status,ink in FIELD_COLORS.items():self.tree.tag_configure(status,foreground=ink)
+        for status,ink in dict(FIELD_COLORS,OK='#15803d',**{'NOT OK':'#c62828'}).items():self.tree.tag_configure(status,foreground=ink)
         self.tree.grid(row=0,column=0,sticky='nsew');frame.rowconfigure(0,weight=1);frame.columnconfigure(0,weight=1)
         y=ttk.Scrollbar(frame,orient='vertical',command=self.tree.yview);y.grid(row=0,column=1,sticky='ns')
         x=ttk.Scrollbar(frame,orient='horizontal',command=self.tree.xview);x.grid(row=1,column=0,sticky='ew');self.tree.configure(yscrollcommand=y.set,xscrollcommand=x.set)
@@ -608,7 +613,9 @@ class FieldSurveyDialog(RememberedToplevel):
         self.diagram.configure(xscrollcommand=dx.set,yscrollcommand=dy.set)
         self.bind('<Destroy>',self.cleanup,add='+');self.reload();self.sheet.tree.focus_set()
         self.sheet.on_change=self.draft_changed;self.protocol('WM_DELETE_WINDOW',self.close_dialog)
-        self.bind('<Control-s>',self.inspect);self.bind('<Control-Return>',self.inspect)
+        self.bind('<Control-s>',self.overlay);self.bind('<Control-Return>',self.overlay)
+
+    def overlay(self,event=None,selected=False):return field_overlay_dialog(self,event,selected)
 
     def valid(self,saved=False):
         if not self.app or self.app.store is not self.store or getattr(self.store,'_view_generation',0)!=self.generation:
@@ -641,13 +648,14 @@ class FieldSurveyDialog(RememberedToplevel):
         except ValueError as error:self.rows=[];self.summary.set(str(error));return
         self.token=self.store.data_revision();counts=Counter(row['status'] for row in self.rows)
         differences=sum(r['baseline_relation'] not in ('같음','미조사','기준 없음') for r in self.rows)
-        self.summary.set(' · '.join(f'{status} {counts[status]}' for status in self.FILTERS[1:5])+f' · 기준과 차이 {differences}건 · 기준: '+self.reference.get('source','없음'))
+        ok=sum(r['local_status']=='OK' for r in self.rows)
+        self.summary.set(f'이 함체 OK {ok} · NOT OK {len(self.rows)-ok} · 기준과 차이 {differences}건 · 기준: '+self.reference.get('source','없음'))
         self.show_rows(keep_keys);self.sheet.color_rows(self.rows)
 
     def draft_changed(self):
         try:self.rows=FieldSurvey(self.store,self.node_id,reference=self.reference).report(self.sheet.get_text())
         except ValueError as error:self.summary.set(str(error));return
-        self.summary.set('입력 수정 중 · 비교만 저장으로 연결·내역을 유지하며 조사 결과를 보관하세요. 빨간 차이는 나중에 선택해서 수정할 수 있습니다.')
+        self.summary.set('입력 수정 중 · 현장 선번 반영·저장으로 선번을 먼저 맞추세요. NOT OK 내역은 나중에 직접 수정·확인합니다. 비교만 저장은 조사값만 보관합니다.')
         self.show_rows();self.sheet.color_rows(self.rows)
 
     def close_dialog(self):
@@ -677,9 +685,11 @@ class FieldSurveyDialog(RememberedToplevel):
                 if row['baseline_relation'] in ('같음','미조사','기준 없음'):continue
             elif choice in ('수정 대기','수정·확인 완료'):
                 if row['treatment']!=choice:continue
+            elif choice in ('OK','NOT OK'):
+                if row['local_status']!=choice:continue
             elif choice!='전체' and row['status']!=choice:continue
             iid=str(len(self.visible));self.visible.append(row)
-            self.tree.insert('','end',iid=iid,values=(row['status'],row['treatment'],row['baseline_relation'],row['row'],' / '.join(row['core_ids']) or '(코어ID 없음)',row['baseline_connection'],row['observed'],row['current'],row['difference_text']),tags=(row['status'],))
+            self.tree.insert('','end',iid=iid,values=(row['local_status'],row['local_mode'],row['baseline_relation'],row['row'],' / '.join(row['core_ids']) or '(코어ID 없음)',row['baseline_connection'],row['observed'],row['current'],row['difference_text']+' · '+row['local_reason']),tags=(row['local_status'],))
             if keep_keys and row['key'] in keep_keys:self.tree.selection_add(iid)
         if not self.tree.selection() and self.visible:self.tree.selection_set('0')
         if not self.visible:self.comparison_panel.clear()
@@ -697,6 +707,13 @@ class FieldSurveyDialog(RememberedToplevel):
         try:
             self.valid(saved=True);keys={r['key'] for r in self.selected()}
             if not keys:raise ValueError('확인 상태를 바꿀 조사 행을 선택하세요.')
+            if action in ('OK','NOT OK','NOT OK 메모'):
+                note=''
+                if action=='NOT OK 메모':
+                    note=simpledialog.askstring('NOT OK 사유','이 함체에서 확인할 내용을 입력하세요.',parent=self)
+                    if note is None:return
+                field_local_mark(self.store,self.node_id,keys,'OK' if action=='OK' else 'NOT OK',self.token,self.generation,note)
+                self.app.refresh();self.reload();return
             note=''
             if action=='이상':
                 note=simpledialog.askstring('현장 이상','확인하지 못한 이유 또는 이상 내용을 입력하세요.',parent=self)
