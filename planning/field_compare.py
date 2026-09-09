@@ -141,34 +141,41 @@ def field_resolution_candidates(store,node_id,keys):
 
 
 def field_auto_identity(store,node_id,row):
-    """Read-only default for the reviewed editor: both ID AND name must agree."""
+    """Match real core IDs only; names are mutable metadata, not identity."""
     pair=row['slots']
     if row.get('errors') or len(pair)!=2:return None,'연결 선번 확인 필요'
     members=[store.core(*slot) for slot in pair]
     if any(not item for item in members):return None,'양쪽 코어정보 확인 필요'
     ids={str(item.get('core_id') or '').strip() for item in members}
-    names={str(item.get('detail') or '').strip() for item in members}
     if '' in ids or any(cid.startswith('임시-') for cid in ids):return None,'양쪽의 실제 코어ID 확인 필요'
     if len(ids)!=1:return None,'코어ID 다름 · 자동선택 보류'
-    if '' in names:return None,'코어명 빈칸 · 자동선택 보류'
-    if len(names)!=1:return None,'코어명 다름 · 자동선택 보류'
-    cid=next(iter(ids));name=next(iter(names))
-    if (row.get('input_core_id') and row['input_core_id']!=cid) or (row.get('input_detail') and row['input_detail']!=name):
-        return None,'조사표의 코어ID·코어명과 다름 · 자동선택 보류'
+    cid=next(iter(ids))
+    if row.get('input_core_id') and row['input_core_id']!=cid:
+        return None,'조사표의 코어ID와 다름 · 자동선택 보류'
     route=connection_route_report(store,node_id,*pair)
     if route['issues']:return None,'양방향 경로 확인 필요 · 자동선택 보류'
     scope={slot for side in route['sides'] for slot in side['slots']}
     records=[store.core(*slot) for slot in sorted(scope)]
-    if any(not item or (str(item.get('core_id') or '').strip(),str(item.get('detail') or '').strip())!=(cid,name) for item in records):
-        return None,'연결 경로의 코어ID·코어명과 다름 · 자동선택 보류'
+    if any(not item or str(item.get('core_id') or '').strip()!=cid for item in records):
+        return None,'연결 경로의 코어ID와 다름 · 자동선택 보류'
+    names={str(item.get('detail') or '').strip() for item in records}
+    survey_name=str(row.get('input_detail') or '').strip()
+    name=survey_name or str(members[0].get('detail') or '').strip()
+    # Without an explicit name, retain each slot's name rather than spreading
+    # one arbitrary name over a route whose IDs already agree.
+    preserve_names=not survey_name
     # The existing resolution action also copies state/signal; never choose
     # arbitrarily between different values on otherwise matching identities.
-    choice=dict(members[0]);choice.update(core_id=cid,detail=name)
+    choice=dict(members[0]);choice.update(core_id=cid,detail=name,preserve_names=preserve_names)
     for key in ('status1','status2','signal'):
         known={str(item.get(key) or '').strip() for item in records}-{'','unknown'}
         if len(known)>1:return None,'상태·신호가 달라 확인 필요'
         choice[key]=next(iter(known),'')
-    return choice,'양쪽 코어ID·코어명 모두 일치 · 자동선택'
+    note='양쪽 코어ID 일치 · 자동선택 (코어명은 동일 코어 판단에서 제외)'
+    note+='\n코어명: '+('조사표 입력명 사용 · '+survey_name if survey_name else '각 구간의 기존 이름 유지')
+    if len(names)>1 or (survey_name and names!={survey_name}):
+        note+='\n코어명 차이 (자동선택 가능):\n'+'\n'.join(store._slot_title(*slot)+' · '+(str(item.get('detail') or '').strip() or '(빈칸)') for slot,item in zip(sorted(scope),records))
+    return choice,note
 
 
 def field_resolve(store,node_id,choices,reason,expected_revision,expected_generation):
@@ -204,8 +211,13 @@ def field_resolve(store,node_id,choices,reason,expected_revision,expected_genera
                 if a in component and b in component:edges.append((a,b));degree.update((a,b))
             if len(edges)>=len(component) or any(n>2 for n in degree.values()):raise ValueError('현장 연결이 순환 또는 중복·분기 경로를 만듭니다. 선번을 다시 확인하세요.')
             for slot in component:
-                if slot in assigned and assigned[slot]!=values:raise ValueError('한 경로에 서로 다른 내역을 선택했습니다. 연결과 사용할 내역을 함께 확인하세요.')
-                assigned[slot]=values
+                slot_values=values
+                if choice.get('preserve_names'):
+                    old=store.core(*slot)
+                    if not old:raise ValueError('없는 케이블·포트가 연결에 포함되어 있습니다.')
+                    slot_values=(values[0],str(old.get('detail') or ''),*values[2:])
+                if slot in assigned and assigned[slot]!=slot_values:raise ValueError('한 경로에 서로 다른 내역을 선택했습니다. 연결과 사용할 내역을 함께 확인하세요.')
+                assigned[slot]=slot_values
         for slot,values in sorted(assigned.items()):
             old=store.core(*slot)
             if not old:raise ValueError('없는 케이블·포트가 연결에 포함되어 있습니다.')
@@ -322,7 +334,7 @@ class FieldResolutionDialog(RememberedToplevel):
         super().__init__(parent);self.parent=parent;self.app=parent.app;self.store=parent.store;self.node_id=parent.node_id
         self.rows=rows;self.choices={};self.auto_notes={};self.previous_grab=self.grab_current();self.generation=self.store._view_generation;self.revision=self.store.data_revision()
         self.title('현장 비교 · 사용할 내역 선택 후 연결 수정');self.geometry('1260x810');self.minsize(950,650);self.transient(parent);self.grab_set()
-        ttk.Label(self,text='자동 내역선택은 양쪽 코어ID와 코어명이 모두 같을 때만 합니다. 다르거나 빈칸이면 직접 지정하세요. 서로 바뀐 번호는 관련 행을 함께 선택해 수정합니다. 기존 GIS·변경 전 내역은 보존됩니다.',padding=10,wraplength=1180).pack(fill='x')
+        ttk.Label(self,text='자동 내역선택은 코어ID만 비교합니다. 이름이 다르거나 비어 있어도 같은 ID면 선택합니다. 조사표에 이름을 넣었으면 그 이름을 사용하고, 없으면 구간별 기존 이름을 유지합니다. 코어명을 직접 지정하면 선택한 연결 경로에 적용합니다. 서로 바뀐 번호는 관련 행을 함께 선택하세요. GIS·변경 전 내역은 보존됩니다.',padding=10,wraplength=1180).pack(fill='x')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
         self.tree=SortableTreeview(frame,columns=('row','link','old','id','detail'),show='headings',height=7)
         for col,title,width in zip(('row','link','old','id','detail'),('조사행','현장 연결','현재 코어ID','사용할 코어ID','사용할 코어명'),(65,370,220,170,280)):
@@ -347,7 +359,8 @@ class FieldResolutionDialog(RememberedToplevel):
             candidate,note=field_auto_identity(self.store,self.node_id,row);self.auto_notes[row['key']]=note
             if candidate:self.choices[row['key']]=candidate
             choice=self.choices.get(row['key'],{})
-            self.tree.insert('','end',iid=str(index),values=(row['row'],row['observed'],' / '.join(row['core_ids']),choice.get('core_id','선택 필요'),choice.get('detail','')))
+            detail='구간별 기존 코어명 유지' if choice.get('preserve_names') else choice.get('detail','')
+            self.tree.insert('','end',iid=str(index),values=(row['row'],row['observed'],' / '.join(row['core_ids']),choice.get('core_id','선택 필요'),detail))
         if rows:self.tree.selection_set('0');self.pick()
         self.bind('<Escape>',lambda e:self.destroy())
 
@@ -367,7 +380,7 @@ class FieldResolutionDialog(RememberedToplevel):
         cid=self.id_var.get().strip()
         if not cid:messagebox.showwarning('내역 지정','사용할 코어ID를 선택하거나 입력하세요.',parent=self);return
         row=self.rows[int(selected[0])];choice=dict(self.base) if self.base.get('core_id')==cid else {}
-        choice.update(core_id=cid,detail=self.detail_var.get().strip());self.choices[row['key']]=choice
+        choice.pop('preserve_names',None);choice.update(core_id=cid,detail=self.detail_var.get().strip());self.choices[row['key']]=choice
         values=list(self.tree.item(selected[0],'values'));values[-2:]=[cid,choice['detail']];self.tree.item(selected[0],values=values)
         self.auto_notes[row['key']]='사용자가 내역 직접 지정';self.pick()
 

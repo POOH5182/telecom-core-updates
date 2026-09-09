@@ -112,9 +112,12 @@ and authorization when delivering changes. Do not send messages to other people.
   slot/facility issues stay separate. Highest severity drives group filtering;
   full reasons, source-location navigation and grouped CSV must remain available.
   Do not suppress raw Store diagnostics or change completion/handoff policy.
-- Reviewed field-editor automatic defaults use field_auto_identity: both real
-  core IDs and nonempty names must match, including the actual outward routes
-  and supplied survey values. A name-only or ID-only match is insufficient.
+- V65 reviewed field-editor automatic defaults use field_auto_identity: match
+  real core IDs only, including actual outward routes and supplied survey IDs.
+  Different or blank names never block identity matching. An explicit survey
+  name is the proposed name; without one, preserve each affected slot's name.
+  Show name differences and the naming policy in the reviewed editor. Explicit
+  manual name assignment clears preserve_names and is previewed on the route.
   Known conflicting state/signal requires review; blank values must not erase
   known values. Manual reviewed correction remains available. Run completion,
   field comparison and Windows smoke gates before publishing.

@@ -36,33 +36,65 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(self.store.core(self.left,4)['core_id'],'')
         snapshot=self.snapshot();wf.FieldSurvey(self.store,self.h).report();self.assertEqual(self.snapshot(),snapshot)
 
-    def test_automatic_choice_requires_both_real_id_and_nonempty_name_to_match(self):
+    def test_automatic_choice_matches_real_ids_despite_different_or_empty_names(self):
         self.save('A\tB\n1\t1');s=self.store
         row=self.rows()[0];before=self.snapshot()
         candidate,note=wf.field_auto_identity(s,self.h,row)
         self.assertEqual((candidate['core_id'],candidate['detail']),('ID-1','1번 회선'))
         self.assertEqual(candidate['signal'],'on') # A blank opposite side must not erase a known signal.
-        self.assertIn('모두 일치',note);self.assertEqual(self.snapshot(),before)
-        for cid,name in [('ID-1','다른 회선'),('OTHER','1번 회선'),('ID-1',''),('','1번 회선')]:
+        self.assertTrue(candidate['preserve_names'])
+        self.assertIn('코어ID 일치',note);self.assertEqual(self.snapshot(),before)
+        for cid,name,accepted in [('ID-1','다른 회선',True),('OTHER','1번 회선',False),('ID-1','',True),('','1번 회선',False)]:
             with self.subTest(cid=cid,name=name):
                 # Simulate inconsistent imported records without the normal
                 # component editor already coalescing their metadata.
                 s.conn.execute('UPDATE cores SET core_id=?,detail=? WHERE cable_id=? AND core_index=1',(cid,name,self.right));s.conn.commit()
                 before=self.snapshot();choice,note=wf.field_auto_identity(s,self.h,self.rows()[0])
-                self.assertIsNone(choice);self.assertEqual(self.snapshot(),before)
+                self.assertEqual(choice is not None,accepted);self.assertEqual(self.snapshot(),before)
+                if accepted:
+                    self.assertTrue(choice['preserve_names']);self.assertIn('코어명 차이',note)
         s.conn.execute("UPDATE cores SET core_id='ID-1',detail='' WHERE core_index=1");s.conn.commit()
+        choice,note=wf.field_auto_identity(s,self.h,self.rows()[0])
+        self.assertEqual((choice['core_id'],choice['detail']),('ID-1',''))
+        s.conn.execute("UPDATE cores SET core_id='임시-1' WHERE core_index=1");s.conn.commit()
         self.assertIsNone(wf.field_auto_identity(s,self.h,self.rows()[0])[0])
 
-    def test_automatic_choice_checks_survey_values_and_the_outward_route(self):
+    def test_automatic_choice_checks_survey_ids_and_outward_route_ids(self):
         self.save('A\tB\n1\t1');s=self.store;row=self.rows()[0]
-        self.assertIsNone(wf.field_auto_identity(s,self.h,dict(row,input_detail='현장 다른 이름'))[0])
+        choice,note=wf.field_auto_identity(s,self.h,dict(row,input_detail='현장 다른 이름'))
+        self.assertEqual(choice['detail'],'현장 다른 이름');self.assertFalse(choice['preserve_names'])
+        self.assertIn('조사표 입력명 사용',note)
         self.assertIsNone(wf.field_auto_identity(s,self.h,dict(row,input_core_id='OTHER'))[0])
         end=s.add_node('더 먼 끝',-300,0);tail=s.add_cable(end,self.a,'TAIL','6C','기설')
         s.connect(self.a,(tail,1),(self.left,1))
         self.assertIsNotNone(wf.field_auto_identity(s,self.h,row)[0])
         s.conn.execute('UPDATE cores SET detail=? WHERE cable_id=? AND core_index=1',('먼 구간의 다른 이름',tail));s.conn.commit()
         before=self.snapshot();choice,note=wf.field_auto_identity(s,self.h,row)
-        self.assertIsNone(choice);self.assertIn('연결 경로',note);self.assertEqual(self.snapshot(),before)
+        self.assertIsNotNone(choice);self.assertIn('먼 구간의 다른 이름',note);self.assertEqual(self.snapshot(),before)
+        s.conn.execute("UPDATE cores SET signal='off' WHERE cable_id=? AND core_index=1",(tail,));s.conn.commit()
+        self.assertIsNone(wf.field_auto_identity(s,self.h,row)[0])
+        s.conn.execute("UPDATE cores SET signal='',core_id='OTHER' WHERE cable_id=? AND core_index=1",(tail,));s.conn.commit()
+        self.assertIsNone(wf.field_auto_identity(s,self.h,row)[0])
+
+    def test_id_only_choice_preserves_each_name_and_survey_rename_is_audited_and_undoable(self):
+        s=self.store
+        s.conn.execute('UPDATE cores SET detail=? WHERE cable_id=? AND core_index=1',('다른 구간 이름',self.right));s.conn.commit()
+        self.save('A\tB\n1\t1');row=self.rows()[0]
+        choice,note=wf.field_auto_identity(s,self.h,row)
+        wf.field_commit_resolution(s,wf.field_resolution_preview(s,self.h,{row['key']:choice},'같은 코어ID 확인'))
+        self.assertEqual([s.core(c,1)['detail'] for c in (self.left,self.right)],['1번 회선','다른 구간 이름'])
+        self.save('코어ID\t코어명\t회선번호\t회선명\t가입자명\t중요여부\tA\tB\nID-1\t현장 변경명\t\t\t\t\t1\t1')
+        row=self.rows()[0];choice,note=wf.field_auto_identity(s,self.h,row)
+        self.assertEqual(choice['detail'],'현장 변경명');self.assertFalse(choice['preserve_names'])
+        before=self.snapshot();preview=wf.field_resolution_preview(s,self.h,{row['key']:choice},'현장 명칭 변경 확인')
+        self.assertEqual(self.snapshot(),before)
+        self.assertEqual({r['detail'] for r in preview['preserved']},{'1번 회선','다른 구간 이름'})
+        result=wf.field_commit_resolution(s,preview);self.assertTrue(result['backup'].exists())
+        self.assertEqual([s.core(c,1)['detail'] for c in (self.left,self.right)],['현장 변경명']*2)
+        self.assertEqual({r['detail'] for r in wf.field_records(s)[self.h]['corrections'][-1]['preserved']},{'1번 회선','다른 구간 이름'})
+        self.assertEqual(wf.field_reference(s),before[2]);self.assertEqual(self.rows()[0]['status'],'확인완료')
+        after=(wf.plan_snapshot(s.conn),wf.field_records(s));s.undo();self.assertEqual((wf.plan_snapshot(s.conn),wf.field_records(s)),before[:2])
+        s.redo();self.assertEqual((wf.plan_snapshot(s.conn),wf.field_records(s)),after)
 
     def test_swapped_real_ids_are_explicit_atomic_and_keep_original_annotations(self):
         s=self.store;self.save('A\tB\n1\t2\n2\t1\n3\t3');choices=self.swap_choices()
@@ -181,7 +213,13 @@ def windows_ui():
                 auto=wf.FieldResolutionDialog(dialog,[matching]);app.update()
                 assert auto.choices[matching['key']]['core_id']=='ID-3'
                 assert auto.choices[matching['key']]['detail']=='3번 회선'
-                assert '코어ID·코어명 모두 일치' in auto.evidence.get('1.0','end');auto.destroy()
+                assert auto.choices[matching['key']]['preserve_names']
+                assert '코어ID 일치' in auto.evidence.get('1.0','end')
+                assert auto.tree.item('0','values')[-1]=='구간별 기존 코어명 유지'
+                auto.detail_var.set('수동 변경명');auto.assign();app.update()
+                assert not auto.choices[matching['key']].get('preserve_names')
+                assert auto.choices[matching['key']]['detail']=='수동 변경명'
+                assert auto.tree.item('0','values')[-1]=='수동 변경명';auto.destroy()
                 panel.note.set('A1은 B2 · 현장 ID-1 확인');panel.save_note();app.update()
                 dialog.tree.selection_set(('0','1'));app.update();dialog.resolve_selected();app.update()
                 editor=next(w for w in dialog.winfo_children() if isinstance(w,wf.FieldResolutionDialog))
