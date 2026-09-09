@@ -79,7 +79,7 @@ class AfterPlanner:
     def token(self):
         current, _, before, _, data = self.snapshot()
         return digest([plan_content_hash(current), plan_content_hash(before) if before else None,
-                       data['plans'], data['fixed_slots'], data['fixed_ids']])
+                       data['plans'], data['fixed_slots'], data['fixed_ids'],data.get('route_step',{})])
 
     @staticmethod
     def core_record(net, core_id):
@@ -175,7 +175,7 @@ class AfterPlanner:
         for row in capacity:
             if row['shortage']: global_issues.append(row['label']+f": 계획 용량 {row['shortage']}코어 부족")
         token = digest([plan_content_hash(current), plan_content_hash(before) if before else None,
-                        data['plans'], data['fixed_slots'], data['fixed_ids']])
+                        data['plans'], data['fixed_slots'], data['fixed_ids'],data.get('route_step',{})])
         stages = [data['stages'].get(name, {}).get('token') == token for name in PLAN_STAGES]
         done = sum(r['complete'] for r in rows)
         connection_ready=connections['done']==connections['total']
@@ -265,6 +265,7 @@ class AfterPlanner:
     def final_check(self, expected):
         report=self.report()
         if report['token']!=expected: raise ValueError('도면이 바뀌었습니다. 다시 점검하세요.')
+        if not AfterRoutePlanner(self.app).summary()['ready']:raise ValueError('1단계에서 모든 필수 코어의 케이블 경로를 OK로 확정하세요.')
         if not report['ready'] or not all(report['stages']): raise ValueError('전체 점검과 단계 확인을 모두 마쳐야 최종 완료를 기록할 수 있습니다.')
         data=report['data']; data['final']=dict(token=expected,time=now(),total=report['total'])
         previous=copy.deepcopy(plan_settings(self.store).get('final'))
@@ -494,19 +495,20 @@ class AfterPlanDialog(RememberedToplevel):
             messagebox.showinfo('후도면 작업실','먼저 상단의 「4 후도면 작성」을 눌러 후도면으로 전환하세요.',parent=app)
             return
         super().__init__(app);self.app=app;self.service=AfterPlanner(app);self.proposal=None
-        self.title('후도면 작업실 · 계획 → 점검 → 재배치 → 최종 작업표')
+        self.title('후도면 작업실 · 1 케이블 경로 설정 → 2 코어 배분')
         self.geometry('1340x820');self.minsize(960,620);self.transient(app)
         self.store_identity=(id(app.store),str(app.store.path));self.grab_set()
         self.summary=tk.StringVar();self.filter=tk.StringVar(value='전체');self.query=tk.StringVar()
         top=ttk.Frame(self,padding=10);top.pack(fill='x')
         ttk.Label(top,textvariable=self.summary,font=('Malgun Gothic',11,'bold')).pack(side='left')
         ttk.Button(top,text='전체 다시 점검',command=lambda:self.run(self.refresh)).pack(side='right')
-        ttk.Label(self,text='재배치는 코어번호만 이동하며 기존 접속을 유지합니다. 전후 경로 색상: 전도면 파랑 · 후도면 주황.',padding=(10,0)).pack(fill='x')
+        ttk.Label(self,text='현재 진행: 1단계 케이블 경로 설정. 코어 배분은 경로를 모두 정한 뒤 진행합니다.',padding=(10,0)).pack(fill='x')
         self.tabs=ttk.Notebook(self);self.tabs.pack(fill='both',expand=True,padx=10,pady=8)
         self.pages={};self.tables={};self.headers={};self.values={}
-        for name in ('진행 단계','작업계획·전후 비교','전체 점검','용량·선번 고정','재배치 미리보기','시설별 작업표'):
+        for name in ('1 케이블 경로','진행 단계','작업계획·전후 비교','전체 점검','용량·선번 고정','재배치 미리보기','시설별 작업표'):
             frame=ttk.Frame(self.tabs,padding=8);self.pages[name]=frame;self.tabs.add(frame,text=name)
         self.build_stages();self.build_compare();self.build_check();self.build_locks();self.build_preview();self.build_orders()
+        self.route_panel=AfterRoutePanel(self.pages['1 케이블 경로'],self);self.route_panel.pack(fill='both',expand=True)
         bottom=ttk.Frame(self,padding=(10,0,10,10));bottom.pack(fill='x')
         ttk.Button(bottom,text='현재 표 CSV 저장',command=lambda:self.run(self.export_table)).pack(side='left')
         ttk.Button(bottom,text='최종 완료 확인·저장',command=lambda:self.run(self.finish)).pack(side='right')
@@ -536,12 +538,19 @@ class AfterPlanDialog(RememberedToplevel):
 
     def build_stages(self):
         page=self.pages['진행 단계'];self.stage_labels=[]
+        first=ttk.LabelFrame(page,text='1. 연결할 코어별 케이블 경로 설정',padding=8);first.pack(fill='x',pady=4)
+        self.route_stage_status=tk.StringVar(value='경로 목록을 불러오는 중');ttk.Label(first,textvariable=self.route_stage_status).pack(side='left')
+        ttk.Button(first,text='코어 목록·최소경로 열기',command=lambda:self.tabs.select(self.pages['1 케이블 경로'])).pack(side='right')
+        second=ttk.LabelFrame(page,text='2. 코어 배분',padding=8);second.pack(fill='x',pady=4)
+        ttk.Label(second,text='1단계에서 전체 코어 경로를 정한 뒤 진행합니다. 배분 방식은 다음 작업에서 정합니다.').pack(anchor='w')
+        legacy=ttk.LabelFrame(page,text='기존 최종 점검 도구',padding=4);legacy.pack(fill='x',pady=5)
         for idx,name in enumerate(PLAN_STAGES):
-            frame=ttk.LabelFrame(page,text=f'{idx+1}. {name}',padding=10);frame.pack(fill='x',pady=4)
+            frame=ttk.Frame(legacy,padding=3);frame.pack(fill='x',pady=1)
+            ttk.Label(frame,text=name,width=25).pack(side='left')
             label=ttk.Label(frame,text='미확인');label.pack(side='left');self.stage_labels.append(label)
             ttk.Button(frame,text='이 단계 확인',command=lambda n=name:self.run(lambda:self.mark(n))).pack(side='right')
-        self.notice=tk.Text(page,height=7,wrap='word',font=('Malgun Gothic',10));self.notice.pack(fill='both',expand=True,pady=8)
-        self.notice.insert('1.0','1. 입력 자료·오류·예외 사유를 정리합니다.\n2. 유지·폐지·제외 구분과 목표 케이블·끝단을 계획합니다.\n3. 전체 점검에서 누락·끊김·배정 차이를 해결하고 전후 변경을 확인합니다.\n4. 기준 케이블·고정 선번을 지정하고 재배치안을 검토합니다. 필요 없으면 현재 선번을 유지해도 됩니다.\n5. 시설별 해체·접속·끝단 작업표를 검토하고 최종 완료를 저장합니다.\n\n도면·전도면 기준본·계획·고정 조건이 바뀌면 완료 확인은 재확인 상태가 됩니다. 재배치는 전체 실행취소 1회로 되돌릴 수 있습니다. 최종 저장 뒤 클라우드 전송 상태는 주 화면에서 확인하세요.')
+        self.notice=tk.Text(page,height=5,wrap='word',font=('Malgun Gothic',10));self.notice.pack(fill='both',expand=True,pady=8)
+        self.notice.insert('1.0','1단계는 케이블 경로를 계획하는 단계입니다. 실제 코어번호와 접속은 그대로입니다.\n코어를 선택하면 기존 구간을 모두 포함하는 최소 추가 케이블 경로를 보여 줍니다. OK로 확정하거나 NOK 후 직접 경로를 순서대로 지정하세요.\n모든 필수 코어를 OK로 확정하면 1단계 완료입니다. 경로 확정률과 실제 코어 연결 완료율은 별도입니다.\n\n기존 점검·용량·재배치·작업표 도구도 다른 탭에서 열 수 있습니다. 최종 완료에는 실제 연결과 기존 점검도 모두 필요합니다.')
         self.notice.configure(state='disabled')
 
     def build_compare(self):
@@ -596,6 +605,7 @@ class AfterPlanDialog(RememberedToplevel):
 
     def refresh(self):
         self.report=self.service.report();r=self.report
+        self.route_panel.reload()
         self.summary.set("필수 코어 연결 "+completion_rate_text(r["connection"])+f" · 집계 제외 {r['connection']['excluded']}개 · 작업 검토 {r['done']}/{r['total']} · 공통 오류 {len(r['issues'])}건")
         for i,label in enumerate(self.stage_labels):label.configure(text='✓ 확인 완료' if r['stages'][i] else '○ 미확인 / 변경 시 재확인',foreground='#1b5e20' if r['stages'][i] else '#9a6700')
         self.issue_text.configure(state='normal');self.issue_text.delete('1.0','end');self.issue_text.insert('1.0','\n'.join(r['issues']) or '공통 구조 오류 없음. 아래 코어별 항목도 확인하세요.');self.issue_text.configure(state='disabled')
@@ -714,11 +724,20 @@ class AfterPlanDialog(RememberedToplevel):
 
     def export_table(self):
         name=self.tabs.tab(self.tabs.select(),'text')
+        if name=='1 케이블 경로':
+            self.route_panel.require_current() if self.route_panel.problem else None
+            path=filedialog.asksaveasfilename(parent=self,title='코어별 케이블 경로 저장',defaultextension='.csv',initialfile='후도면_1단계_케이블경로.csv',filetypes=[('Excel CSV','*.csv')])
+            if path:plan_export_csv(path,('상태','코어ID','코어명','지정 방법','시설 순서','케이블 순서'),self.route_panel.export_rows())
+            return
         key={'작업계획·전후 비교':'compare','전체 점검':'check','용량·선번 고정':'capacity','재배치 미리보기':'preview','시설별 작업표':'orders'}.get(name)
         if not key:raise ValueError('저장할 표가 있는 탭을 선택하세요.')
         if self.report['token']!=self.service.token():raise ValueError('도면이 변경되었습니다. 다시 점검한 뒤 저장하세요.')
         path=filedialog.asksaveasfilename(parent=self,title='현재 표시한 표 저장',defaultextension='.csv',initialfile=name+'.csv',filetypes=[('Excel CSV','*.csv')])
         if path:plan_export_csv(path,self.headers[key],self.values.get(key,[]));messagebox.showinfo('CSV 저장','현재 필터에 표시된 표를 저장했습니다.',parent=self)
+
+    def destroy(self):
+        if getattr(self.app,'highlight_owner',None) is self:self.app.stop_highlight_blink(clear=True)
+        super().destroy()
 
 
 class PlanEditor(RememberedToplevel):

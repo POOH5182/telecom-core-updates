@@ -121,3 +121,18 @@ and authorization when delivering changes. Do not send messages to other people.
   Known conflicting state/signal requires review; blank values must not erase
   known values. Manual reviewed correction remains available. Run completion,
   field comparison and Windows smoke gates before publishing.
+- V66 after step 1 lives in planning/after_routes.py, bundled after after_plan.
+  List mandatory after cores once per ID using completion policy, retaining
+  missing before identities and anonymous signal/expected-cancellation slots.
+  Match core IDs only. Keep actual connected components intact; search active
+  cables for a simple facility path covering every component. Minimize added
+  cable segment count (no measured length exists). Never call a limited or
+  partial search result a minimum; ambiguous ends require explicit selection.
+- Cable route decisions, NOK evidence and manual drafts are stored in
+  workflow_state.project.after_plan.route_step. This step must never assign
+  core numbers, rewire splices, mutate existing identities or change baseline
+  drawings. Keep stale guards, grouped history and cloud bundle preservation.
+  Recheck confirmed routes after graph/topology changes, not name/layout-only
+  changes. OK confirms the full ordered route; partial drafts never count done.
+  Step 2 allocation is deliberately unspecified. Run tools/check_after_routes.py
+  including its Windows list/map/NOK/draft/OK/reopen/CSV gate before publishing.

@@ -61,6 +61,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM FIELD COMPARISON\n' + (ROOT / 'planning' / 'field_compare.py').read_text(encoding='utf-8')
         if version >= 52:
             baseline += planning_marker + (ROOT / 'planning' / 'after_plan.py').read_text(encoding='utf-8')
+        if version >= 66:
+            baseline += '\n\n# BEGIN TELECOM AFTER ROUTES\n' + (ROOT / 'planning' / 'after_routes.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()

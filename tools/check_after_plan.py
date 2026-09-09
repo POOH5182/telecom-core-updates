@@ -146,6 +146,10 @@ class PlannerTest(unittest.TestCase):
     def test_stage_invalidation_final_save_and_orders(self):
         r=self.service.report()
         with self.assertRaises(ValueError):self.service.final_check(r['token'])
+        routes=wf.AfterRoutePlanner(self.app)
+        for row in routes.summary()['rows']:
+            problem=routes.problem(row['key']);proposal=routes.recommend(problem)
+            self.assertTrue(proposal['ok'],proposal);routes.save(problem,proposal,'ok')
         for name in wf.PLAN_STAGES:self.service.mark_stage(name,self.service.report()['token'])
         self.service.final_check(self.service.report()['token']);self.assertTrue(self.app.saved)
         self.assertTrue(self.service.report()['final'])
@@ -190,7 +194,7 @@ def windows_ui():
             app.save_current_drawing(silent=True)
             with patch.object(code['messagebox'],'askyesno',return_value=True):assert app.load_scenario('after')
             dialog=wf.AfterPlanDialog(app);app.update()
-            assert len(dialog.tabs.tabs())==6
+            assert len(dialog.tabs.tabs())==7
             assert dialog.report['total']==1
             for tab in dialog.tabs.tabs():dialog.tabs.select(tab);app.update()
             dialog.tables['compare'].selection_set('0');dialog.show_detail('compare')
