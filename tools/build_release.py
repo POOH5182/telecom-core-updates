@@ -65,6 +65,8 @@ def prepare_payload():
             baseline += planning_marker + (ROOT / 'planning' / 'after_plan.py').read_text(encoding='utf-8')
         if version >= 66:
             baseline += '\n\n# BEGIN TELECOM AFTER ROUTES\n' + (ROOT / 'planning' / 'after_routes.py').read_text(encoding='utf-8')
+        if version >= 72:
+            baseline += '\n\n# BEGIN TELECOM FIELD SLOTS\n' + (ROOT / 'planning' / 'field_slots.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()

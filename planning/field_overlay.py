@@ -19,6 +19,7 @@ def field_new_blank_pair(engine,before,pair):
 
 
 def field_local_enrich(engine,rows):
+    if field_slot_mode(engine.store):return field_slot_enrich(engine,rows)
     before=FieldReference(engine.reference,engine.node_id)
     pending=[r for r in rows if r['source']=='조사표' and not r['errors'] and not field_topology_matches(engine,r['slots'])]
     # Include a GIS-only connection if no current/observed item represents it.
@@ -110,6 +111,10 @@ def field_local_mark(store,node_id,keys,status,expected_revision,expected_genera
     if not keys or len(rows)!=len(set(keys)):raise ValueError('확인할 접속을 다시 선택하세요.')
     if status=='OK' and any(not r['local_match'] for r in rows):
         raise ValueError('현재 선번과 양쪽 코어ID를 먼저 맞추세요. 「선택 연결·내역 직접 수정」에서 내역을 지정할 수 있습니다.')
+    if status=='OK' and field_slot_mode(store):
+        audit=field_slot_audit(store)
+        if any(not audit['by_slot'].get(s,{}).get('confirmed') for r in rows for s in r['slots']):
+            raise ValueError('「선택 경로 내역·최종 확정」에서 코어ID·코어명을 확정하세요.')
     with store.action('함체별 현장 '+status):
         engine.record['overlay_mode']=True
         checks=engine.record.setdefault('local_checks',{})
@@ -145,6 +150,7 @@ def field_overlay_input(store,node_id,raw,reference=None,keys=None):
 
 def field_overlay_apply(store,node_id,raw,revision,generation,reference=None,keys=None):
     """Persist comparisons; only add new blank pairs, never replace a splice."""
+    if field_slot_mode(store):return field_slot_overlay(store,node_id,raw,revision,generation,reference,keys)
     field_overlay_guard(store,node_id,revision,generation)
     reference=field_reference(store) or reference or field_capture_reference(store.conn,'조사 시작 도면 (GIS 기준본 없음)')
     engine,merged,selected=field_overlay_input(store,node_id,raw,reference,keys)
@@ -217,13 +223,14 @@ def field_overlay_dialog(dialog,event=None,selected=False):
         keys={r['key'] for r in dialog.selected()} if selected else None
         preview=field_overlay_preview(dialog.store,dialog.node_id,dialog.sheet.get_text(),dialog.reference,keys)
         previous=dialog.grab_current()
-        review=TableDialog(dialog,'현장 조사 저장 · GIS 선번 유지',('처리','케이블·코어번호','내용'),preview['changes'],'조사 저장 · 불일치 보류')
+        slot_mode=field_slot_mode(dialog.store)
+        review=TableDialog(dialog,'현장 선번 적용 · 케이블별 내역 유지' if slot_mode else '현장 조사 저장 · GIS 선번 유지',('처리','케이블·코어번호','내용'),preview['changes'],'확인한 현장 선번 적용' if slot_mode else '조사 저장 · 불일치 보류')
         review.enable_space_action();dialog.wait_window(review)
         if previous is not None and previous.winfo_exists():previous.grab_set()
         if not review.accepted:return 'break'
         dialog.valid();result=field_overlay_commit(dialog.store,preview)
         dialog.sheet.set_text(result['text']);dialog.app.refresh();dialog.reload()
-        dialog.summary.set(f"조사 {result['observed']}건 저장 · 현장 선번 미반영 {result['deferred']}건 · 임시코어 자동 OK {result['auto_ok']}건 · "+dialog.summary.get())
+        dialog.summary.set((f"현장 선번 {result['observed']}건 적용 · 내역 이동 후 최종 확정하세요. · " if slot_mode else f"조사 {result['observed']}건 저장 · 현장 선번 미반영 {result['deferred']}건 · 임시코어 자동 OK {result['auto_ok']}건 · ")+dialog.summary.get())
     except (ValueError,sqlite3.Error,OSError) as error:
         messagebox.showerror('현장 선번 반영',str(error),parent=dialog)
     return 'break'

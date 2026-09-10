@@ -197,3 +197,32 @@ and authorization when delivering changes. Do not send messages to other people.
   incomplete label is red (#c62828) when total minus done is positive; zero uses
   the existing metric color. Keep the stage completion policy and other colors.
   The title is work_progress_text and the percentage is work_progress_rate.
+
+- V72 new field drawings store meta.field_identity_policy=cable_slots_v72.
+  planning/field_slots.py owns this workflow, bundled after after_routes. The
+  mode is per drawing, only active in before, and never inferred from version.
+  Existing V71 field drawings retain their earlier behavior. New GIS derivatives
+  preserve original slots/metadata/locks and frozen GIS evidence but initialize
+  without splices, survey entries or the previous drawing's undo journal.
+- In this mode field input writes local topology despite different real IDs.
+  Never propagate identities, names or signal through ordinary connections or
+  slot edits; disable automatic ID/number splicing. Blank observed slots become
+  neutral temporary cores. Preserve unmentioned field observations/connections.
+- Audit actual components including neutral temporary IDs. Known signals must
+  agree; unknown is neutral. Real IDs, names or ON signal create mandatory targets,
+  without legacy annotation exemptions. Required paths need distinct valid ends,
+  coherent IDs/signals, and explicit fingerprinted final ID/name confirmation.
+  Pending unconnected GIS placements must not prevent reviewing the actual path,
+  but continue to prevent 100% until allocated or explicitly cleaned up.
+- Slot moves swap ID/name only by default, optionally state/signal; never change
+  splices. Finalization assigns the confirmed ID/name within the reviewed actual
+  component only. Cleanup may clear matching-ID unconnected waiting identities,
+  preserving state/signal. Never clear a different ID, a linked or observed slot,
+  an independently complete path, or ON signal. Show every affected slot before
+  commit; protect locks, revision/generation, backups, atomic history and GIS.
+- _windowsFieldSlotsV72 preserves independent per-slot state/signal, the policy
+  and frozen reference through legacy JSON whose global ID maps cannot represent
+  those differences. Scenario switching preserves slot moves and confirmations.
+- Run check_field_slots.py with its real Windows copy/Excel/move/confirm/JSON/
+  phase gate. legacy_field_fixture.py prepares already-saved V71 snapshots for
+  the older Windows compatibility gates; it never changes production behavior.

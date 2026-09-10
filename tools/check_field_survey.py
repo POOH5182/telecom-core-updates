@@ -1,5 +1,6 @@
 """Real field observations, atomic rewiring and GIS/field/cloud preservation gates."""
 import os
+from legacy_field_fixture import existing_field
 from pathlib import Path
 import runpy
 import sys
@@ -115,7 +116,7 @@ def windows_ui():
                 left=app.store.add_cable(a,h,'L','6C','기설');right=app.store.add_cable(h,b,'R','6C','기설')
                 app.store.connect(h,(left,1),(right,1),temporary=True)
                 assert app.store.before_drawing_check_rows() # GIS has errors; copying is still allowed.
-                assert app.load_scenario('before')
+                assert (existing_field(app) or app.load_scenario('before'))
                 gis=app.scenario_path('gis').read_bytes()
                 assert app.scenario_kind()=='before'
                 app.store.update_core(left,1,('FIELD-1','현장 확인','normal','','off'))

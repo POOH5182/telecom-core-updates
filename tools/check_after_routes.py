@@ -2,6 +2,7 @@
 import copy
 import csv
 import os
+from legacy_field_fixture import existing_field
 from pathlib import Path
 import sys
 import tempfile
@@ -149,9 +150,9 @@ def windows_ui():
              patch.object(code['messagebox'],'askyesnocancel',return_value=True):
             app=code['App']();app.report_callback_exception=lambda *args:errors.append(str(args))
             try:
-                # Reuse the real normal GIS -> before -> after flow.
+                # Exercise an existing V71 field snapshot through before -> after.
                 s=app.store;a=s.add_node('준비 A',0,0);b=s.add_node('준비 B',100,0);c=s.add_cable(a,b,'PREP','12C','기설')
-                update(s,c,1,dict(core_id='PREP-ID',signal='off'));assert app.load_scenario('before')
+                update(s,c,1,dict(core_id='PREP-ID',signal='off'));assert (existing_field(app) or app.load_scenario('before'))
                 app.save_current_drawing(silent=True);assert app.load_scenario('after')
                 i=drawing(app);s=app.store;original=wf.plan_snapshot(s.conn);before=app.scenario_path('before').read_bytes()
                 dialog=wf.AfterPlanDialog(app);app.update();panel=dialog.route_panel

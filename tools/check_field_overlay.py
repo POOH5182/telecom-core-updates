@@ -1,5 +1,6 @@
 """GIS-preserving field comparisons, explicit correction and local review gate."""
 import os
+from legacy_field_fixture import existing_field
 from pathlib import Path
 import sys
 import tempfile
@@ -243,7 +244,7 @@ def windows_ui():
                 left=s.add_cable(a,h,'A','6C','기설');right=s.add_cable(h,b,'B','6C','기설');tail=s.add_cable(b,end,'C','6C','기설')
                 for i in (1,2):
                     s.update_core(left,i,(f'ID-{i}',f'원본 {i}','normal','','off'));s.connect(h,(left,i),(right,i));s.connect(b,(right,i),(tail,i))
-                assert app.load_scenario('before');s=app.store;gis=app.scenario_path('gis').read_bytes()
+                assert (existing_field(app) or app.load_scenario('before'));s=app.store;gis=app.scenario_path('gis').read_bytes()
                 node=code['NodeDialog'](app,s,h);node.field_survey_open();app.update()
                 dialog=next(w for w in node.winfo_children() if isinstance(w,wf.FieldSurveyDialog))
                 sheet=dialog.sheet;sheet.focus_cell(0,0);app.clipboard_clear();app.clipboard_append('A\tB\n2\t2')

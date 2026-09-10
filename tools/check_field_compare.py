@@ -1,6 +1,7 @@
 """Frozen GIS comparison, manual real-ID swaps and retained missing identities."""
 import copy
 import os
+from legacy_field_fixture import existing_field
 from pathlib import Path
 import sys
 import tempfile
@@ -200,7 +201,7 @@ def windows_ui():
                 s=app.store;a=s.add_node('왼쪽',100,300);h=s.add_node('비교 함체',400,300);b=s.add_node('오른쪽',700,300)
                 left=s.add_cable(a,h,'A','6C','기설');right=s.add_cable(h,b,'B','6C','기설')
                 for i in (1,2,3):s.update_core(left,i,(f'ID-{i}',f'{i}번 회선','normal','','off'));s.connect(h,(left,i),(right,i))
-                app.load_scenario('before');s=app.store;gis=app.scenario_path('gis').read_bytes();app.update()
+                (existing_field(app) or app.load_scenario('before'));s=app.store;gis=app.scenario_path('gis').read_bytes();app.update()
                 node=code['NodeDialog'](app,s,h);node.field_survey_open();app.update()
                 dialog=next(w for w in node.winfo_children() if isinstance(w,wf.FieldSurveyDialog))
                 before=wf.plan_snapshot(s.conn);app.clipboard_clear();app.clipboard_append('A\tB\n1\t2\n2\t1\n3\t3\n4\t4')

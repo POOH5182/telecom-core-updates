@@ -1,6 +1,7 @@
 """V59 lock migration, immutable connections, RN endpoints and real copy/field UI."""
 import json
 import os
+from legacy_field_fixture import existing_field
 from pathlib import Path
 import runpy
 import sqlite3
@@ -167,7 +168,7 @@ def windows_ui():
                 r=s.add_node('현장 RN',400,200,node_type='rn');end=s.add_node('말단 함체',240,200)
                 rc=s.add_cable(end,r,'RN-CABLE','6C','기설');s.ensure_ports(r,{'mp':1,'sp':0,'p':1})
                 s.update_core(rc,1,('RN-ID','RN 내역','normal','','off'));s.connect(r,(rc,1),('PORT:'+r,3))
-                assert app.load_scenario('before');s=app.store
+                assert (existing_field(app) or app.load_scenario('before'));s=app.store
                 nd=code['NodeDialog'](app,s,r);nd.field_survey_open();app.update()
                 fd=next(w for w in nd.winfo_children() if isinstance(w,wf.FieldSurveyDialog))
                 assert 'RN내부' in fd.sheet.get_text()

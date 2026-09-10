@@ -183,6 +183,7 @@ def field_auto_identity(store,node_id,row):
 
 def field_resolve(store,node_id,choices,reason,expected_revision,expected_generation):
     """Only explicitly reviewed choices can replace real IDs on affected routes."""
+    if field_slot_mode(store):raise ValueError('새 현장반영 도면에서는 「케이블별 내역 이동·교환」으로 각 번호의 내역을 맞춘 뒤 경로를 최종 확정하세요.')
     field_writable(store,node_id)
     if store.data_revision()!=expected_revision or getattr(store,'_view_generation',0)!=expected_generation:raise ValueError('도면이 바뀌었습니다. 변경 범위를 다시 확인하세요.')
     if not reason.strip():raise ValueError('수정 근거를 적어 주세요. 예: 현장에서 A회선과 양쪽 선번 확인.')

@@ -1,6 +1,7 @@
 """Production planning engine, transactional renumbering and real Windows UI gate."""
 import json
 import os
+from legacy_field_fixture import existing_field
 from pathlib import Path
 import runpy
 import sqlite3
@@ -187,7 +188,7 @@ def windows_ui():
             a=app.store.add_node('검증 A',0,0);h=app.store.add_node('검증 접속',100,0);b=app.store.add_node('검증 B',200,0)
             big=app.store.add_cable(a,h,'BIG','12C','기설');small=app.store.add_cable(h,b,'SMALL','6C','기설')
             update(app.store,big,1,{'core_id':'GUI-1','detail':'UI 검증'});app.store.connect(h,(big,1),(small,2))
-            assert app.load_scenario('before')
+            assert (existing_field(app) or app.load_scenario('before'))
             wf.FieldSurvey(app.store,a).save('BIG\n1')
             wf.FieldSurvey(app.store,h).save('BIG\tSMALL\n1\t2')
             wf.FieldSurvey(app.store,b).save('SMALL\n2')

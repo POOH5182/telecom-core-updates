@@ -43,6 +43,7 @@ def completion_causes(notes):
 
 
 def completion_report(store,kind=None):
+    if field_slot_mode(store,kind):return field_slot_completion(store)
     kind=kind or completion_kind(store);key=(kind,store.data_revision(),store.conn.total_changes)
     if getattr(store,'_completion_key',None)==key:return store._completion_value
     net=Network(store.conn,active_only=kind=='after')

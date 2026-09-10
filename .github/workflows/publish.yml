@@ -51,6 +51,8 @@ jobs:
         run: python tools/check_edit_history.py
       - name: GIS·현장 조사 비교와 도면 보존 검증
         run: python tools/check_field_survey.py
+      - name: 현장 선번·케이블별 내역·최종 확정과 배치대기 정리 검증
+        run: python tools/check_field_slots.py
       - name: 자동 잠금과 정보 복사·RN 내부 접속 검증
         run: python tools/check_locks_rn.py
       - name: 현장 Excel 표 추가와 불일치 보존·수동 수정 검증

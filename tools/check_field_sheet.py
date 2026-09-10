@@ -1,6 +1,7 @@
 """Incremental field-sheet input, additive saving and explicit manual correction."""
 import json
 import os
+from legacy_field_fixture import existing_field
 from pathlib import Path
 import sqlite3
 import sys
@@ -132,7 +133,7 @@ def windows_ui():
                 s=app.store;a=s.add_node('시작',0,0);h=s.add_node('조사 함체',240,0);b=s.add_node('끝 B',480,0);c=s.add_node('끝 C',240,240)
                 left=s.add_cable(a,h,'A','6C','기설');right=s.add_cable(h,b,'B','6C','기설');third=s.add_cable(h,c,'C','6C','기설')
                 s.update_core(left,1,('OLD','기존 이름','normal','','off'));s.connect(h,(left,1),(right,1))
-                assert app.load_scenario('before');s=app.store
+                assert (existing_field(app) or app.load_scenario('before'));s=app.store
                 node=code['NodeDialog'](app,s,h);node.field_survey_open();app.update()
                 dialog=next(w for w in node.winfo_children() if isinstance(w,wf.FieldSurveyDialog));sheet=dialog.sheet
                 sheet.focus_cell(0,0);app.clipboard_clear();app.clipboard_append('A\tB\tC\n1\t\t1\n2\t2\t')

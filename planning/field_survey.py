@@ -572,17 +572,19 @@ class FieldSurveyDialog(RememberedToplevel):
         if store.node(node_id)['type']=='rn':headers.append('RN내부')
         raw=record.get('text') or field_table_text([headers])
         self.sheet=FieldSurveySheet(self,FieldSurvey(store,node_id,reference=self.reference),raw);self.sheet.pack(fill='both',expand=True,padx=8)
-        ttk.Label(self,text='① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. GIS에 없던 양쪽 빈 신규 선번은 임시코어로 배정하고 자동 OK로 처리합니다.',padding=(10,6),wraplength=1380).pack(fill='x')
+        guide='① GIS의 케이블별 코어ID·코어명 보존 → ② 현장 선번 적용 → ③ 케이블별 내역 이동·교환 및 신호 확인 → ④ 경로 내역 최종 확정. 임시코어는 ID 중립, 확인필요는 신호 중립입니다.' if field_slot_mode(store) else '① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. GIS에 없던 양쪽 빈 신규 선번은 임시코어로 배정하고 자동 OK로 처리합니다.'
+        ttk.Label(self,text=guide,padding=(10,6),wraplength=1380).pack(fill='x')
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         ttk.Button(bar,text='비교만 저장',command=lambda:self.inspect(add_new=False)).pack(side='left',padx=3)
-        self.overlay_button=ttk.Button(bar,text='조사 저장·GIS 비교',command=self.overlay);self.overlay_button.pack(side='left',padx=3)
+        self.overlay_button=ttk.Button(bar,text='현장 선번 적용' if field_slot_mode(store) else '조사 저장·GIS 비교',command=self.overlay);self.overlay_button.pack(side='left',padx=3)
         ttk.Button(bar,text='선택 OK',command=lambda:self.mark('OK')).pack(side='left',padx=3)
         ttk.Button(bar,text='선택 NOT OK',command=lambda:self.mark('NOT OK')).pack(side='left',padx=3)
         ttk.Button(bar,text='NOT OK 사유',command=lambda:self.mark('NOT OK 메모')).pack(side='left',padx=3)
         ttk.Button(bar,text='선택 조사 비교·저장',command=lambda:self.overlay(selected=True)).pack(side='left',padx=8)
         ttk.Button(bar,text='선택 행 표에서 수정',command=self.edit_selected).pack(side='left',padx=3)
         more=ttk.Frame(self,padding=(8,0,8,5));more.pack(fill='x')
-        ttk.Button(more,text='선택 연결·내역 직접 수정',command=self.resolve_selected).pack(side='left',padx=3)
+        ttk.Button(more,text='케이블별 내역 이동·교환' if field_slot_mode(store) else '선택 연결·내역 직접 수정',command=self.resolve_selected).pack(side='left',padx=3)
+        if field_slot_mode(store):ttk.Button(more,text='선택 경로 내역·최종 확정',command=lambda:self.mark('OK')).pack(side='left',padx=3)
         ttk.Button(more,text='수정이력·보존내역',command=lambda:FieldArchiveDialog(self,self.store,self.node_id)).pack(side='left',padx=3)
         ttk.Button(more,text='양방향 경로',command=self.open_routes).pack(side='left',padx=3)
         ttk.Button(more,text='새로고침',command=self.reload).pack(side='right')
@@ -627,6 +629,7 @@ class FieldSurveyDialog(RememberedToplevel):
             if self.token!=self.store.data_revision():raise ValueError('도면이 수정되었습니다. 새로고침 후 확인하세요.')
 
     def inspect(self,event=None,add_new=True):
+        if field_slot_mode(self.store) and add_new:return self.overlay(event)
         try:
             self.valid();gis=None;path=self.app.scenario_path('gis')
             if path.exists():
@@ -656,7 +659,7 @@ class FieldSurveyDialog(RememberedToplevel):
     def draft_changed(self):
         try:self.rows=FieldSurvey(self.store,self.node_id,reference=self.reference).report(self.sheet.get_text())
         except ValueError as error:self.summary.set(str(error));return
-        self.summary.set('입력 수정 중 · 조사 저장·GIS 비교를 누르세요. 다른 선번은 기존 연결을 유지한 채 미반영으로 보관하며, 비교 후 직접 수정하고 OK로 확인합니다.')
+        self.summary.set('입력 수정 중 · 현장 선번 적용을 누르세요. 케이블별 기존 내역은 유지됩니다.' if field_slot_mode(self.store) else '입력 수정 중 · 조사 저장·GIS 비교를 누르세요. 다른 선번은 기존 연결을 유지한 채 미반영으로 보관하며, 비교 후 직접 수정하고 OK로 확인합니다.')
         self.show_rows();self.sheet.color_rows(self.rows)
 
     def close_dialog(self):
@@ -700,6 +703,8 @@ class FieldSurveyDialog(RememberedToplevel):
     def resolve_selected(self):
         try:
             self.valid(saved=True);rows=self.selected()
+            if field_slot_mode(self.store):
+                FieldSlotEditorDialog(self,self.store,node_id=self.node_id,slot=rows[0]['slots'][0] if rows and rows[0]['slots'] else None);return
             if not rows or any(r['source']!='조사표' or r['errors'] or len(r['slots'])!=2 for r in rows):raise ValueError('수정할 현장 연결 행을 선택하세요. 서로 바뀐 번호는 Ctrl 키로 관련 행을 함께 선택하세요.')
             FieldResolutionDialog(self,rows)
         except ValueError as error:messagebox.showerror('현장 비교 수정',str(error),parent=self)
@@ -710,6 +715,10 @@ class FieldSurveyDialog(RememberedToplevel):
         try:
             self.valid(saved=True);keys={r['key'] for r in self.selected()}
             if not keys:raise ValueError('확인 상태를 바꿀 조사 행을 선택하세요.')
+            if action=='OK' and field_slot_mode(self.store):
+                rows=self.selected()
+                if not rows[0]['slots']:raise ValueError('코어번호가 있는 행을 선택하세요.')
+                FieldSlotConfirmDialog(self,self.store,rows[0]['slots'][0]);return
             if action in ('OK','NOT OK','NOT OK 메모'):
                 note=''
                 if action=='NOT OK 메모':
