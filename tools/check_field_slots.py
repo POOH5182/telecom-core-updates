@@ -332,14 +332,14 @@ def windows_recopy_ui():
                 left=s.add_cable(a,h,'L','6C','기설');right=s.add_cable(h,b,'R','6C','기설')
                 s.update_core(left,1,('GIS-ID','GIS 이름','normal','','on'));s.connect(h,(left,1),(right,1))
                 existing_field(app);assert app.load_scenario('before');assert not wf.field_slot_mode(s)
-                s.update_core(left,1,('FIELD-EDIT','새로 복사 직전 수정','normal','','off'))
+                s.update_core(left,1,('GIS-ID','새로 복사 직전 수정','normal','','off'))
                 wf.FieldSurvey(s,h).save('L\tR\n1\t1')
                 app.deiconify();app.update()
                 node=code['open_detail_dialog'](app,s,'node',h);app.update()
                 manager=code['ScenarioDialog'](app);app.update()
                 controls=[c for w in manager.winfo_children() for c in w.winfo_children()]
                 button=next(w for w in controls if isinstance(w,code['ttk'].Button) and w.cget('text')=='GIS → 현장반영 새로 복사')
-                old=wf.plan_snapshot(s.conn);gis=app.scenario_path('gis').read_bytes()
+                old=wf.plan_snapshot(s.conn);gis=app.scenario_path('gis').read_bytes();gis_reference=wf.field_reference(s)['snapshot']
                 with patch.object(code['messagebox'],'askyesno',return_value=False):button.invoke();app.update()
                 assert wf.plan_snapshot(s.conn)==old and not list(app.scenario_folder().glob('before_previous_*.sqlite3'))
                 button.invoke();app.update()
@@ -351,7 +351,8 @@ def windows_recopy_ui():
                 assert any('현장반영 초기화 완료' in item and '접속 연결 0건' in item for item in notices)
                 old_store=code['Store'](next(app.scenario_folder().glob('before_previous_*.sqlite3')))
                 try:
-                    assert old_store.core(left,1)['core_id']=='FIELD-EDIT'
+                    assert old_store.core(left,1)['detail']=='새로 복사 직전 수정'
+                    assert old_store.core(left,1)['signal']=='off'
                     assert old_store.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
                     assert wf.field_records(old_store)
                 finally:old_store.close()
@@ -364,11 +365,14 @@ def windows_recopy_ui():
                 s.connect(h,(left,1),(right,1));button.invoke();app.update()
                 assert not s.conn.execute('SELECT 1 FROM splices').fetchone()
                 assert not reopened.winfo_exists()
+                assert app.scenario_path('gis').read_bytes()==gis
                 assert app.load_scenario('gis');assert s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
                 button.invoke();app.update()
                 assert app.scenario_kind()=='before' and not s.conn.execute('SELECT 1 FROM splices').fetchone()
                 assert len(list(app.scenario_folder().glob('before_previous_*.sqlite3')))==3
-                assert app.scenario_path('gis').read_bytes()==gis
+                gis_source=code['sqlite3'].connect(app.scenario_path('gis'))
+                try:assert wf.field_capture_reference(gis_source)['snapshot']==gis_reference
+                finally:gis_source.close()
                 manager.destroy();app.save_current_drawing(silent=True)
                 assert app.load_scenario('gis');assert app.load_scenario('before')
                 assert wf.field_slot_mode(s) and not s.conn.execute('SELECT 1 FROM splices').fetchone()
