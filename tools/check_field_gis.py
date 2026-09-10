@@ -136,6 +136,7 @@ def windows_ui():
     if sys.platform!='win32':return
     case=FieldGISTests();case.setUp()
     try:
+        (case.home/'ui').mkdir()
         with patch.dict(os.environ,{'TELECOM_APP_HOME':str(case.home/'ui')}),patch.object(code['messagebox'],'showerror') as error:
             app=code['App']();app.store.close();app.store=case.s;errors=[]
             app.report_callback_exception=lambda *args:errors.append(str(args[1]))
