@@ -9,6 +9,26 @@ import unittest
 from unittest.mock import patch
 
 from check_field_survey import code,wf
+from legacy_field_fixture import existing_field
+
+
+class ScenarioHarness:
+    """Exercise the real App scenario methods without needing a Tk display."""
+    def __init__(self,store):
+        self.store=store;self.cloud=None;self.status=unittest.mock.Mock()
+        self.scenario_saved_revision=store.data_revision()
+        self.highlight_blink_job=None;self.selected=set();self.highlight_cables=set();self.highlight_cable_colors={}
+        self.refresh_count=0
+    def __getattr__(self,name):
+        method=code['App'].__dict__.get(name)
+        if callable(method):return method.__get__(self,type(self))
+        raise AttributeError(name)
+    def scenario_folder(self):
+        path=self.store.path.parent/'scenarios';path.mkdir(exist_ok=True);return path
+    def update_title(self):pass
+    def refresh(self):self.refresh_count+=1
+    def manual_backup(self,silent=False):
+        path=self.store.path.parent/'working-backup.sqlite3';self.store.backup_to(path);return path
 
 
 class SlotFieldTests(unittest.TestCase):
@@ -53,6 +73,41 @@ class SlotFieldTests(unittest.TestCase):
             self.assertTrue(wf.node_locked(other,self.nodes[1]))
             with self.assertRaises(ValueError):other.connect(self.nodes[1],self.slot(0),self.slot(1))
         finally:other.close()
+
+    def test_recopy_from_active_field_clears_connections_and_keeps_latest_backup(self):
+        import shutil
+        app=ScenarioHarness(self.s);shutil.copy2(self.gis,app.scenario_path('gis'))
+        self.s.backup_to(app.scenario_path('before'))
+        self.connect_all();self.set(1,2,'FIELD-EDIT','복사 직전 수정','off')
+        before=self.snapshot();gis=app.scenario_path('gis').read_bytes()
+        with patch.object(code['messagebox'],'showinfo'):
+            self.assertTrue(app.copy_gis_to_field(replace=True))
+        self.assertTrue(wf.field_slot_mode(self.s));self.assertEqual(self.splices(),[])
+        self.assertEqual(wf.field_records(self.s),{})
+        self.assertEqual(self.s.core(*self.slot(1,2))['core_id'],'')
+        self.assertEqual(app.scenario_path('gis').read_bytes(),gis)
+        archive=next(app.scenario_folder().glob('before_previous_*.sqlite3'))
+        old=code['Store'](archive)
+        try:self.assertEqual((wf.plan_snapshot(old.conn),wf.state(old),wf.field_reference(old)),before)
+        finally:old.close()
+        self.assertGreater(app.refresh_count,0)
+        self.assertIn('접속 연결 0건',app.status.set.call_args.args[0])
+        self.connect_all();self.assertTrue(app.copy_gis_to_field(replace=True))
+        self.assertEqual(self.splices(),[])
+        self.assertEqual(len(list(app.scenario_folder().glob('before_previous_*.sqlite3'))),2)
+        saved=code['Store'](app.scenario_path('before'))
+        try:
+            self.assertTrue(wf.field_slot_mode(saved))
+            self.assertEqual(saved.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0],0)
+        finally:saved.close()
+
+    def test_recopy_requires_saved_gis_and_never_uses_field_as_source(self):
+        app=ScenarioHarness(self.s);self.connect_all();before=self.snapshot()
+        with patch.object(code['messagebox'],'showinfo') as notice:
+            self.assertFalse(app.copy_gis_to_field(replace=True))
+        self.assertEqual(self.snapshot(),before)
+        self.assertFalse(app.scenario_path('gis').exists())
+        self.assertIn('GIS',str(notice.call_args))
 
     def test_field_allocation_accepts_conflicting_ids_without_rewriting_other_slots(self):
         self.set(1,2,'CORE-B','다른 내역','off');before=[dict(r) for r in self.s.all_core_rows()]
@@ -263,8 +318,68 @@ def windows_ui():
     print('PASS Windows V72 new GIS copy, Excel field topology, mismatch display, slot exchange, reviewed finalization, waiting cleanup, 100 percent and phase persistence')
 
 
+def windows_recopy_ui():
+    if sys.platform!='win32':return
+    with tempfile.TemporaryDirectory() as temp:
+        os.environ['TELECOM_APP_HOME']=temp;errors=[];notices=[]
+        with patch.object(code['messagebox'],'showerror',side_effect=lambda *a,**k:errors.append(str(a))), \
+             patch.object(code['messagebox'],'showinfo',side_effect=lambda *a,**k:notices.append(str(a))), \
+             patch.object(code['messagebox'],'askyesno',return_value=True), \
+             patch.object(code['messagebox'],'askyesnocancel',return_value=True):
+            app=code['App']();app.report_callback_exception=lambda *args:errors.append(str(args))
+            try:
+                s=app.store;a=s.add_node('끝 A',0,0);h=s.add_node('조사 함체',240,0);b=s.add_node('끝 B',480,0)
+                left=s.add_cable(a,h,'L','6C','기설');right=s.add_cable(h,b,'R','6C','기설')
+                s.update_core(left,1,('GIS-ID','GIS 이름','normal','','on'));s.connect(h,(left,1),(right,1))
+                existing_field(app);assert app.load_scenario('before');assert not wf.field_slot_mode(s)
+                s.update_core(left,1,('FIELD-EDIT','새로 복사 직전 수정','normal','','off'))
+                wf.FieldSurvey(s,h).save('L\tR\n1\t1')
+                app.deiconify();app.update()
+                node=code['open_detail_dialog'](app,s,'node',h);app.update()
+                manager=code['ScenarioDialog'](app);app.update()
+                controls=[c for w in manager.winfo_children() for c in w.winfo_children()]
+                button=next(w for w in controls if isinstance(w,code['ttk'].Button) and w.cget('text')=='GIS → 현장반영 새로 복사')
+                old=wf.plan_snapshot(s.conn);gis=app.scenario_path('gis').read_bytes()
+                with patch.object(code['messagebox'],'askyesno',return_value=False):button.invoke();app.update()
+                assert wf.plan_snapshot(s.conn)==old and not list(app.scenario_folder().glob('before_previous_*.sqlite3'))
+                button.invoke();app.update()
+                assert wf.field_slot_mode(s) and app.scenario_kind()=='before'
+                assert not s.conn.execute('SELECT 1 FROM splices').fetchone() and not wf.field_records(s)
+                assert s.core(left,1)['core_id']=='GIS-ID' and s.core(left,1)['signal']=='on'
+                assert not node.winfo_exists()
+                assert '현재 접속 연결 0건' in manager.info.get('1.0','end')
+                assert any('현장반영 초기화 완료' in item and '접속 연결 0건' in item for item in notices)
+                old_store=code['Store'](next(app.scenario_folder().glob('before_previous_*.sqlite3')))
+                try:
+                    assert old_store.core(left,1)['core_id']=='FIELD-EDIT'
+                    assert old_store.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
+                    assert wf.field_records(old_store)
+                finally:old_store.close()
+                reopened=code['open_detail_dialog'](app,s,'node',h);app.update()
+                reopened.left_var.set(next(label for label,cid in reopened.by_label.items() if cid==left))
+                reopened.right_var.set(next(label for label,cid in reopened.by_label.items() if cid==right))
+                reopened.reload_all();app.update()
+                assert reopened.left_tree.item('1','values')[5]==''
+                assert reopened.right_tree.item('1','values')[5]==''
+                s.connect(h,(left,1),(right,1));button.invoke();app.update()
+                assert not s.conn.execute('SELECT 1 FROM splices').fetchone()
+                assert not reopened.winfo_exists()
+                assert app.load_scenario('gis');assert s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
+                button.invoke();app.update()
+                assert app.scenario_kind()=='before' and not s.conn.execute('SELECT 1 FROM splices').fetchone()
+                assert len(list(app.scenario_folder().glob('before_previous_*.sqlite3')))==3
+                assert app.scenario_path('gis').read_bytes()==gis
+                manager.destroy();app.save_current_drawing(silent=True)
+                assert app.load_scenario('gis');assert app.load_scenario('before')
+                assert wf.field_slot_mode(s) and not s.conn.execute('SELECT 1 FROM splices').fetchone()
+                assert not errors,errors
+            finally:app.on_close()
+    print('PASS Windows V73 actual recopy button from existing legacy field and GIS, cancellation, latest backup, zero links in both panes, stale window closure, repeated copy and persistence')
+
+
 if __name__=='__main__':
     result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(SlotFieldTests))
     if not result.wasSuccessful():raise SystemExit(1)
     windows_ui()
+    windows_recopy_ui()
     print('PASS V72 slot identities, neutral temporary/unknown, field topology, required names/signals, finalization, cleanup, locks, history and GIS preservation')

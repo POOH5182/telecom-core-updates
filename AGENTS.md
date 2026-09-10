@@ -226,3 +226,19 @@ and authorization when delivering changes. Do not send messages to other people.
 - Run check_field_slots.py with its real Windows copy/Excel/move/confirm/JSON/
   phase gate. legacy_field_fixture.py prepares already-saved V71 snapshots for
   the older Windows compatibility gates; it never changes production behavior.
+
+
+- V73 explicit GIS-to-field recopy works from GIS, before or after using the
+  saved GIS snapshot. If GIS is absent outside the GIS stage, refuse without
+  changing anything; never promote the current field drawing to GIS implicitly.
+- Save the active drawing and archive the previous field snapshot before creating
+  the cleared derivative. Activate that snapshot even when before is already
+  active, without a second dirty-save or same-phase short circuit. Preserve the
+  existing normal switch save/cancel flow through activate_scenario_snapshot.
+- Verify zero splices and empty field observations before reporting success.
+  Show actual connection counts in the scenario manager and completion notice.
+  Keep original per-slot GIS identities/signals, lock rules and automatic-splice
+  suppression; original GIS and after snapshots remain independent.
+- check_field_slots.py covers the real Windows recopy button from legacy field,
+  repeated same-phase recopy, GIS recopy, cancellation, fresh backup contents,
+  stale detail closure, empty endpoint columns and save/reopen persistence.
