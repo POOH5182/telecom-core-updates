@@ -134,7 +134,7 @@ def windows_ui():
     if sys.platform!='win32':return
     case=CoreTraceTests();case.setUp()
     try:
-        os.environ['TELECOM_APP_HOME']=str(case.home/'ui');errors=[]
+        (case.home/'ui').mkdir();os.environ['TELECOM_APP_HOME']=str(case.home/'ui');errors=[]
         with patch.object(code['messagebox'],'showerror',side_effect=lambda *a,**k:errors.append(str(a))), \
              patch.object(code['messagebox'],'showinfo',return_value=None), \
              patch.object(code['messagebox'],'askyesno',return_value=True), \
