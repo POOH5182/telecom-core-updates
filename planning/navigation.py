@@ -126,7 +126,7 @@ class DrawingFindDialog(RememberedToplevel):
         if trace is None:self.info.set('해당 항목이 없어졌습니다. 다시 검색하세요.');return 'break'
         namespace=type(self.app).__init__.__globals__;namespace['draw_trace_diagram'](self.diagram,trace)
         if row.get('core_id'):
-            self.info.set(f"코어ID {row['core_id']} · 경로 {len(trace['groups'])}개 전체 표시 · 케이블 {len(trace['highlight'])}개 선택 · 주황색 코어번호 표시"+(' · '+' / '.join(trace['issues']) if trace['issues'] else ''))
+            self.info.set(f"코어ID {row['core_id']} · 경로 {len(trace['groups'])}개 전체 표시 · 케이블 {len(trace['highlight'])}개 선택 · "+(trace.get('summary') or '주황색 코어번호 표시')+(' · '+' / '.join(trace['issues']) if trace['issues'] else ''))
         else:self.info.set(row['kind']+' '+row['identifier']+' · 위치 이동·선택 완료. 도면 보기 / 닫기를 누르면 선택 상태로 작업할 수 있습니다.')
         return 'break'
 

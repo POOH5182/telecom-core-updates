@@ -261,3 +261,26 @@ and authorization when delivering changes. Do not send messages to other people.
   selection gates, as well as the existing field, completion, lock and Windows
   gates. Its benchmark command compares large synthetic drawings; timings are
   diagnostic only. Do not publish customer drawings or benchmark fixture DBs.
+
+- V75 supersedes V72's mandatory final-confirmation requirement in the new
+  cable-slot field mode. ID/signal consistency is auto OK independently of
+  end-to-end completion. Temporary IDs are neutral; one known on/off/exception
+  signal may mix with unknown. All-unknown signals remain pending. Real ID or
+  signal conflicts, invalid graphs and explicit review holds remain blocking.
+  Complete also requires distinct valid ends and no split/structural errors.
+- Signals and states belong to physical cable numbers. Identity moves and
+  field-mode cable swaps exchange only ID/name; never move signal or splices.
+  Cable signal edits affect one slot. Enclosure signal edits affect only that
+  slot and its one immediate peer at that node, atomically and honoring locks.
+  Never broadcast a field signal by core ID, including whole-ID rename forms.
+- planning/core_trace.py traces physical components via the cached field audit.
+  Follow differing real IDs and neutral slots, report each actual ID and mismatch
+  location, and stop at missing splices. Slot selection shows only its component;
+  ID search shows every disconnected matching component separately. Show the
+  active stage and saved-connection basis; do not reset legacy drawings.
+- Field incomplete lists show one actual component per row with a separate
+  cable/number/ID/signal ledger and full selected names. Include OK-but-incomplete
+  paths. Final ID/name confirmation and cleanup remain explicit optional actions.
+- Run check_core_trace.py including its Windows selection, trace, paired signal,
+  incomplete ledger and auto-completion gate, plus field, lock, history,
+  completion and performance gates before publication. Preserve V74 caching.

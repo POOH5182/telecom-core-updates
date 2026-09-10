@@ -114,15 +114,12 @@ def field_local_mark(store,node_id,keys,status,expected_revision,expected_genera
     if not keys or len(rows)!=len(set(keys)):raise ValueError('확인할 접속을 다시 선택하세요.')
     if status=='OK' and any(not r['local_match'] for r in rows):
         raise ValueError('현재 선번과 양쪽 코어ID를 먼저 맞추세요. 「선택 연결·내역 직접 수정」에서 내역을 지정할 수 있습니다.')
-    if status=='OK' and field_slot_mode(store):
-        audit=field_slot_audit(store)
-        if any(not audit['by_slot'].get(s,{}).get('confirmed') for r in rows for s in r['slots']):
-            raise ValueError('「선택 경로 내역·최종 확정」에서 코어ID·코어명을 확정하세요.')
     with store.action('함체별 현장 '+status):
         engine.record['overlay_mode']=True
         checks=engine.record.setdefault('local_checks',{})
         for row in rows:
             checks[row['key']]=dict(status=status,fingerprint=row['local_fingerprint'],time=now(),note=note.strip(),slots=row['slots'])
+            if status=='OK' and field_slot_mode(store):engine.record.setdefault('flags',{}).pop(row['key'],None)
         engine.persist('함체별 현장 '+status)
     return len(rows)
 

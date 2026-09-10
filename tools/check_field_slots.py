@@ -133,10 +133,10 @@ class SlotFieldTests(unittest.TestCase):
         self.s.set_core_signal('CORE-A','unknown',slot=self.slot(1))
         self.assertEqual(self.s.core(*self.slot(0))['signal'],'on')
 
-    def test_neutral_temporary_and_unknown_signal_need_explicit_final_confirmation(self):
+    def test_neutral_temporary_and_unknown_signal_auto_complete_and_optional_final_names(self):
         self.set(1,1,'임시-77','','unknown');self.connect_all()
-        self.assertTrue(self.audit()['coherent']);self.assertFalse(self.audit()['complete'])
-        self.assertIn('최종 확정',self.audit()['reason'])
+        self.assertTrue(self.audit()['coherent']);self.assertTrue(self.audit()['complete'])
+        self.assertTrue(self.audit()['auto_ok']);self.assertFalse(self.audit()['confirmed'])
         self.assertEqual(self.s.core(*self.slot(1))['core_id'],'임시-77')
         self.confirm()
         self.assertEqual({self.s.core(*self.slot(i))['core_id'] for i in range(3)},{'CORE-A'})
@@ -165,8 +165,8 @@ class SlotFieldTests(unittest.TestCase):
         self.assertEqual(self.s.core(*self.slot(1,2))['signal'],'off')
         self.assertEqual(len(self.s.history_rows()),history+1);after=self.snapshot()
         self.s.undo();self.assertEqual(self.snapshot(),before);self.s.redo();self.assertEqual(self.snapshot(),after)
-        wf.field_slot_transfer_commit(self.s,wf.field_slot_transfer_preview(self.s,self.slot(1),self.slot(1,2),True))
-        self.assertEqual(self.s.core(*self.slot(1))['signal'],'off')
+        with self.assertRaises(ValueError):wf.field_slot_transfer_preview(self.s,self.slot(1),self.slot(1,2),True)
+        self.assertEqual(self.s.core(*self.slot(1))['signal'],'on')
 
     def test_final_confirmation_clears_only_same_id_unconnected_waiting_and_keeps_signals(self):
         self.set(1,3,'CORE-A','GIS 남은 내역','off')
@@ -300,7 +300,7 @@ def windows_ui():
                     assert app.work_progress_incomplete.cget('fg')=='#c62828'
                     editor.filter_owner.set('전체');editor.reload();assert editor.positions
                     editor.destroy();survey.destroy();node.destroy()
-                    s.update_core(left,2,('ID-B','회선 B','normal','','unknown'))
+                    s.update_core(left,2,('ID-B','회선 B','normal','','off'))
                     s.connect(h,(left,2),(right,2))
                     wf.field_slot_confirm_commit(s,wf.field_slot_confirm_preview(s,(left,2),'ID-B','회선 B'))
                     app.refresh();assert wf.completion_report(s)['rate']==100.0

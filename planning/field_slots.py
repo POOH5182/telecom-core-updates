@@ -154,6 +154,7 @@ def field_slot_audit(store):
         if len(real_ids)>1:fail('서로 다른 코어ID가 한 경로에 연결됨: '+' / '.join(real_ids),'identity')
         if len(signals)>1:fail('신호 불일치: '+' / '.join({'on':'ON','off':'OFF','error':'오류','exception':'예외'}.get(s,s) for s in signals),'signal')
         if 'error' in signals:fail('신호가 오류로 표시된 구간이 있습니다.','signal')
+        if not signals:fail('신호 확인 대기: 현재 접속 범위가 모두 확인필요입니다.','signal_pending')
         occurrences=Counter(s[0] for s in slots if not s[0].startswith('PORT:'))
         if any(n>1 for n in occurrences.values()):fail('같은 케이블의 여러 코어가 한 경로에 중복 포함됨','branch')
         for slot in sorted(slots):
@@ -181,7 +182,7 @@ def field_slot_audit(store):
         if len(ends)!=2 or (len(ends)==2 and ends[0][0]==ends[1][0]):fail('서로 다른 두 끝단까지 연결해야 합니다. RN은 내부 포트 접속이 필요합니다.','endpoints')
         component=dict(key=('route',first),slots=sorted(slots),real_ids=real_ids,signals=signals,required=required,
                        notes=notes,causes=causes,ends=ends,free=free,holds=[],blocking=[],records=records,
-                       placed=bool(edge_count) or not notes)
+                       placed=bool(edge_count) or not bool(causes&{'unconnected','endpoints','port','branch','invalid'}))
         components.append(component)
         for s in slots:by_slot[s]=component
         for cid in real_ids:by_id[cid].append(component)
@@ -221,10 +222,14 @@ def field_slot_audit(store):
     for group in components:
         group['notes']=list(dict.fromkeys(group['notes']));group['holds']=list(dict.fromkeys(group['holds']))
         group['coherent']=not group['notes']
+        group['identity_signal_ok']=(len(group['real_ids'])<=1 and len(group['signals'])==1
+            and group['signals'][0] in ('on','off','exception')
+            and not bool(group['causes']&{'identity','signal','marked','branch','invalid'}))
+        group['auto_ok']=group['identity_signal_ok'] and not group['holds'] and not group['blocking']
         candidates=confirmations.get(tuple(group['slots']))
         group['confirmed']=bool(candidates) and field_slot_signature(store,group['slots'],audit_rows=all_rows,net=net) in candidates
-        group['complete']=group['coherent'] and not group['holds'] and (group['confirmed'] or not group['required'])
-        group['approval_notes']=['코어ID·코어명 최종 확정 필요'] if group['required'] and group['coherent'] and not group['confirmed'] else []
+        group['complete']=group['coherent'] and group['auto_ok']
+        group['approval_notes']=[]
         group['reason']=' / '.join(group['notes']+group['holds']+group['approval_notes'])
         group['error']=bool(group['causes']&{'identity','signal','split','branch','invalid','marked'})
         group['fingerprint']=digest([group['slots'],group['records'],group['notes'],group['holds'],group['ends']])
@@ -283,13 +288,13 @@ def field_slot_enrich(engine,rows):
         pair=row['slots'];components=[audit['by_slot'].get(s) for s in pair]
         components=[c for c in components if c is not None]
         actual=field_topology_matches(engine,pair)
-        coherent=bool(components) and all(c['coherent'] for c in components)
+        coherent=bool(components) and all(c['identity_signal_ok'] for c in components)
         reason=' / '.join(dict.fromkeys(n for c in components for n in c['notes']))
         wanted=row.get('input_core_id','')
         mismatch=bool(wanted and not wanted.startswith('임시-') and any(cid!=wanted for c in components for cid in c['real_ids']))
         ready=not row['errors'] and actual and coherent and not mismatch
-        okay=ready and all(c['confirmed'] or not c['required'] for c in components)
-        if ready and not okay:reason='경로·ID·신호 일치 · 코어ID·코어명 최종 확정이 필요합니다.'
+        okay=ready
+        if ready:reason='코어ID·신호 일치 · '+('끝-끝 연결완료' if all(c['complete'] for c in components) else '전체 연결은 미완료 목록에서 확인하세요.')
         fingerprint=digest([pair,[c['fingerprint'] for c in components],row.get('errors'),wanted])
         if not actual:reason='현장 선번이 아직 연결되지 않았습니다. 현장 선번 적용을 누르세요.'
         elif mismatch:reason='조사표 코어ID와 케이블별 내역이 다릅니다. 내역 이동·교환에서 확인하세요.'
@@ -298,8 +303,8 @@ def field_slot_enrich(engine,rows):
         flagged=engine.record.get('flags',{}).get(row['key'])
         if decision.get('status')=='NOT OK':okay=False;reason=decision.get('note') or '사용자가 이 함체 접속을 NOT OK로 지정했습니다.'
         elif flagged:okay=False;reason=str(flagged)
-        row.update(local_status='OK' if okay else 'NOT OK',local_reason=reason or '끝단까지 연결 · 코어ID 일치(임시 중립) · 신호 일치(확인필요 중립)',
-                   local_mode='경로 확정 OK' if okay else '최종 확정 대기' if ready else '경로 확인 필요',local_fingerprint=fingerprint,
+        row.update(local_status='OK' if okay else 'NOT OK',local_reason=reason or '코어ID·신호 일치',
+                   local_mode='ID·신호 자동 OK' if okay else '경로 확인 필요',local_fingerprint=fingerprint,
                    local_match=not row['errors'] and actual and coherent and not mismatch,local_pending=not actual and row['source']=='조사표',
                    status='확인완료' if okay else '불일치',matching=okay)
     return rows
@@ -343,7 +348,7 @@ def field_slot_check_rows(store):
     for row in field_slot_completion(store)['rows']:
         if row['complete']:continue
         slot=row['slots'][0]
-        result.append(dict(level='오류',category='현장 경로 NOT OK',location=store._slot_title(*slot),target='',message=row['reason'],
+        result.append(dict(level='오류',category='현장 연결 미완료',location=store._slot_title(*slot),target='',message=row['reason'],
                            node_id='',cable_id=slot[0],core_index=slot[1],core_id=row['core_id']))
     # Malformed observations with no valid slots must not vanish from the gate.
     for nid,record in field_records(store).items():
@@ -356,6 +361,7 @@ def field_slot_check_rows(store):
 
 def field_slot_transfer(store,source,target,with_signal=False,reason='내역 이동·교환'):
     if not field_slot_mode(store):raise ValueError('GIS에서 새로 생성한 현장반영 도면에서 사용하세요.')
+    if with_signal:raise ValueError('현장 신호·상태는 케이블 번호에 귀속됩니다. 코어ID·코어명만 이동하세요.')
     source,target=tuple(source),tuple(target)
     if source==target:raise ValueError('출발과 도착 번호가 같습니다.')
     src,dst=store.core(*source),store.core(*target)
@@ -363,7 +369,7 @@ def field_slot_transfer(store,source,target,with_signal=False,reason='내역 이
     if not str(src['core_id'] or '').strip() and not str(src['detail'] or '').strip():raise ValueError('이동할 코어ID·코어명이 없습니다.')
     before={source:[str(src[k] or '') for k in FIELD_SLOT_FIELDS],target:[str(dst[k] or '') for k in FIELD_SLOT_FIELDS]}
     after={source:list(before[source]),target:list(before[target])}
-    indices=range(5) if with_signal else range(2)
+    indices=range(2)
     for i in indices:after[source][i],after[target][i]=before[target][i],before[source][i]
     with store.action('케이블별 코어내역 이동·교환'):
         for slot,values in after.items():
@@ -533,7 +539,7 @@ class FieldSlotConfirmDialog(RememberedToplevel):
         self.title('현장 경로 · 코어ID·코어명 최종 확정');self.geometry('1120x640')
         audit=field_slot_audit(store);comp=audit['by_slot'].get(self.slot)
         if not comp:self.destroy();raise ValueError('선택한 코어의 경로를 찾지 못했습니다.')
-        ttk.Label(self,text=comp['reason'] or '경로 확정 OK',foreground='#c62828' if not comp['complete'] else '#15803d',wraplength=1080,padding=10).pack(fill='x')
+        ttk.Label(self,text=('OK · ' if comp['auto_ok'] else 'NOT OK · ')+(comp['reason'] or '끝-끝 연결완료 · 내역 확정은 선택 사항입니다.'),foreground='#c62828' if not comp['complete'] else '#15803d',wraplength=1080,padding=10).pack(fill='x')
         self.table=SortableTreeview(self,columns=('position','id','name','signal'),show='headings',height=13)
         for key,title,width in (('position','케이블·코어번호 / RN 포트',390),('id','현재 코어ID',190),('name','현재 코어명',290),('signal','신호',90)):
             self.table.heading(key,text=title);self.table.column(key,width=width)
@@ -588,7 +594,7 @@ class FieldSlotEditorDialog(RememberedToplevel):
         self.filter_state=tk.StringVar(value='사용내역');self.summary=tk.StringVar()
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         options=['전체']+(['이 함체'] if node_id else [])+list(self.owners)
-        for var,values,width in ((self.filter_owner,options,58),(self.filter_state,['사용내역','NOT OK','배치대기','전체 번호'],15)):
+        for var,values,width in ((self.filter_owner,options,58),(self.filter_state,['사용내역','NOT OK','OK·미완료','미완료','배치대기','전체 번호'],15)):
             combo=ttk.Combobox(bar,textvariable=var,values=values,width=width,state='readonly');combo.pack(side='left',padx=3);combo.bind('<<ComboboxSelected>>',lambda e:self.reload())
         ttk.Button(bar,text='새로고침',command=self.reload).pack(side='right')
         ttk.Label(self,textvariable=self.summary,padding=8,foreground='#1769aa').pack(fill='x')
@@ -613,10 +619,10 @@ class FieldSlotEditorDialog(RememberedToplevel):
             ttk.Label(form,text=title).grid(row=y,column=0,padx=4)
             ttk.Combobox(form,textvariable=owner,values=list(self.owners),state='readonly',width=70).grid(row=y,column=1,padx=5,pady=3)
             ttk.Entry(form,textvariable=index,width=7).grid(row=y,column=2,padx=5);ttk.Label(form,text='번').grid(row=y,column=3)
-        ttk.Checkbutton(form,text='신호·상태도 함께 이동·교환',variable=self.with_signal).grid(row=0,column=4,padx=16)
+        ttk.Label(form,text='신호·상태는 해당 번호에 유지').grid(row=0,column=4,padx=16)
         self.move_button=ttk.Button(form,text='내역 이동·교환 미리보기',command=self.move);self.move_button.grid(row=1,column=4,padx=16)
         ttk.Combobox(form,textvariable=self.signal,values=['확인필요','ON','OFF','오류','예외'],state='readonly',width=12).grid(row=0,column=5,padx=5)
-        ttk.Button(form,text='선택 슬롯 신호 적용',command=self.apply_signal).grid(row=1,column=5,padx=5)
+        ttk.Button(form,text='이 함체 양쪽 신호 적용' if node_id else '선택 슬롯 신호 적용',command=self.apply_signal).grid(row=1,column=5,padx=5)
         ttk.Label(self,text='도착 위치에 내역이 있으면 서로 교환합니다. 기본 이동 대상은 코어ID·코어명이며, 현장 선번 연결은 유지됩니다. 행 더블클릭: 전체 경로 조회·최종 확정.',padding=10,wraplength=1400).pack(fill='x')
         self.reload()
         if slot:
@@ -638,11 +644,13 @@ class FieldSlotEditorDialog(RememberedToplevel):
             if owner and position[0]!=owner:continue
             if self.filter_owner.get()=='이 함체' and position[0] not in near:continue
             comp=audit['by_slot'].get(position)
-            waiting=bool(comp and not comp['placed'] and position not in audit['observed_slots']);okay=bool(comp and comp['complete'])
-            status='배치대기' if waiting else 'OK' if okay else 'NOT OK' if comp else '빈 번호'
+            waiting=bool(comp and not comp['placed'] and position not in audit['observed_slots']);okay=bool(comp and comp['auto_ok'])
+            status='OK · 연결완료' if comp and comp['complete'] else 'OK · 미완료' if okay else 'NOT OK · 배치대기' if waiting else 'NOT OK' if comp else '빈 번호'
             choice=self.filter_state.get()
             if choice=='사용내역' and not comp:continue
             if choice=='NOT OK' and (not comp or okay):continue
+            if choice=='OK·미완료' and (not okay or comp['complete'] or not comp['required']):continue
+            if choice=='미완료' and (not comp or comp['complete'] or not comp['required']):continue
             if choice=='배치대기' and not waiting:continue
             before=gis.get(position,{})
             iid=str(len(self.positions));self.positions[iid]=position
@@ -676,7 +684,7 @@ class FieldSlotEditorDialog(RememberedToplevel):
         try:
             self.valid();slot=self.selected_slot();old=self.store.core(*slot)
             signal={'확인필요':'unknown','ON':'on','OFF':'off','오류':'error','예외':'exception'}[self.signal.get()]
-            self.store.update_core(*slot,[old['core_id'],old['detail'],old['status1'],old['status2'],signal])
+            self.store.set_core_signal(old['core_id'],signal,slot=slot,node_id=self.node_id)
             self.app.refresh();self.reload()
         except (ValueError,sqlite3.Error) as error:messagebox.showerror('슬롯 신호 수정',str(error),parent=self)
 
