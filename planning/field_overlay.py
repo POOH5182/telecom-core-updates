@@ -7,6 +7,9 @@ The reviewed editor is the explicit way to change conflicting field connections.
 
 
 def field_topology_matches(engine,pair):
+    if hasattr(engine,'pairs_by_slot'):
+        if len(pair)==1:return engine.terminal and not engine.pairs_by_slot.get(pair[0])
+        return len(pair)==2 and pair in engine.pairs and all(len(engine.pairs_by_slot.get(s,()))==1 for s in pair)
     if len(pair)==1:return engine.terminal and not any(pair[0] in p for p in engine.pairs)
     return len(pair)==2 and pair in engine.pairs and all(sum(s in p for p in engine.pairs)==1 for s in pair)
 
@@ -83,7 +86,7 @@ def field_local_enrich(engine,rows):
 
 def field_local_summary(store,node_id,record=None):
     if not field_required(store,store.node(node_id)):return {'ok':0,'not_ok':0,'total':0}
-    rows=FieldSurvey(store,node_id,record).report(compare=False)
+    rows=field_display_rows(store,node_id,record)
     ok=sum(r['local_status']=='OK' for r in rows)
     return {'ok':ok,'not_ok':len(rows)-ok,'total':len(rows)}
 
@@ -97,7 +100,7 @@ def field_local_slots(store,node_id):
     cache=store._field_local_slot_cache
     if node_id not in cache:
         result={}
-        for row in FieldSurvey(store,node_id).report(compare=False):
+        for row in field_display_rows(store,node_id):
             for slot in row['slots']:
                 if result.get(slot)!='NOT OK':result[slot]=row['local_status']
         cache[node_id]=result

@@ -53,6 +53,8 @@ jobs:
         run: python tools/check_field_survey.py
       - name: 현장 선번·케이블별 내역·최종 확정과 배치대기 정리 검증
         run: python tools/check_field_slots.py
+      - name: 현장 함체 열기 성능·캐시 갱신·기존 확정 호환 검증
+        run: python tools/check_field_performance.py --check
       - name: 자동 잠금과 정보 복사·RN 내부 접속 검증
         run: python tools/check_locks_rn.py
       - name: 현장 Excel 표 추가와 불일치 보존·수동 수정 검증

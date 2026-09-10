@@ -94,8 +94,28 @@ def field_pair_key(slots):
     return json.dumps(field_pair(slots),ensure_ascii=False,separators=(',',':'))
 
 
+def field_read_state(store):
+    """Read-only persisted field data; editing callers still receive a copy."""
+    stamp=(store.data_revision(),store.conn.total_changes,getattr(store,'_view_generation',0))
+    if getattr(store,'_field_read_stamp',None)!=stamp:
+        store._field_read_value=state(store);store._field_read_stamp=stamp
+        store._field_display_cache={}
+    return store._field_read_value
+
+
 def field_records(store):
-    return copy.deepcopy(state(store).get('field_surveys',{}))
+    return copy.deepcopy(field_read_state(store).get('field_surveys',{}))
+
+
+def field_display_rows(store,node_id,record=None):
+    """Reuse one local report for badges and both cable panes at this revision."""
+    value=field_read_state(store)
+    record=record if record is not None else value.get('field_surveys',{}).get(node_id,{})
+    cache=store._field_display_cache;cached=cache.get(node_id)
+    if cached is not None and cached[0]==record:return cached[1]
+    engine=FieldSurvey(store,node_id,record);rows=engine.report(compare=False)
+    cache[node_id]=(engine.record,rows)
+    return rows
 
 
 def field_required(store,node,cable_count=None):
@@ -116,7 +136,7 @@ def field_writable(store,node_id):
 class FieldSurvey:
     def __init__(self,store,node_id,record=None,reference=None):
         self.store,self.node_id=store,node_id
-        self.record=copy.deepcopy(record if record is not None else field_records(store).get(node_id,{}))
+        self.record=copy.deepcopy(record if record is not None else field_read_state(store).get('field_surveys',{}).get(node_id,{}))
         self.reference=reference if reference is not None else field_reference(store)
         self.cables={c['id']:dict(c) for c in store.node_cables(node_id) if str(c['spec'] or '').strip()!='드랍'}
         node=store.node(node_id)
@@ -129,6 +149,14 @@ class FieldSurvey:
             self.slots.update({(self.port_key,int(r['core_index'])):dict(r) for r in store.cores(self.port_key)})
         self.pairs={field_pair(((r['cable1_id'],r['core1_index']),(r['cable2_id'],r['core2_index'])))
                     for r in store.conn.execute('SELECT * FROM splices WHERE node_id=?',(node_id,))}
+        self.pairs_by_slot=defaultdict(set)
+        for pair in self.pairs:
+            for slot in pair:self.pairs_by_slot[slot].add(pair)
+
+    def touching_pairs(self,slots):
+        result=set()
+        for slot in slots:result.update(self.pairs_by_slot.get(slot,()))
+        return result
 
     def label(self,slots):
         out=[]
@@ -141,16 +169,15 @@ class FieldSurvey:
         return ' ↔ '.join(out)
 
     def fingerprint(self,pair):
-        members=set(pair)
-        links=sorted(p for p in self.pairs if members.intersection(p))
+        links=sorted(self.touching_pairs(pair))
         ids=[(cid,index,*[str(self.slots.get((cid,index),{}).get(k) or '') for k in ('core_id','detail','status1','status2','signal')]) for cid,index in pair]
         return digest([links,ids])
 
     def matches(self,pair):
         if len(pair)==1:
-            return self.terminal and not any(pair[0] in p for p in self.pairs) and bool(str(self.slots.get(pair[0],{}).get('core_id') or '').strip())
+            return self.terminal and not self.pairs_by_slot.get(pair[0]) and bool(str(self.slots.get(pair[0],{}).get('core_id') or '').strip())
         if len(pair)!=2 or pair not in self.pairs or pair[0][0]==pair[1][0] or any(s not in self.slots for s in pair):return False
-        if any(sum(slot in p for p in self.pairs)!=1 for slot in pair):return False
+        if any(len(self.pairs_by_slot.get(slot,()))!=1 for slot in pair):return False
         ids={str(self.slots.get(slot,{}).get('core_id') or '').strip() for slot in pair}
         return len(ids)==1 and '' not in ids
 
@@ -223,7 +250,7 @@ class FieldSurvey:
         for item in observations:
             pair=item['slots'];key=item['key'];covered.update(pair)
             if len(pair)==2:seen_pairs.add(pair)
-            current=[p for p in self.pairs if set(pair).intersection(p)]
+            current=self.touching_pairs(pair)
             gis_match=pair in baseline or (len(pair)==1 and self.terminal and not any(pair[0] in p for p in baseline))
             result=dict(item,current=' / '.join(self.label(p) for p in sorted(current)) or '현재 연결 없음',
                         observed=self.label(pair),gis=('일치' if gis_match else '차이') if self.record.get('gis_known') else '기준 없음')
@@ -364,11 +391,11 @@ def field_apply(store,node_id,keys,expected_revision,expected_generation):
 
 def field_summary(store,node_id,record=None):
     if not field_required(store,store.node(node_id)):return {'done':0,'pending':0,'issues':0,'total':0}
-    engine=FieldSurvey(store,node_id,record)
-    rows=[r for r in engine.report(compare=False) if completion_scope(store,r['slots']) or r.get('errors')];counts=Counter(r['status'] for r in rows)
-    if engine.record.get('overlay_mode'):
+    record=record if record is not None else field_read_state(store).get('field_surveys',{}).get(node_id,{})
+    rows=[r for r in field_display_rows(store,node_id,record) if completion_scope(store,r['slots']) or r.get('errors')];counts=Counter(r['status'] for r in rows)
+    if record.get('overlay_mode'):
         counts=Counter({'확인완료':sum(r['local_status']=='OK' for r in rows),'불일치':sum(r['local_status']!='OK' for r in rows)})
-    preserved=sum(p.get('state')=='대기' and completion_policy(p.get('rows',[]),completion_kind(store))['required'] for p in (record or field_records(store).get(node_id,{})).get('pending_identities',[]))
+    preserved=sum(p.get('state')=='대기' and completion_policy(p.get('rows',[]),completion_kind(store))['required'] for p in (record or field_read_state(store).get('field_surveys',{}).get(node_id,{})).get('pending_identities',[]))
     return {'done':counts['확인완료'],'pending':counts['미확인'],'issues':counts['불일치']+counts['이상']+preserved,'total':len(rows)+preserved}
 
 

@@ -137,8 +137,9 @@ def field_slot_audit(store):
     used={s for s,r in all_rows.items() if str(r.get('core_id') or '').strip() or field_slot_required(r)}
     used.update(net.links);used.update(net.bad)
     remaining=set(used);components=[];by_slot={};by_id=defaultdict(list)
-    while remaining:
-        first=min(remaining);stack=[first];slots=set()
+    for first in sorted(used):
+        if first not in remaining:continue
+        stack=[first];slots=set()
         while stack:
             s=stack.pop()
             if s in slots:continue
@@ -191,7 +192,8 @@ def field_slot_audit(store):
     # Review holds and saved-but-unapplied field evidence also prevent 100%.
     # Parse only; calling FieldSurvey.report here would recurse into this audit.
     observed_slots=set()
-    for nid,record in field_records(store).items():
+    saved=field_read_state(store)
+    for nid,record in saved.get('field_surveys',{}).items():
         if not store.node(nid):continue
         for check in record.get('local_checks',{}).values():
             if check.get('status')=='NOT OK':
@@ -213,18 +215,26 @@ def field_slot_audit(store):
                     if s in by_slot:
                         by_slot[s]['holds'].append(reason)
                         if bad or mismatch:by_slot[s]['blocking'].append(reason)
-    confirmations=state(store).get('field_slot_confirmations',[])
+    confirmations=defaultdict(set)
+    for confirmation in saved.get('field_slot_confirmations',[]):
+        confirmations[field_pair(confirmation.get('slots',[]))].add(confirmation.get('signature'))
     for group in components:
         group['notes']=list(dict.fromkeys(group['notes']));group['holds']=list(dict.fromkeys(group['holds']))
         group['coherent']=not group['notes']
-        signature=field_slot_signature(store,group['slots'],audit_rows=all_rows,net=net)
-        group['confirmed']=any(c.get('signature')==signature and field_pair(c.get('slots',[]))==tuple(group['slots']) for c in confirmations)
+        candidates=confirmations.get(tuple(group['slots']))
+        group['confirmed']=bool(candidates) and field_slot_signature(store,group['slots'],audit_rows=all_rows,net=net) in candidates
         group['complete']=group['coherent'] and not group['holds'] and (group['confirmed'] or not group['required'])
         group['approval_notes']=['코어ID·코어명 최종 확정 필요'] if group['required'] and group['coherent'] and not group['confirmed'] else []
         group['reason']=' / '.join(group['notes']+group['holds']+group['approval_notes'])
         group['error']=bool(group['causes']&{'identity','signal','split','branch','invalid','marked'})
         group['fingerprint']=digest([group['slots'],group['records'],group['notes'],group['holds'],group['ends']])
-    result=dict(net=net,components=components,by_slot=by_slot,by_id=dict(by_id),rows=all_rows,observed_slots=observed_slots)
+    by_cable=defaultdict(list);needs_by_node=defaultdict(lambda:defaultdict(set))
+    for slot,comp in by_slot.items():by_cable[slot[0]].append((slot,comp))
+    for comp in components:
+        if comp['required']:
+            for nid,slot in comp['free']:needs_by_node[nid][slot[0]].add(slot[1])
+    result=dict(net=net,components=components,by_slot=by_slot,by_id=dict(by_id),rows=all_rows,observed_slots=observed_slots,
+                by_cable=dict(by_cable),needs_by_node={nid:dict(value) for nid,value in needs_by_node.items()})
     store._field_slot_audit_stamp=stamp;store._field_slot_audit_value=result
     return result
 
@@ -296,12 +306,7 @@ def field_slot_enrich(engine,rows):
 
 
 def field_slot_needs(store,node_id):
-    audit=field_slot_audit(store);result=defaultdict(set)
-    for group in audit['components']:
-        if group['required']:
-            for nid,slot in group['free']:
-                if nid==node_id:result[slot[0]].add(slot[1])
-    return dict(result)
+    return {cid:set(indices) for cid,indices in field_slot_audit(store)['needs_by_node'].get(node_id,{}).items()}
 
 
 def field_slot_warning_summary(store):
@@ -319,7 +324,7 @@ def field_slot_warning_summary(store):
             if comp['error']:
                 errors.append(entry(slot,comp));marked.append(entry(slot,comp))
     for cid in audit['net'].cables:
-        slots=[(s,c) for s,c in audit['by_slot'].items() if s[0]==cid]
+        slots=audit['by_cable'].get(cid,())
         missing={s[1] for s,c in slots if c['required'] and not c['complete']}
         free={s[1] for s,c in slots if c['required'] and any(pos==s for _,pos in c['free'])}
         temp={s[1] for s,c in slots if str(audit['rows'].get(s,{}).get('core_id') or '').startswith('임시-')}
@@ -429,7 +434,11 @@ def field_slot_json_restore(store,pack):
 def field_slot_signature(store,slots,audit_rows=None,net=None):
     slots=set(map(tuple,slots));net=net or Network(store.conn)
     rows=audit_rows or {(r['cable_id'],int(r['core_index'])):r for r in store.all_core_rows()}
-    splices=sorted((s for s in net.splices if (s['cable1_id'],s['core1_index']) in slots or (s['cable2_id'],s['core2_index']) in slots),key=lambda s:(s['node_id'],s['cable1_id'],s['core1_index'],s['cable2_id'],s['core2_index']))
+    touching=set()
+    for slot in slots:touching.update(net.splice_index.get(slot,()))
+    splices=sorted((net.splices[i] for i in touching),key=lambda s:(s['node_id'],s['cable1_id'],s['core1_index'],s['cable2_id'],s['core2_index']))
+    if not hasattr(net,'_field_signature_degree'):
+        net._field_signature_degree=Counter(nid for c in net.cables.values() if str(c.get('spec') or '').strip()!='드랍' for nid in {c['n1id'],c['n2id']})
     facilities={s['node_id'] for s in splices}
     cables=[]
     for cid in sorted({s[0] for s in slots if not s[0].startswith('PORT:')}):
@@ -438,7 +447,7 @@ def field_slot_signature(store,slots,audit_rows=None,net=None):
     ends=[]
     for nid in sorted(facilities-{None}):
         node=net.nodes.get(nid,{})
-        degree=sum(nid in (c['n1id'],c['n2id']) and str(c.get('spec') or '').strip()!='드랍' for c in net.cables.values())
+        degree=net._field_signature_degree[nid]
         ends.append((nid,node.get('type'),node.get('status'),terminal_marked(node),degree))
     return digest([[(s,[rows.get(s,{}).get(k) for k in FIELD_SLOT_FIELDS]) for s in sorted(slots)],splices,cables,ends])
 

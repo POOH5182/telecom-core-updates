@@ -242,3 +242,22 @@ and authorization when delivering changes. Do not send messages to other people.
 - check_field_slots.py covers the real Windows recopy button from legacy field,
   repeated same-phase recopy, GIS recopy, cancellation, fresh backup contents,
   stale detail closure, empty endpoint columns and save/reopen persistence.
+
+
+- V74 optimizes field reads without changing completion, local OK/NOT OK, GIS
+  evidence or saved final-confirmation signatures. Use sorted component roots,
+  Network.splice_index and precomputed degrees instead of repeated full scans.
+  Index free slots by node and diagnostic entries by cable. Only recompute a
+  stored confirmation fingerprint when a matching slot set has a confirmation.
+- field_read_state and field_display_rows are read-only views keyed by revision,
+  connection change count and view generation. Never return their shared state
+  from editing APIs: field_records and FieldSurvey drafts retain private copies.
+  Badges, both endpoint columns and local summaries reuse one report per node;
+  explicit unsaved records must still receive their own correct report.
+- NodeDialog must not build a global trace without a selected core. Preserve
+  selected-core route highlighting and stale-window cleanup. Reapply lock/terminal
+  controls when state changes, without walking every widget on each focus event.
+- Run check_field_performance.py --check, including Windows enclosure/pane and
+  selection gates, as well as the existing field, completion, lock and Windows
+  gates. Its benchmark command compares large synthetic drawings; timings are
+  diagnostic only. Do not publish customer drawings or benchmark fixture DBs.
