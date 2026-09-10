@@ -152,7 +152,7 @@ def windows_ui():
                 s.update_core(left,1,('SHARED','공통 코어','','','on'));s.connect(h,(left,1),(right,1))
                 s.update_core(left,2,('임시-22','임시','','',''))
                 s.update_core(left,3,('EXPECTED','해지예상','cancel_expected','',''));s.connect(h,(left,3),(right,3))
-                app.refresh();app.update();assert '100.0%' in app.work_progress_text.cget('text')
+                app.refresh();app.update();assert '100.0%' in app.work_progress_rate.cget('text')
                 first=code['CableDialog'](app,s,left);second=code['CableDialog'](app,s,right);node=code['NodeDialog'](app,s,h)
                 # Both routes are already assigned: choose them with the default
                 # "unassigned cables only" filter disabled, as a user would.
@@ -183,7 +183,7 @@ def windows_ui():
                 s.conn.execute("INSERT INTO meta VALUES('active_scenario','after') ON CONFLICT(key) DO UPDATE SET value=excluded.value");s.conn.commit()
                 app.refresh();app.update();report=s.drawing_connection_progress()
                 assert report['total']==1 and report['done']==1 and report['excluded']==2
-                assert '후도면' in app.work_progress_text.cget('text');assert '100.0%' in app.work_progress_text.cget('text')
+                assert '후도면' in app.work_progress_text.cget('text');assert '100.0%' in app.work_progress_rate.cget('text')
                 targets=wf.CompletionTargetsDialog(app,s);app.update();assert len(targets.table.get_children())==3;targets.destroy()
                 incomplete=code['IncompleteCoresDialog'](app,s);app.update();assert len(incomplete.entries)==0;incomplete.destroy()
                 value=wf.state(s);value['phases']=[dict(id='test',name='완료율 검증',cores=[],cables=[dict(id=left,scope='after',label='LEFT')],excluded_cores=[],note='')]

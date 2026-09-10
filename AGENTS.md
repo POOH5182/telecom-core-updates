@@ -192,3 +192,8 @@ and authorization when delivering changes. Do not send messages to other people.
   observation. Keep all V69 mismatch deferral and local-only status behavior.
   Show the automatic result in the field save preview, endpoint columns and counts.
   Run field overlay/comparison, completion and Windows release gates.
+
+- V71 renders dashboard mandatory-core counts as separate labels. Only the
+  incomplete label is red (#c62828) when total minus done is positive; zero uses
+  the existing metric color. Keep the stage completion policy and other colors.
+  The title is work_progress_text and the percentage is work_progress_rate.
