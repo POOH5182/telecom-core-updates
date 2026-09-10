@@ -165,3 +165,19 @@ and authorization when delivering changes. Do not send messages to other people.
   popup position, and cancel old route-highlight timers. Cable/RN/subscriber
   editors retain their existing behavior. Run the Windows smoke gate's actual
   double-click, duplicate-open, save/cancel and popup-position checks.
+
+- V69 supersedes V67's forced field topology rule. The primary field save and
+  Ctrl+S persist observations/comparisons without removing or replacing existing
+  GIS/current splices or identities. Only a pair with no local splice and blank
+  IDs in both the frozen GIS reference and current drawing may be added as one
+  temporary core. Partial re-pastes preserve unmentioned evidence and edits.
+- Show unapplied observed connections as 현장 선번 미반영 / NOT OK, with a filter,
+  count and GIS/field/current evidence. Related retained connections cannot stay
+  OK while a conflicting observation is pending. Reviewed connection/identity
+  correction is separate; a matching actual connection can then be marked OK.
+  Keep the GIS difference and saved before/after evidence after manual completion.
+  New imports never revert earlier manual corrections or rewrite old saved data.
+- Retain backup, atomic history, stale/lock checks, and displaced-slot automatic
+  splice exclusions during explicit correction. Run check_field_overlay.py and
+  check_field_compare.py, including Windows save/pending-filter/correction/OK
+  gates, before publishing.

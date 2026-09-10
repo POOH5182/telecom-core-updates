@@ -1,4 +1,4 @@
-"""Field-first physical allocation, enclosure-local acknowledgement and UI gate."""
+"""GIS-preserving field comparisons, explicit correction and local review gate."""
 import os
 from pathlib import Path
 import sys
@@ -43,17 +43,49 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(observed,{self.pair(self.left,2,self.right,2),self.pair(self.left,3,self.right,3)})
         self.assertIsNotNone(self.s.splice_for(self.h,self.left,1))
 
-    def test_conflicting_ids_never_block_field_numbers_or_replace_content(self):
+    def test_conflicting_field_numbers_preserve_gis_splices_and_all_content(self):
         original={tuple((r['cable_id'],r['core_index'])):r for r in self.s.all_core_rows()}
         remote=[dict(r) for r in self.s.conn.execute('SELECT * FROM splices WHERE node_id=?',(self.b,))]
-        self.apply('A\tB\n1\t2\n2\t1')
-        self.assertEqual(wf.FieldSurvey(self.s,self.h).pairs,{self.pair(self.left,1,self.right,2),self.pair(self.left,2,self.right,1)})
+        result=self.apply('A\tB\n1\t2\n2\t1')
+        self.assertEqual((result['deferred'],result['added'],result['removed']),(2,0,0))
+        self.assertEqual(wf.FieldSurvey(self.s,self.h).pairs,{self.pair(self.left,1,self.right,1),self.pair(self.left,2,self.right,2)})
         self.assertEqual({tuple((r['cable_id'],r['core_index'])):r for r in self.s.all_core_rows()},original)
         self.assertEqual([dict(r) for r in self.s.conn.execute('SELECT * FROM splices WHERE node_id=?',(self.b,))],remote)
         self.assertTrue(all(r['local_status']=='NOT OK' for r in self.rows()))
         with self.assertRaises(ValueError):self.mark(self.rows())
-        self.assertEqual(wf.field_summary(self.s,self.h)['issues'],2)
+        self.assertEqual(wf.field_summary(self.s,self.h)['issues'],4)
         self.assertTrue(any(r['category']=='현장 NOT OK' for r in wf.field_check_rows(self.s)))
+
+    def test_one_to_two_stays_pending_until_reviewed_edit_then_manual_ok(self):
+        self.apply('A\tB\n2\t2')
+        missing=next(r for r in self.rows() if r['source']=='미조사');self.mark([missing])
+        original=wf.plan_snapshot(self.s.conn)
+        result=self.apply('A\tB\n1\t2')
+        self.assertEqual(wf.plan_snapshot(self.s.conn),original)
+        self.assertEqual(result['deferred'],1)
+        observed=next(r for r in self.rows() if r['source']=='조사표')
+        self.assertTrue(observed['local_pending']);self.assertEqual(observed['local_mode'],'현장 선번 미반영')
+        self.assertIn('A / 1번',observed['baseline_connection']);self.assertIn('B / 2번',observed['baseline_connection'])
+        self.assertIn('B / 1번 → B / 2번',observed['difference_text'])
+        self.assertTrue(all(r['local_status']=='NOT OK' for r in self.rows()))
+        self.assertTrue(all(wf.field_local_slots(self.s,self.h)[slot]=='NOT OK' for slot in ((self.left,1),(self.right,1),(self.left,2),(self.right,2))))
+        with self.assertRaises(ValueError):self.mark([observed])
+        with self.assertRaises(ValueError):self.mark([next(r for r in self.rows() if r['key']==missing['key'])])
+        saved=self.snapshot();path=self.s.path;self.s.close();self.s=code['Store'](path)
+        self.assertEqual(self.snapshot(),saved)
+        choice={observed['key']:dict(self.s.core(self.left,1))}
+        preview=wf.field_resolution_preview(self.s,self.h,choice,'현장 1-2 확인 후 직접 수정')
+        self.assertEqual(self.snapshot(),saved)
+        wf.field_commit_resolution(self.s,preview)
+        current=next(r for r in self.rows() if r['key']==observed['key'])
+        self.assertFalse(current['local_pending']);self.assertEqual(current['local_status'],'NOT OK')
+        self.mark([current]);current=next(r for r in self.rows() if r['key']==observed['key'])
+        self.assertEqual(current['local_status'],'OK');self.assertEqual(current['treatment'],'수정·확인 완료')
+        final=wf.plan_snapshot(self.s.conn)
+        self.apply('A\tB\n1\t2')
+        self.assertEqual(wf.plan_snapshot(self.s.conn),final)
+        self.assertEqual(next(r for r in self.rows() if r['key']==observed['key'])['local_status'],'OK')
+        self.assertEqual(wf.field_reference(self.s),self.reference)
 
     def test_new_gis_missing_pair_gets_temporary_identity_and_stays_not_ok(self):
         self.apply('A\tB\n3\t3\n4\t4')
@@ -69,8 +101,21 @@ class OverlayTests(unittest.TestCase):
         # Existing real metadata in a changed pair is never replaced by a temp ID.
         self.apply('A\tB\n1\t5')
         self.assertEqual(self.s.core(self.left,1)['core_id'],'ID-1')
-        self.assertTrue(self.s.core(self.right,5)['core_id'].startswith('임시-'))
+        self.assertEqual(self.s.core(self.right,5)['core_id'],'')
         self.assertEqual(self.s.core(self.right,1)['core_id'],'ID-1')
+
+    def test_known_gis_or_current_identity_is_not_a_new_blank_pair(self):
+        # Even empty current slots must not hide a known GIS allocation.
+        with self.s.action('수동 배정 해제'):
+            self.s.conn.execute('DELETE FROM splices WHERE node_id=?',(self.h,))
+            for cable in (self.left,self.right):
+                self.s.conn.execute("UPDATE cores SET core_id='' WHERE cable_id=? AND core_index=1",(cable,))
+        before=wf.plan_snapshot(self.s.conn);result=self.apply('A\tB\n1\t1')
+        self.assertEqual(wf.plan_snapshot(self.s.conn),before);self.assertEqual(result['deferred'],1)
+        self.s.update_core(self.left,3,('MANUAL','수동으로 입력한 내역','normal','','off'))
+        before=wf.plan_snapshot(self.s.conn);self.apply('A\tB\n3\t3')
+        self.assertEqual(wf.plan_snapshot(self.s.conn),before)
+        self.assertEqual(self.s.core(self.right,3)['core_id'],'')
 
     def test_local_checks_are_independent_and_id_changes_invalidate_ok_not_names(self):
         self.apply('A\tB\n2\t2');self.apply('B\tC\n2\t2',self.b)
@@ -89,13 +134,13 @@ class OverlayTests(unittest.TestCase):
 
     def test_manual_identity_resolution_then_local_ok_keeps_original_history(self):
         self.apply('A\tB\n1\t2\n2\t1')
-        choices={r['key']:dict(self.s.core(self.left,next(i for c,i in r['slots'] if c==self.left))) for r in self.rows()}
+        choices={r['key']:dict(self.s.core(self.left,next(i for c,i in r['slots'] if c==self.left))) for r in self.rows() if r['source']=='조사표'}
         result=wf.field_commit_resolution(self.s,wf.field_resolution_preview(self.s,self.h,choices,'현장 양단의 ID 확인'))
         self.assertTrue(result['backup'].exists());self.assertTrue(all(r['local_status']=='NOT OK' for r in self.rows()))
         self.mark(self.rows());self.assertTrue(all(r['local_status']=='OK' for r in self.rows()))
         self.assertTrue(all(r['baseline_relation']=='선번 다름' for r in self.rows()))
         records=wf.field_records(self.s)[self.h]['corrections']
-        self.assertEqual(len(records),2);self.assertEqual(records[0]['kind'],'현장 선번 반영')
+        self.assertEqual(len(records),2);self.assertEqual(records[0]['kind'],'현장 조사 저장')
         self.assertEqual(records[0]['preserved'][0]['core_id'] in ('ID-1','ID-2'),True)
 
     def test_invalid_input_locks_staleness_and_failed_backup_are_all_or_nothing(self):
@@ -182,8 +227,14 @@ def windows_ui():
                 app.clipboard_clear();app.clipboard_append('A\tB\n1\t2\n2\t1\n3\t3');sheet.paste_from_a1();app.update()
                 app.after(200,lambda:review(True));dialog.overlay_button.invoke();app.update()
                 assert s.core(left,1)['core_id']=='ID-1' and s.core(right,2)['core_id']=='ID-2'
+                assert wf.FieldSurvey(s,h).pairs=={wf.field_pair(((left,i),(right,i))) for i in (1,2,3)}
                 assert s.core(left,3)['core_id']==s.core(right,3)['core_id'] and s.core(left,3)['core_id'].startswith('임시-')
-                dialog.filter.set('NOT OK');dialog.show_rows();app.update();assert len(dialog.visible)==3
+                assert '현장 선번 미반영 2건' in dialog.summary.get()
+                dialog.filter.set('현장 선번 미반영');dialog.show_rows();app.update();assert len(dialog.visible)==2
+                assert all(dialog.tree.set(iid,'treatment')=='현장 선번 미반영' for iid in dialog.tree.get_children())
+                dialog.tree.selection_set('0');app.update()
+                assert '미반영' in dialog.comparison_panel.status.get()
+                dialog.filter.set('NOT OK');dialog.show_rows();app.update();assert len(dialog.visible)==5
                 dialog.tree.cycle_sort('current');app.update()
                 assert all(dialog.tree.set(iid,'status')=='NOT OK' for iid in dialog.tree.get_children())
                 row=next(r for r in dialog.rows if (left,3) in r['slots'])
@@ -192,11 +243,30 @@ def windows_ui():
                 archive=wf.FieldArchiveDialog(dialog,s,h);app.update();assert len(archive.items)==2
                 archive.tree.selection_set('0');archive.pick();assert '현장 선번' in archive.details.get('1.0','end');archive.destroy()
                 app.display_options['badges']=False;app.display_options['field_checks']=True;app.refresh();app.update()
-                assert 'NOT OK 2' in app.drawing_svg()
+                assert 'NOT OK 4' in app.drawing_svg()
                 settings=code['DisplaySettingsDialog'](app);settings.values['field_checks'].set(False);settings.apply();app.update()
                 assert 'NOT OK' not in app.drawing_svg()
                 texts=[app.canvas.itemcget(i,'text') for i in app.canvas.find_all() if app.canvas.type(i)=='text']
                 assert not any('NOT OK' in t or t.startswith('OK ') for t in texts)
+                # A reviewed correction changes the connections; OK is a separate step.
+                dialog.reload();dialog.filter.set('현장 선번 미반영');dialog.show_rows();app.update()
+                dialog.tree.selection_set(('0','1'));dialog.resolve_selected();app.update()
+                editor=next(w for w in dialog.winfo_children() if isinstance(w,wf.FieldResolutionDialog))
+                for index,row in enumerate(editor.rows):
+                    number=next(i for c,i in row['slots'] if c==left)
+                    editor.tree.selection_set(str(index));app.update()
+                    editor.source.set(next(k for k,v in editor.labels.items() if v.get('core_id')==f'ID-{number}'))
+                    editor.source_changed();editor.assign()
+                editor.reason.set('GIS와 현장 차이 확인 후 선번 직접 수정')
+                def accept_correction():
+                    popup=next(w for w in editor.winfo_children() if isinstance(w,wf.ConnectionRouteDialog));popup.confirm()
+                app.after(200,accept_correction);editor.preview();app.update()
+                assert wf.FieldSurvey(s,h).pairs=={wf.field_pair(((left,1),(right,2))),wf.field_pair(((left,2),(right,1))),wf.field_pair(((left,3),(right,3)))}
+                assert not any(r['local_pending'] for r in dialog.rows)
+                dialog.filter.set('NOT OK');dialog.show_rows();app.update();assert len(dialog.visible)==2
+                dialog.tree.selection_set(('0','1'));dialog.mark('OK');app.update()
+                assert all(r['local_status']=='OK' for r in dialog.rows)
+                dialog.filter.set('수정·확인 완료');dialog.show_rows();app.update();assert len(dialog.visible)==3
                 assert app.scenario_path('gis').read_bytes()==gis
                 dialog.destroy();node.destroy()
                 reopened=code['NodeDialog'](app,s,h);reopened.field_survey_open();app.update()
@@ -204,11 +274,11 @@ def windows_ui():
                 assert len([r for r in saved.rows if r['source']=='조사표'])==3
                 saved.destroy();reopened.destroy();assert not errors,errors
             finally:app.on_close()
-    print('PASS Windows field overlay button, cancel/preview, partial paste, local OK/NOT OK, temporary cores, endpoint columns, sort, archive, display/SVG toggle and reopen')
+    print('PASS Windows GIS-preserving field save, pending filter, explicit correction then OK, temporary cores, endpoint columns, sort, archive, display/SVG toggle and reopen')
 
 
 if __name__=='__main__':
     result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(OverlayTests))
     if not result.wasSuccessful():raise SystemExit(1)
     windows_ui()
-    print('PASS field-first allocation, preserved real identities, new temporary cores, local checks, atomic backup/history and GIS preservation')
+    print('PASS GIS-preserving field comparison, deferred mismatches, explicit correction then OK, temporary cores, atomic backup/history and GIS preservation')

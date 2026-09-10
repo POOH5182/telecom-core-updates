@@ -560,7 +560,7 @@ class FieldSurveySheet(ttk.Frame):
 
 
 class FieldSurveyDialog(RememberedToplevel):
-    FILTERS=('전체','OK','NOT OK','확인완료','미확인','불일치','이상','GIS와 다른 항목','수정 대기','수정·확인 완료')
+    FILTERS=('전체','OK','NOT OK','현장 선번 미반영','확인완료','미확인','불일치','이상','GIS와 다른 항목','수정 대기','수정·확인 완료')
     def __init__(self,parent,store,node_id):
         super().__init__(parent);self.app=top_app(parent);self.store=store;self.node_id=node_id
         self.generation=getattr(store,'_view_generation',0);self.rows=[];self.visible=[];self.token=None
@@ -572,14 +572,14 @@ class FieldSurveyDialog(RememberedToplevel):
         if store.node(node_id)['type']=='rn':headers.append('RN내부')
         raw=record.get('text') or field_table_text([headers])
         self.sheet=FieldSurveySheet(self,FieldSurvey(store,node_id,reference=self.reference),raw);self.sheet.pack(fill='both',expand=True,padx=8)
-        ttk.Label(self,text='현장 선번 반영 → NOT OK 선택 → 양방향·GIS 내역 비교 → 연결·내역 직접 수정 → 선택 OK. 입력하지 않은 접속은 유지하며 신규 빈 배분은 임시코어로 등록합니다. OK는 이 함체에만 적용됩니다.',padding=(10,6),wraplength=1380).pack(fill='x')
+        ttk.Label(self,text='① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. 양쪽 모두 빈 신규 선번만 임시코어로 추가합니다.',padding=(10,6),wraplength=1380).pack(fill='x')
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         ttk.Button(bar,text='비교만 저장',command=lambda:self.inspect(add_new=False)).pack(side='left',padx=3)
-        self.overlay_button=ttk.Button(bar,text='현장 선번 반영·저장',command=self.overlay);self.overlay_button.pack(side='left',padx=3)
+        self.overlay_button=ttk.Button(bar,text='조사 저장·GIS 비교',command=self.overlay);self.overlay_button.pack(side='left',padx=3)
         ttk.Button(bar,text='선택 OK',command=lambda:self.mark('OK')).pack(side='left',padx=3)
         ttk.Button(bar,text='선택 NOT OK',command=lambda:self.mark('NOT OK')).pack(side='left',padx=3)
         ttk.Button(bar,text='NOT OK 사유',command=lambda:self.mark('NOT OK 메모')).pack(side='left',padx=3)
-        ttk.Button(bar,text='선택 선번만 반영',command=lambda:self.overlay(selected=True)).pack(side='left',padx=8)
+        ttk.Button(bar,text='선택 조사 비교·저장',command=lambda:self.overlay(selected=True)).pack(side='left',padx=8)
         ttk.Button(bar,text='선택 행 표에서 수정',command=self.edit_selected).pack(side='left',padx=3)
         more=ttk.Frame(self,padding=(8,0,8,5));more.pack(fill='x')
         ttk.Button(more,text='선택 연결·내역 직접 수정',command=self.resolve_selected).pack(side='left',padx=3)
@@ -649,13 +649,14 @@ class FieldSurveyDialog(RememberedToplevel):
         self.token=self.store.data_revision();counts=Counter(row['status'] for row in self.rows)
         differences=sum(r['baseline_relation'] not in ('같음','미조사','기준 없음') for r in self.rows)
         ok=sum(r['local_status']=='OK' for r in self.rows)
-        self.summary.set(f'이 함체 OK {ok} · NOT OK {len(self.rows)-ok} · 기준과 차이 {differences}건 · 기준: '+self.reference.get('source','없음'))
+        pending=sum(r.get('local_pending',False) for r in self.rows)
+        self.summary.set(f'이 함체 OK {ok} · NOT OK {len(self.rows)-ok} · 현장 선번 미반영 {pending}건 · 기준과 차이 {differences}건 · 기준: '+self.reference.get('source','없음'))
         self.show_rows(keep_keys);self.sheet.color_rows(self.rows)
 
     def draft_changed(self):
         try:self.rows=FieldSurvey(self.store,self.node_id,reference=self.reference).report(self.sheet.get_text())
         except ValueError as error:self.summary.set(str(error));return
-        self.summary.set('입력 수정 중 · 현장 선번 반영·저장으로 선번을 먼저 맞추세요. NOT OK 내역은 나중에 직접 수정·확인합니다. 비교만 저장은 조사값만 보관합니다.')
+        self.summary.set('입력 수정 중 · 조사 저장·GIS 비교를 누르세요. 다른 선번은 기존 연결을 유지한 채 미반영으로 보관하며, 비교 후 직접 수정하고 OK로 확인합니다.')
         self.show_rows();self.sheet.color_rows(self.rows)
 
     def close_dialog(self):
@@ -683,6 +684,8 @@ class FieldSurveyDialog(RememberedToplevel):
             choice=self.filter.get()
             if choice=='GIS와 다른 항목':
                 if row['baseline_relation'] in ('같음','미조사','기준 없음'):continue
+            elif choice=='현장 선번 미반영':
+                if not row.get('local_pending'):continue
             elif choice in ('수정 대기','수정·확인 완료'):
                 if row['treatment']!=choice:continue
             elif choice in ('OK','NOT OK'):

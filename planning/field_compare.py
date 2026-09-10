@@ -103,6 +103,8 @@ def field_enrich_comparison(engine,rows):
             if key==row['key'] or members.intersection(tuple(s) for s in note.get('slots',[])):
                 related.append(note.get('time','')+' · '+note.get('text',''))
         treatment='기존 유지' if row['status']=='확인완료' and relation=='같음' else '수정·확인 완료' if row['status']=='확인완료' else '조사 필요' if row['source']!='조사표' else '확인 대기' if row.get('matching') else '수정 대기'
+        if engine.record.get('overlay_mode'):
+            treatment=('기존 유지' if row['local_mode']=='GIS 자동 일치' else '수정·확인 완료') if row['local_status']=='OK' else '수정 대기' if row.get('local_pending') or row['source']=='조사표' else '조사 필요'
         row.update(baseline_relation=relation,baseline_connection=' / '.join(before.label(p) for p in old_pairs) or ('기준 연결 없음' if reference else '기준 없음'),
                    baseline_detail='\n'.join(before.label((s,))+' : '+field_identity_text(before.slots.get(s)) for s in sorted(old_slots)),
                    current_detail='\n'.join(engine.label((s,))+' : '+field_identity_text(engine.slots.get(s)) for s in sorted(current_slots)),
@@ -201,6 +203,8 @@ def field_resolve(store,node_id,choices,reason,expected_revision,expected_genera
         for row in rows:
             a,b=row['slots'];store.conn.execute('INSERT INTO splices VALUES(?,?,?,?,?)',(node_id,*a,*b))
             store.set_auto_splice_exclusions(node_id,(a,b),False)
+        displaced={s for p in old_pairs for s in p}-members
+        if displaced:store.set_auto_splice_exclusions(node_id,displaced,True)
         # Entire actual connected components are shown in the preview. Equal IDs
         # elsewhere are not a reason to edit those unrelated components.
         for row in rows:
