@@ -90,6 +90,70 @@ def check_facility_headers(code, app):
     return rn, subscriber
 
 
+def check_single_enclosure_window(code, app):
+    wf = code['App'].__init__.__globals__['workflow']
+    store = app.store
+    a = store.add_node('1744a645', 100, 700)
+    b = store.add_node('1744b213', 400, 700)
+    cable = store.add_cable(a, b, 'WINDOW-CABLE', '12C', '기설')
+    store.update_core(cable, 1, ('WINDOW-CORE', '창 전환 확인', 'normal', '', 'off'))
+    app.deiconify(); app.refresh(); app.update()
+
+    def open_node(node_id):
+        with patch.object(app, 'target', return_value=('node', node_id)):
+            app.double_click(None)
+        app.update()
+        windows = [w for w in app._detail_windows.values()
+                   if isinstance(w, code['NodeDialog']) and w.node_type == 'hamche' and w.winfo_exists()]
+        assert len(windows) == 1, windows
+        return windows[0]
+
+    first = open_node(a)
+    label = next(k for k, v in first.by_label.items() if v == cable)
+    first.left_var.set(label); first.reload_all(); first.left_tree.selection_set('1'); app.update()
+    assert app.highlight_owner is first
+    assert open_node(a) is first
+    assert first.left_tree.selection() == ('1',)
+    # A cable editor may remain beside the single enclosure editor.
+    cable_window = code['open_detail_dialog'](app, store, 'cable', cable)
+    app.update(); before = wf.plan_snapshot(store.conn)
+    first.geometry('+40+40'); app.update(); position = first.winfo_x(), first.winfo_y()
+    with patch.object(code['messagebox'], 'askyesnocancel', side_effect=AssertionError('Clean switch prompted')):
+        second = open_node(b)
+    assert second.node_id == b and not first.winfo_exists() and cable_window.winfo_exists()
+    assert wf.plan_snapshot(store.conn) == before
+    assert app.highlight_owner is not first
+    assert wf.popup_position(second._popup_position_path, 'NodeDialog') == position
+    expected = wf.clamp_popup_position(*position, second.winfo_width(), second.winfo_height(),
+                                      (0, 0, second.winfo_screenwidth(), second.winfo_screenheight()))
+    assert abs(second.winfo_x() - expected[0]) <= 2 and abs(second.winfo_y() - expected[1]) <= 2
+    second.name_var.set('저장하지 않은 이름')
+    with patch.object(code['messagebox'], 'askyesnocancel', return_value=None):
+        assert open_node(a) is second
+    assert second.name_var.get() == '저장하지 않은 이름' and store.node(b)['name'] == '1744b213'
+    with patch.object(code['messagebox'], 'askyesnocancel', return_value=False):
+        first = open_node(a)
+    assert not second.winfo_exists() and store.node(b)['name'] == '1744b213'
+    first.name_var.set('1744a645 저장'); first.hamche_spec_var.set('12'); first.hamche_id_var.set('WINDOW-A')
+    with patch.object(code['messagebox'], 'askyesnocancel', return_value=True):
+        second = open_node(b)
+    assert not first.winfo_exists() and store.node(a)['name'] == '1744a645 저장'
+    assert code['hamche_details'](store.node(a)) == ('12C', 'WINDOW-A')
+    # The existing field-sheet close action can cancel replacement without losing its draft.
+    field = wf.FieldSurveyDialog(second, store, b)
+    field.sheet.set_text('WINDOW-CABLE\n1'); app.update()
+    with patch.object(code['messagebox'], 'askyesnocancel', return_value=None):
+        assert open_node(a) is second and field.winfo_exists()
+    assert field.sheet.get_text().strip() == 'WINDOW-CABLE\n1'
+    with patch.object(code['messagebox'], 'askyesnocancel', return_value=False):
+        first = open_node(a)
+    assert not second.winfo_exists() and not field.winfo_exists()
+    first.destroy(); app.update()
+    first = open_node(a); assert first.node_id == a
+    first.destroy(); cable_window.destroy(); app.update()
+    print('PASS Windows single enclosure double-click, same-window selection, previous close/position, highlight cleanup, header save/discard/cancel, field draft cancel and independent cable editor')
+
+
 def check_bulk_keyboard(code, app):
     wf = code['App'].__init__.__globals__['workflow']
     store = app.store
@@ -401,6 +465,7 @@ def main():
             rn, subscriber = check_facility_headers(code, app)
             check_bulk_keyboard(code, app)
             check_route_checks(code, app)
+            check_single_enclosure_window(code, app)
             app.update_idletasks()
             assert not errors, errors
             path = app.store.path

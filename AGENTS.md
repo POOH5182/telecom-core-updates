@@ -157,3 +157,11 @@ and authorization when delivering changes. Do not send messages to other people.
   remain for compatibility, but the user-facing field-save action uses overlay.
   Run check_field_overlay.py including Windows UI, and the existing field,
   completion, sorting and release gates before publication.
+
+- V68 open_detail_dialog allows only one enclosure (hamche) NodeDialog at a
+  time. Same-item opens reuse the live editor; another enclosure closes the
+  previous editor through close_for_switch before constructing the new one.
+  Honor dirty-header and field-sheet save/cancel choices, retain remembered
+  popup position, and cancel old route-highlight timers. Cable/RN/subscriber
+  editors retain their existing behavior. Run the Windows smoke gate's actual
+  double-click, duplicate-open, save/cancel and popup-position checks.
