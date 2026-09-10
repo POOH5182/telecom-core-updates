@@ -181,3 +181,14 @@ and authorization when delivering changes. Do not send messages to other people.
   splice exclusions during explicit correction. Run check_field_overlay.py and
   check_field_compare.py, including Windows save/pending-filter/correction/OK
   gates, before publishing.
+
+- V70 automatically marks an observed new temporary pair OK when the frozen GIS
+  has no touching splice or assigned ID and the current pair is uniquely spliced
+  with one matching temporary ID. The local mode is 현장 신규 자동 OK. This read-only
+  rule also covers previously saved V67–V69 temporary pairs; retain their IDs,
+  evidence, history and original GIS differences without a destructive migration.
+- Auto OK never overrides explicit manual NOT OK, conflicting supplied IDs,
+  missing/duplicate actual splices, known GIS allocations or a pending conflicting
+  observation. Keep all V69 mismatch deferral and local-only status behavior.
+  Show the automatic result in the field save preview, endpoint columns and counts.
+  Run field overlay/comparison, completion and Windows release gates.

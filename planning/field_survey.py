@@ -572,7 +572,7 @@ class FieldSurveyDialog(RememberedToplevel):
         if store.node(node_id)['type']=='rn':headers.append('RN내부')
         raw=record.get('text') or field_table_text([headers])
         self.sheet=FieldSurveySheet(self,FieldSurvey(store,node_id,reference=self.reference),raw);self.sheet.pack(fill='both',expand=True,padx=8)
-        ttk.Label(self,text='① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. 양쪽 모두 빈 신규 선번만 임시코어로 추가합니다.',padding=(10,6),wraplength=1380).pack(fill='x')
+        ttk.Label(self,text='① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. GIS에 없던 양쪽 빈 신규 선번은 임시코어로 배정하고 자동 OK로 처리합니다.',padding=(10,6),wraplength=1380).pack(fill='x')
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         ttk.Button(bar,text='비교만 저장',command=lambda:self.inspect(add_new=False)).pack(side='left',padx=3)
         self.overlay_button=ttk.Button(bar,text='조사 저장·GIS 비교',command=self.overlay);self.overlay_button.pack(side='left',padx=3)

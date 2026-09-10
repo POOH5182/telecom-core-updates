@@ -87,13 +87,17 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(next(r for r in self.rows() if r['key']==observed['key'])['local_status'],'OK')
         self.assertEqual(wf.field_reference(self.s),self.reference)
 
-    def test_new_gis_missing_pair_gets_temporary_identity_and_stays_not_ok(self):
-        self.apply('A\tB\n3\t3\n4\t4')
+    def test_new_gis_missing_pair_gets_temporary_identity_and_automatic_ok(self):
+        result=self.apply('A\tB\n3\t3\n4\t4')
+        self.assertEqual(result['auto_ok'],2)
+        self.assertEqual(sum(c[0]=='현장 신규 자동 OK' for c in result['changes']),2)
         ids=[]
         for index in (3,4):
             cid=self.s.core(self.left,index)['core_id'];ids.append(cid)
             self.assertTrue(cid.startswith('임시-'));self.assertEqual(self.s.core(self.right,index)['core_id'],cid)
-            row=next(r for r in self.rows() if (self.left,index) in r['slots']);self.assertEqual(row['local_status'],'NOT OK')
+            row=next(r for r in self.rows() if (self.left,index) in r['slots']);self.assertEqual(row['local_status'],'OK')
+            self.assertEqual(row['local_mode'],'현장 신규 자동 OK');self.assertEqual(row['treatment'],'신규 자동 OK')
+            self.assertEqual(row['baseline_relation'],'선번 다름')
         self.assertNotEqual(*ids);self.assertEqual(wf.field_reference(self.s),self.reference)
         self.apply('A\tB\n3\t3')
         self.assertEqual([self.s.core(self.left,i)['core_id'] for i in (3,4)],ids)
@@ -103,6 +107,43 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(self.s.core(self.left,1)['core_id'],'ID-1')
         self.assertEqual(self.s.core(self.right,5)['core_id'],'')
         self.assertEqual(self.s.core(self.right,1)['core_id'],'ID-1')
+
+    def test_saved_v69_temporary_pair_becomes_ok_without_rewriting_data(self):
+        # V69 persisted a real temporary splice and survey evidence, with no
+        # local decision for its automatically computed NOT OK status.
+        with self.s.action('V69 신규 임시 연결 저장'):
+            wf.field_keep_reference(self.s,self.reference)
+            for cable in (self.left,self.right):
+                self.s._write_core(cable,3,('임시-9001','기존 현장 내역','normal','','off'))
+            self.s.conn.execute('INSERT INTO splices VALUES(?,?,?,?,?)',(self.h,self.left,3,self.right,3))
+            engine=wf.FieldSurvey(self.s,self.h)
+            engine.record.update(text='A\tB\n3\t3',overlay_mode=True,overlay_policy='preserve_gis',gis_known=True,
+                                 gis_pairs=[list(p) for p in wf.FieldReference(self.reference,self.h).pairs])
+            engine.persist('V69 현장 조사 저장')
+        saved=self.snapshot();path=self.s.path;self.s.close();self.s=code['Store'](path)
+        revision=self.s.data_revision()
+        row=next(r for r in self.rows() if r['source']=='조사표')
+        self.assertEqual(row['local_status'],'OK');self.assertEqual(row['local_mode'],'현장 신규 자동 OK')
+        self.assertEqual(self.snapshot(),saved);self.assertEqual(self.s.data_revision(),revision)
+        self.assertEqual(wf.field_local_slots(self.s,self.h)[(self.right,3)],'OK')
+        self.assertEqual(wf.field_local_slots(self.s,self.b)[(self.right,3)],'NOT OK')
+        # An intentional manual NOT OK remains available after automatic OK.
+        wf.field_local_mark(self.s,self.h,{row['key']},'NOT OK',self.s.data_revision(),self.s._view_generation,'현장 재조사 필요')
+        self.apply('A\tB\n3\t3')
+        row=next(r for r in self.rows() if r['source']=='조사표')
+        self.assertEqual(row['local_status'],'NOT OK');self.assertEqual(row['local_mode'],'수동 NOT OK')
+        self.assertEqual(row['local_reason'],'현장 재조사 필요')
+
+    def test_automatic_temporary_ok_requires_matching_ids_and_actual_connection(self):
+        self.apply('A\tB\n3\t3');cid=self.s.core(self.left,3)['core_id']
+        with self.s.action('코어ID 불일치 확인'):
+            self.s.conn.execute("UPDATE cores SET core_id='임시-9999' WHERE cable_id=? AND core_index=3",(self.right,))
+        row=next(r for r in self.rows() if r['source']=='조사표');self.assertEqual(row['local_status'],'NOT OK')
+        with self.s.action('코어ID 복구 후 연결 해제'):
+            self.s.conn.execute('UPDATE cores SET core_id=? WHERE cable_id=? AND core_index=3',(cid,self.right))
+            self.s.conn.execute('DELETE FROM splices WHERE node_id=? AND core1_index=3',(self.h,))
+        row=next(r for r in self.rows() if r['source']=='조사표')
+        self.assertEqual(row['local_status'],'NOT OK');self.assertTrue(row['local_pending'])
 
     def test_known_gis_or_current_identity_is_not_a_new_blank_pair(self):
         # Even empty current slots must not hide a known GIS allocation.
@@ -234,11 +275,16 @@ def windows_ui():
                 assert all(dialog.tree.set(iid,'treatment')=='현장 선번 미반영' for iid in dialog.tree.get_children())
                 dialog.tree.selection_set('0');app.update()
                 assert '미반영' in dialog.comparison_panel.status.get()
-                dialog.filter.set('NOT OK');dialog.show_rows();app.update();assert len(dialog.visible)==5
+                assert '임시코어 자동 OK 1건' in dialog.summary.get()
+                dialog.filter.set('OK');dialog.show_rows();app.update();assert len(dialog.visible)==1
+                assert dialog.tree.set('0','treatment')=='현장 신규 자동 OK'
+                dialog.tree.selection_set('0');app.update();assert '자동 OK' in dialog.comparison_panel.status.get()
+                assert node.left_tree.set('3','field')=='OK' and node.right_tree.set('3','field')=='OK'
+                dialog.filter.set('NOT OK');dialog.show_rows();app.update();assert len(dialog.visible)==4
                 dialog.tree.cycle_sort('current');app.update()
                 assert all(dialog.tree.set(iid,'status')=='NOT OK' for iid in dialog.tree.get_children())
                 row=next(r for r in dialog.rows if (left,3) in r['slots'])
-                node.mark_local_core((left,3),'OK',s.data_revision(),s._view_generation);app.update()
+                assert row['local_status']=='OK' and row['local_mode']=='현장 신규 자동 OK'
                 assert wf.field_local_slots(s,h)[(right,3)]=='OK'
                 archive=wf.FieldArchiveDialog(dialog,s,h);app.update();assert len(archive.items)==2
                 archive.tree.selection_set('0');archive.pick();assert '현장 선번' in archive.details.get('1.0','end');archive.destroy()
@@ -266,15 +312,16 @@ def windows_ui():
                 dialog.filter.set('NOT OK');dialog.show_rows();app.update();assert len(dialog.visible)==2
                 dialog.tree.selection_set(('0','1'));dialog.mark('OK');app.update()
                 assert all(r['local_status']=='OK' for r in dialog.rows)
-                dialog.filter.set('수정·확인 완료');dialog.show_rows();app.update();assert len(dialog.visible)==3
+                dialog.filter.set('수정·확인 완료');dialog.show_rows();app.update();assert len(dialog.visible)==2
                 assert app.scenario_path('gis').read_bytes()==gis
                 dialog.destroy();node.destroy()
                 reopened=code['NodeDialog'](app,s,h);reopened.field_survey_open();app.update()
                 saved=next(w for w in reopened.winfo_children() if isinstance(w,wf.FieldSurveyDialog))
                 assert len([r for r in saved.rows if r['source']=='조사표'])==3
+                assert next(r for r in saved.rows if (left,3) in r['slots'])['local_mode']=='현장 신규 자동 OK'
                 saved.destroy();reopened.destroy();assert not errors,errors
             finally:app.on_close()
-    print('PASS Windows GIS-preserving field save, pending filter, explicit correction then OK, temporary cores, endpoint columns, sort, archive, display/SVG toggle and reopen')
+    print('PASS Windows automatic OK for new temporary field cores, retained GIS mismatches, explicit correction, endpoint columns, archive, display and reopen')
 
 
 if __name__=='__main__':

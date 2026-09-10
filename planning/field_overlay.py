@@ -54,10 +54,15 @@ def field_local_enrich(engine,rows):
         elif not same:reason='GIS와 현장 선번이 다르거나 GIS 배정이 없습니다. 비교 내용을 확인하고 필요한 연결·내역을 직접 수정하세요.'
         elif not actual:reason='현장 선번과 현재 접속 또는 양쪽 코어ID가 다릅니다. 비교 후 연결·내역을 직접 수정하세요.'
         elif not ids_same:reason='GIS와 현재 코어ID가 다릅니다. 현장에 맞는 내역을 확인한 뒤 OK로 변경하세요.'
+        new_temporary=(bool(engine.reference) and observed and actual and len(pair)==2 and not old_pairs
+                       and not any(old_ids) and all(cid.startswith('임시-') for cid in current_ids)
+                       and not engine.record.get('flags',{}).get(row['key']))
+        if new_temporary:
+            ok=True;reason='GIS에 배정·접속이 없던 신규 선번입니다. 현장 연결의 양쪽을 같은 임시코어ID로 배정해 자동 OK로 처리했습니다.'
         if row.get('input_core_id') and any(cid!=row['input_core_id'] for cid in current_ids):
             ok=False;reason='조사표 코어ID와 현재 내역이 다릅니다. 선번은 유지하고 내역을 확인하세요.'
         decision=engine.record.get('local_checks',{}).get(row['key'],{})
-        mode='GIS 자동 일치' if ok else '확인 필요'
+        mode=('현장 신규 자동 OK' if new_temporary else 'GIS 자동 일치') if ok else '확인 필요'
         if decision.get('status')=='NOT OK':
             ok=False;reason=decision.get('note') or '사용자가 이 함체의 접속을 NOT OK로 지정했습니다.';mode='수동 NOT OK'
         elif decision.get('status')=='OK':
@@ -172,14 +177,17 @@ def field_overlay_apply(store,node_id,raw,revision,generation,reference=None,key
             if field_topology_matches(engine,row['slots']):changes.append(('기존 선번 유지',engine.label(row['slots']),'조사값 저장 · GIS·코어ID와 비교해 OK / NOT OK 표시'))
         current=FieldSurvey(store,node_id);current.record.update(text=merged,time=now(),overlay_mode=True,overlay_policy='preserve_gis')
         current.record['gis_pairs']=[list(p) for p in before.pairs];current.record['gis_known']=True
+        auto_rows=[r for r in current.report(merged,compare=False) if r['key'] in {s['key'] for s in selected} and r['local_mode']=='현장 신규 자동 OK']
+        for row in auto_rows:
+            changes.append(('현장 신규 자동 OK',row['observed'],'같은 임시코어ID: '+' / '.join(row['core_ids'])+' · GIS에 없는 신규 접속 확인'))
         current.record.setdefault('corrections',[]).append(dict(kind='현장 조사 저장',time=now(),
             reason='GIS·현재 선번 유지 · 불일치는 현장 선번 미반영으로 보관 · 양쪽 신규 빈 선번만 임시코어',
             old_pairs=sorted(old_pairs),new_pairs=sorted(old_pairs|added),requested_pairs=sorted(pairs),deferred_pairs=[r['slots'] for r in deferred],
             old_local=before_rows,preserved=before_rows,survey=survey,
-            changes=changes,choices={},text_before=engine.record.get('text',''),text_after=merged))
+            changes=changes,choices={},auto_ok_keys=[r['key'] for r in auto_rows],text_before=engine.record.get('text',''),text_after=merged))
         current.persist('현장 선번·기존내역 보존')
     if not changes:changes=[('선번 유지',engine.label(r['slots']),'현장 조사값 저장 · GIS와 함체별 OK / NOT OK 비교') for r in selected]
-    return dict(changes=changes,removed=0,added=len(added),temporary_slots=len(temps),deferred=len(deferred),observed=len(selected),text=merged)
+    return dict(changes=changes,removed=0,added=len(added),temporary_slots=len(temps),auto_ok=len(auto_rows),deferred=len(deferred),observed=len(selected),text=merged)
 
 
 def field_overlay_preview(store,node_id,raw,reference=None,keys=None):
@@ -215,7 +223,7 @@ def field_overlay_dialog(dialog,event=None,selected=False):
         if not review.accepted:return 'break'
         dialog.valid();result=field_overlay_commit(dialog.store,preview)
         dialog.sheet.set_text(result['text']);dialog.app.refresh();dialog.reload()
-        dialog.summary.set(f"조사 {result['observed']}건 저장 · 현장 선번 미반영 {result['deferred']}건 · 신규 임시 연결 {result['added']}건 · "+dialog.summary.get())
+        dialog.summary.set(f"조사 {result['observed']}건 저장 · 현장 선번 미반영 {result['deferred']}건 · 임시코어 자동 OK {result['auto_ok']}건 · "+dialog.summary.get())
     except (ValueError,sqlite3.Error,OSError) as error:
         messagebox.showerror('현장 선번 반영',str(error),parent=dialog)
     return 'break'

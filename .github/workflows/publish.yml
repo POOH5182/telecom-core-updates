@@ -55,7 +55,7 @@ jobs:
         run: python tools/check_locks_rn.py
       - name: 현장 Excel 표 추가와 불일치 보존·수동 수정 검증
         run: python tools/check_field_sheet.py
-      - name: GIS 선번 유지·현장 미반영·직접 수정 후 OK 검증
+      - name: GIS 선번 유지·신규 임시 자동 OK·수동 수정 검증
         run: python tools/check_field_overlay.py
       - name: 양방향 경로와 중복·통합 ID 찾기 검증
         run: python tools/check_routes_find.py
