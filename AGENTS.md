@@ -284,3 +284,24 @@ and authorization when delivering changes. Do not send messages to other people.
 - Run check_core_trace.py including its Windows selection, trace, paired signal,
   incomplete ledger and auto-completion gate, plus field, lock, history,
   completion and performance gates before publication. Preserve V74 caching.
+
+- V76 local GIS selection and reviewed legacy separation live in planning/field_gis.py.
+  New field copies remain empty. GIS selection applies only that node's frozen
+  reference pairs through the existing slot overlay without propagating ID/signal.
+  A journaled selection signature guards uncheck: restore only the pre-selection
+  local pairs/record, and never overwrite subsequent manual evidence. Back up,
+  preview removals, and retain stale/lock guards and one grouped undo.
+- Legacy connection separation is explicit and previewed. Preserve facilities
+  with any survey/review evidence, non-GIS pairs, and user-selected keep nodes.
+  Only unreviewed GIS-equal candidate pairs may be removed. Journal conversion in
+  workflow_state.field_connection_policy_v76 so undo restores the previous mode.
+  Export converted slot identities with the existing lossless JSON pack.
+- Display groups use independent hamche_assignment, cable_unassigned,
+  cable_incomplete and cable_temporary booleans, default true for old settings.
+  Filter shared node/cable label layout so canvas, SVG and print stay consistent;
+  display options never alter diagnostics or completion.
+- One header padlock toggles all enclosure edit locks with existing Store APIs in
+  one transaction. Preserve per-node locks, automatic two-end cable locks, copy,
+  undo/reopen and draft contents. Mixed states toggle to all locked.
+- Run tools/check_field_gis.py including its Windows checkbox/trace/completion,
+  grouped-display and lock/copy gates, plus the existing field and release gates.

@@ -11,7 +11,9 @@ FIELD_SLOT_FIELDS=('core_id','detail','status1','status2','signal')
 def field_slot_mode(store,kind=None):
     if (kind or completion_kind(store))!='before':return False
     row=store.conn.execute("SELECT value FROM meta WHERE key='field_identity_policy'").fetchone()
-    return bool(row and row[0]==FIELD_SLOT_POLICY)
+    if row and row[0]==FIELD_SLOT_POLICY:return True
+    converted=store.conn.execute("SELECT value FROM workflow_state WHERE key='field_connection_policy_v76'").fetchone()
+    return bool(converted and json.loads(converted[0]).get('enabled'))
 
 
 def field_slot_copy(source,target):
@@ -416,7 +418,8 @@ def field_slot_pair_mismatch(rows):
 
 def field_slot_json_pack(store):
     row=store.conn.execute("SELECT value FROM meta WHERE key='field_identity_policy'").fetchone()
-    if not row or row[0]!=FIELD_SLOT_POLICY:return None
+    converted=store.conn.execute("SELECT value FROM workflow_state WHERE key='field_connection_policy_v76'").fetchone()
+    if not (row and row[0]==FIELD_SLOT_POLICY) and not (converted and json.loads(converted[0]).get('enabled')):return None
     return dict(policy=FIELD_SLOT_POLICY,scenario=completion_kind(store),reference=field_reference(store),
                 rows=[{key:r.get(key,'') for key in ('cable_id','core_index',*FIELD_SLOT_FIELDS)} for r in store.all_core_rows()])
 

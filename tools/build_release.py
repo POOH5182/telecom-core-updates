@@ -69,6 +69,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM FIELD SLOTS\n' + (ROOT / 'planning' / 'field_slots.py').read_text(encoding='utf-8')
         if version >= 75:
             baseline += '\n\n# BEGIN TELECOM CORE TRACE\n' + (ROOT / 'planning' / 'core_trace.py').read_text(encoding='utf-8')
+        if version >= 76:
+            baseline += '\n\n# BEGIN TELECOM FIELD GIS\n' + (ROOT / 'planning' / 'field_gis.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()

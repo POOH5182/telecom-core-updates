@@ -57,6 +57,8 @@ jobs:
         run: python tools/check_field_performance.py --check
       - name: 현장 실제 코어추적·신호 귀속·자동 OK와 미완료 목록 검증
         run: python tools/check_core_trace.py
+      - name: GIS 선택 반영·기존 연결 정리·표시 설정·전체 잠금 토글 검증
+        run: python tools/check_field_gis.py
       - name: 자동 잠금과 정보 복사·RN 내부 접속 검증
         run: python tools/check_locks_rn.py
       - name: 현장 Excel 표 추가와 불일치 보존·수동 수정 검증

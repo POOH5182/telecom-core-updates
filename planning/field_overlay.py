@@ -230,7 +230,7 @@ def field_overlay_dialog(dialog,event=None,selected=False):
         if not review.accepted:return 'break'
         dialog.valid();result=field_overlay_commit(dialog.store,preview)
         dialog.sheet.set_text(result['text']);dialog.app.refresh();dialog.reload()
-        dialog.summary.set((f"현장 선번 {result['observed']}건 적용 · 내역 이동 후 최종 확정하세요. · " if slot_mode else f"조사 {result['observed']}건 저장 · 현장 선번 미반영 {result['deferred']}건 · 임시코어 자동 OK {result['auto_ok']}건 · ")+dialog.summary.get())
+        dialog.summary.set((f"현장 선번 {result['observed']}건 적용 · ID·신호 자동 OK / 끝-끝 연결완료 별도 판정 · " if slot_mode else f"조사 {result['observed']}건 저장 · 현장 선번 미반영 {result['deferred']}건 · 임시코어 자동 OK {result['auto_ok']}건 · ")+dialog.summary.get())
     except (ValueError,sqlite3.Error,OSError) as error:
         messagebox.showerror('현장 선번 반영',str(error),parent=dialog)
     return 'break'

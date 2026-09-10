@@ -183,6 +183,8 @@ class FieldSurvey:
 
     def resolve_header(self,header):
         if self.port_key and ''.join(header.lower().split()) in ('rn내부','rn내부포트','rn포트',self.port_key.lower()):return self.port_key,''
+        labelled=[cid for label,cid in self.store.node_cable_choices(self.node_id) if label.strip().casefold()==header.strip().casefold() and cid in self.cables]
+        if len(labelled)==1:return labelled[0],''
         cable,error=self.store.resolve_node_cable(self.node_id,header)
         return (cable['id'],'') if cable and cable['id'] in self.cables else (None,error or '이 시설의 케이블이 아닙니다.')
 
@@ -601,6 +603,7 @@ class FieldSurveyDialog(RememberedToplevel):
         self.sheet=FieldSurveySheet(self,FieldSurvey(store,node_id,reference=self.reference),raw);self.sheet.pack(fill='both',expand=True,padx=8)
         guide='① 현장 선번·신호 입력 → ② 케이블별 코어내역 정리 → ③ ID·신호 일치 시 자동 OK → ④ 미완료 목록에서 끝-끝 연결 확인. 신호는 케이블 번호에 유지되며, 내역 확정·배치대기 정리는 선택 사항입니다.' if field_slot_mode(store) else '① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. GIS에 없던 양쪽 빈 신규 선번은 임시코어로 배정하고 자동 OK로 처리합니다.'
         ttk.Label(self,text=guide,padding=(10,6),wraplength=1380).pack(fill='x')
+        self.gis_control=FieldGISControl(self,store,node_id);self.gis_control.pack(fill='x',padx=10,pady=3)
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         ttk.Button(bar,text='비교만 저장',command=lambda:self.inspect(add_new=False)).pack(side='left',padx=3)
         self.overlay_button=ttk.Button(bar,text='현장 선번 적용' if field_slot_mode(store) else '조사 저장·GIS 비교',command=self.overlay);self.overlay_button.pack(side='left',padx=3)
