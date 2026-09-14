@@ -4,6 +4,12 @@ This repository is the user's Windows telecom app and its automatic release pipe
 The user requested that requested app changes include GitHub publication, so users do
 not have to upload release files themselves. Follow the current conversation's scope
 and authorization when delivering changes. Do not send messages to other people.
+On 2026-09-14 the user explicitly approved publishing V77 source and updater files
+to the public repository POOH5182/telecom-core-updates and said to continue doing so
+for future requested app changes ("응 앞으로도 해줘"). This includes the existing
+Windows verification and automatic-release workflow. Keep publication scoped to
+application source, tests and updater packages; customer drawings and credentials
+remain excluded.
 
 - Run `python tools/materialize_release.py` after downloading this repository to
   reconstruct `app/`. The complete source is transported in `release_payload/` as
@@ -305,3 +311,13 @@ and authorization when delivering changes. Do not send messages to other people.
   undo/reopen and draft contents. Mixed states toggle to all locked.
 - Run tools/check_field_gis.py including its Windows checkbox/trace/completion,
   grouped-display and lock/copy gates, plus the existing field and release gates.
+
+- V77 node_summary_rows in the application groups equal real IDs for display.
+  Keep every actual splice and unconnected slot visible in the connection state;
+  grouping must never create topology or change trace/completion. Empty/temporary
+  identities do not merge unrelated rows; conflicting actual pairs stay visible.
+  Cable cells use plain numbers; internal port names remain meaningful labels.
+- Summary editing binds to an explicit physical location, including after sorting,
+  regrouping and undo. Preserve unsaved fields across shared repaint. Field signals
+  follow the existing immediate-peer rule in one action, never the displayed group.
+  Run tools/check_node_summary.py including its Windows edit/copy/draft/lock gate.
