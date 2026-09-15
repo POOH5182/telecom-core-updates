@@ -95,6 +95,9 @@ def run_case(mode):
             bat=home/'run.bat'
             bat.write_text('@echo off\ncd /d "%~dp0"\n"'+sys.executable+'" -u telecom_updater.py\nexit /b %errorlevel%\n')
             env=os.environ.copy()
+            # The English CI worker redirects the Korean installed launcher's
+            # console output to a file; give that pipe an explicit UTF-8 codec.
+            env['PYTHONIOENCODING']='utf-8';env['PYTHONUTF8']='1'
             for key in ('TELECOM_APP_HOME','TELECOM_LAUNCHED','TELECOM_GUI_DETACHED','TELECOM_READY_PATH','TELECOM_READY_TOKEN'):env.pop(key,None)
             with (home/'cmd.log').open('wb') as log:
                 cmd=subprocess.Popen([os.environ['COMSPEC'],'/d','/c',str(bat)],cwd=home,env=env,stdout=log,stderr=subprocess.STDOUT,creationflags=subprocess.CREATE_NEW_CONSOLE)
