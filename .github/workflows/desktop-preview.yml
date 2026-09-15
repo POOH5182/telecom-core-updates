@@ -1,0 +1,25 @@
+name: 데스크톱 디자인 미리보기
+on:
+  push:
+    branches: [design-preview]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: telecom-desktop-preview
+  cancel-in-progress: true
+jobs:
+  preview:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: python tools/materialize_release.py
+      - run: python tools/check_desktop_design.py --emit-screenshots
+        env:
+          PYTHONUTF8: '1'

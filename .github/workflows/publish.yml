@@ -39,6 +39,8 @@ jobs:
         run: python -m unittest discover -s tools -p "test_*.py" -v
       - name: 배포할 프로그램 준비
         run: python tools/materialize_release.py
+      - name: 데스크톱 디자인·작은 화면 배치·상태색·입력 보존 검증
+        run: python tools/check_desktop_design.py
       - name: 기존 선번 초기 적용·조사자료 없이 완료 점검·현장 재검사 검증
         run: python tools/check_existing_field_basis.py
       - name: CMD 자동 종료·GUI 유지·중복 방지·업데이트 복구 검증

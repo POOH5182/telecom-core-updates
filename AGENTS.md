@@ -520,3 +520,15 @@ publication of requested app changes through the existing main release workflow.
 - V88 read_metadata phase comparison also treats blank/unknown signals as neutral.
   Keep actual conflicting known signals blocked, and never rewrite physical slot
   signals merely while checking or switching identical snapshots.
+
+
+- V89 desktop presentation lives in planning/desktop_theme.py, bundled in the
+  same three-file update. Initialize styles per Tk interpreter before widgets.
+  Preserve semantic row tags (ON, error, cancelled, incomplete) and read/copy while
+  locked. Theme/resize/selection must not write drawing state or clear editor drafts.
+- FlowToolbar wraps native controls at smaller widths without losing commands or
+  shortcuts. Progress detail disclosure retains exact completion policy text and
+  uses the same completion_report. The all-lock control and five stages stay visible.
+- Run check_desktop_design.py on Windows with narrow/normal sizes and existing full
+  release gates. desktop-preview.yml runs only synthetic, non-publishing visual
+  previews on design-preview; emitted screenshots must contain no customer data.
