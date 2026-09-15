@@ -125,7 +125,14 @@ def main():
             assert panel.winfo_rooty()<=button.winfo_rooty()<panel.winfo_rooty()+panel.winfo_height()
             assert button.winfo_rooty()+button.winfo_height()<=panel.winfo_rooty()+panel.winfo_height()
             dialog.status_actions.canvas.yview_moveto(0);app.update()
-            screenshot(dialog,Path('dist')/'v89-cable-editor.png');dialog.destroy()
+            screenshot(dialog,Path('dist')/'v89-cable-editor.png')
+            dialog.notebook.select(dialog.identity_tab);app.update()
+            for button in dialog.identity_actions.controls:
+                assert button.winfo_ismapped()
+                assert button.winfo_rootx()+button.winfo_width()<=dialog.winfo_rootx()+dialog.winfo_width(),button.cget('text')
+                assert button.winfo_rooty()+button.winfo_height()<=dialog.winfo_rooty()+dialog.winfo_height(),button.cget('text')
+            assert dialog.identity_tree.winfo_height()>=100
+            screenshot(dialog,Path('dist')/'v89-identity-editor.png');dialog.destroy()
             print('DESIGN: enclosure table and selection',flush=True)
             node=code['NodeDialog'](app,s,nodes[1]);app.update()
             node.left_var.set(next(k for k,v in node.by_label.items() if v==cables[0]))
@@ -136,6 +143,10 @@ def main():
                 assert button.winfo_rootx()+button.winfo_width()<=node.winfo_rootx()+node.winfo_width(),button.cget('text')
                 assert button.winfo_rooty()+button.winfo_height()<=node.winfo_rooty()+node.winfo_height(),button.cget('text')
             assert node.left_tree.winfo_height()>=120
+            for tree in (node.left_tree,node.right_tree):
+                tree.xview_moveto(1);app.update()
+                assert tree.bbox('1','field'), 'Local connection check column must be reachable'
+                tree.xview_moveto(0)
             node.left_tree.selection_set('1');app.update()
             screenshot(node,Path('dist')/'v89-enclosure-editor.png');node.destroy()
             assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==baseline
