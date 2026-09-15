@@ -78,7 +78,8 @@ def inspect_layout(app):
         assert app.dashboard_frame.winfo_width()<=370,app.dashboard_frame.winfo_width()
         assert app.dashboard_frame.winfo_x()>=0
         for button in app.workflow_buttons.values():assert button.winfo_width()>=140
-        if width==1000:screenshot(app,Path('dist')/'v89-desktop-compact.png')
+        if width==1000:
+            app.fit_view();app.update();screenshot(app,Path('dist')/'v89-desktop-compact.png')
 
 
 def main():
@@ -96,6 +97,7 @@ def main():
             app.deiconify();app.update();app.fit_view();app.update()
             baseline=(wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())
             assert code['ttk'].Style(app).theme_use()=='clam'
+            assert app.all_lock_button.cget('image')
             assert float(app.completion_bar.cget('value'))==wf.completion_report(s)['rate']
             assert app.work_progress_incomplete.cget('fg')=='#c62828'
             inspect_layout(app);app.geometry('1450x900+0+0');app.update();app.fit_view();app.update()
@@ -113,7 +115,7 @@ def main():
             dialog.id_var.set('수정 중인 케이블 이름');dialog.lot_var.set('입력 중인 LOT')
             app.refresh();app.update()
             assert dialog.id_var.get()=='수정 중인 케이블 이름' and dialog.lot_var.get()=='입력 중인 LOT'
-            assert 'error' in dialog.tree.tag_names() and 'signal_on' in dialog.tree.tag_names()
+            assert dialog.tree.tag_configure('error','background')=='#ead7ff'
             assert dialog.tree.tag_configure('signal_on','foreground')=='#d00000'
             dialog.id_var.set('SAMPLE-A');dialog.lot_var.set('')
             screenshot(dialog,Path('dist')/'v89-cable-editor.png');dialog.destroy()

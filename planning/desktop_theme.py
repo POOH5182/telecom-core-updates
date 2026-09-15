@@ -129,6 +129,28 @@ def desktop_dialog_heading(parent,title,subtitle=''):
     return box
 
 
+def desktop_lock_image(parent,locked):
+    """A crisp native padlock icon, independent of emoji font availability."""
+    photo=tk.PhotoImage(master=parent,width=24,height=24)
+    ink='#192b46'
+    for y in range(12,22):
+        left,right=(5,19) if y in (12,21) else (4,20)
+        photo.put(ink,to=(left,y,right,y+1))
+    if locked:
+        for x,y,w,h in ((7,6,2,7),(15,6,2,7),(9,3,6,2),(7,5,3,2),(14,5,3,2)):
+            photo.put(ink,to=(x,y,x+w,y+h))
+    else:
+        for x,y,w,h in ((15,5,2,9),(7,4,2,4),(9,2,6,2),(14,3,2,3)):
+            photo.put(ink,to=(x,y,x+w,y+h))
+    photo.put('#ffffff',to=(11,15,13,19))
+    return photo
+
+
+def desktop_popup_menu(button,menu):
+    try:menu.tk_popup(button.winfo_rootx(),button.winfo_rooty()+button.winfo_height())
+    finally:menu.grab_release()
+
+
 def polish_dialog_actions(window):
     if not window.winfo_exists():return
     pending=[window]
