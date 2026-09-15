@@ -356,3 +356,24 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
   physical slot in the upper-right cable editor. Follow active-tab selection and
   shared repaint/undo, clear stale reasons on complete/empty rows, and never
   rebuild or commit identity drafts to update this read-only reason panel.
+
+- V80 planning/node_diagram.py draws only node-local saved splice rows, grouped
+  by physical cable pair. Paired numeric grids share order and cell dimensions;
+  never infer edges from equal IDs, GIS reference or incomplete survey evidence.
+  Keep RN port labels, invalid-record notices, original directions and full pairs
+  through zoom, selected-group view, TSV copy and SVG output. Diagram reads cannot
+  create ports, save drafts, change topology/history or bypass lock restrictions.
+  The read-only diagram itself stays available while locked. Reuse its window and
+  close it on scenario/generation changes; refresh when saved data changes.
+- completed_temporary_slots/core_status_text provide per-slot derived status in
+  cable/enclosure/summary/core tables without persisting a shared annotation.
+  Match V79 complete-temporary criteria across the full component; canvas counts
+  remain at end cables. Recompute after edits/undo; keep mandatory counts unchanged.
+- core_conflict_markers adds physical core number and real ID labels on cables
+  when a selected component has conflicting IDs or duplicated placed-ID paths.
+  Duplicate highlighting includes those other components but never draws new
+  edges between them. Keep neutral temporary slots neutral, RN evidence, owner
+  cleanup and refresh-on-fix. No new identity editing or correction action.
+- Run tools/check_node_diagram.py including Windows button/reuse/zoom/locked copy/
+  SVG/status repaint/conflict label/clear-on-fix/stale-view gates, plus existing
+  field/completion/performance/Windows release gates before publishing.

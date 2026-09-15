@@ -124,7 +124,8 @@ def core_completion_brief(store,slot):
         entry=completion_report(store)['by_slot'].get(slot)
         if not entry:return '미사용 코어',''
         temporary=entry['temporary']
-    if entry['complete']:return ('연결완료임시코어' if temporary else '연결완료'),''
+    if temporary and slot in completed_temporary_slots(store):return '연결완료임시코어',''
+    if entry['complete']:return '연결완료',''
     if not entry['required']:return '필수 연결 대상 아님',''
     causes=set(entry['causes']);reasons=[]
     for keys,label in (({'unconnected','endpoints'},'코어연결 미완료'),({'port'},'RN 내부포트 미접속'),
@@ -137,6 +138,27 @@ def core_completion_brief(store,slot):
     if any(s.startswith('함체 NOT OK:') for s in holds):reasons.append('함체 NOT OK')
     if any(not s.startswith('함체 NOT OK:') for s in holds) or 'field' in causes:reasons.append('현장 선번 확인 필요')
     return '미완료',' · '.join(reasons) or '연결 상태 확인 필요'
+
+
+def completed_temporary_slots(store):
+    if field_slot_mode(store):
+        audit=field_slot_audit(store)
+        if 'completed_temporary_slots' not in audit:
+            audit['completed_temporary_slots']=frozenset(s for c in audit['components']
+                if c['complete'] and not c['real_ids'] and any(str(r.get('core_id') or '').startswith('임시-') for r in c['records'])
+                for s in c['slots'])
+        return audit['completed_temporary_slots']
+    store.cable_core_warning_summary()
+    return getattr(store,'_completed_temporary_slots',frozenset())
+
+
+def core_status_text(store,row):
+    """Derived status belongs to a physical path, never to stored ID annotations."""
+    text=annotation_text(store,row)
+    if not row:return text
+    row=dict(row);slot=(row.get('cable_id'),row.get('core_index'))
+    if slot in completed_temporary_slots(store):text='[연결완료임시코어]'+(' '+text if text else '')
+    return text
 
 
 def completion_check_groups(rows):

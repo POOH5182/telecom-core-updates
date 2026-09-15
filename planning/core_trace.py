@@ -9,6 +9,35 @@ def trace_basis(store):
     return '전도면(GIS) · 저장 접속 기준'
 
 
+def core_conflict_markers(store,slots):
+    """Cable labels locate ID conflicts; disconnected paths stay disconnected."""
+    audit=field_slot_audit(store);components={}
+    for slot in slots:
+        comp=audit['by_slot'].get(tuple(slot))
+        if comp:components[comp['key']]=comp
+    marked={};messages=defaultdict(set);colors={}
+    for comp in list(components.values()):
+        if 'split' in comp['causes']:
+            for cid in comp['real_ids']:
+                for other in audit['by_id'].get(cid,()):
+                    if other['placed']:components[other['key']]=other
+    for comp in components.values():
+        mismatch='identity' in comp['causes'];duplicate='split' in comp['causes']
+        if not mismatch and not duplicate:continue
+        color='#c62828' if mismatch else '#c026d3';label='코어ID 다름' if mismatch else '같은 ID · 경로 분리'
+        for slot in comp['slots']:
+            row=audit['rows'].get(slot,{})
+            cid=str(row.get('core_id') or '').strip()
+            if not cid or cid.startswith('임시-'):continue
+            targets=[slot[0]] if slot[0] in audit['net'].cables else [s[0] for _,s in audit['net'].links.get(slot,()) if s[0] in audit['net'].cables]
+            number=str(row.get('label') or slot[1]) if slot[0].startswith('PORT:') else str(slot[1])
+            for cable in targets:
+                messages[cable].add(('RN 포트 ' if slot[0].startswith('PORT:') else '')+number+' · '+cid)
+                marked.setdefault(cable,set()).add(label);colors[cable]=color
+    labels={cid:' / '.join(sorted(marked[cid]))+'\n'+'\n'.join(sorted(values)) for cid,values in messages.items()}
+    return dict(labels=labels,colors=colors)
+
+
 def field_core_trace(store,core_id,context=None,slot=None):
     """Trace every actual component containing the ID, or only a clicked slot.
 
