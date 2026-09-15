@@ -391,3 +391,22 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
   OFF · 배정 제외 in the selected cable reason and unconnected enclosure summary.
   Run check_off_assignment.py including Windows cable/summary/canvas/undo repaint,
   updated completion/field/after-route/summary gates and the full release pipeline.
+
+
+- V82 planning/connection_highlight.py derives numbered colors from actual saved
+  components. A selected physical component expands same-real-ID components for
+  display context, including unplaced rows. Store.trace_core_paths(slot=...) still
+  returns only its physical component. Never splice by equal ID or temporary token.
+- Keep each component color through temporary/mismatching rows and blink pulses.
+  On shared physical cables draw parallel colored bands with separate number/ID
+  labels. Error borders/text must not overwrite segment colors. Main map and path
+  diagrams use the same segment model. Clear on selection/scenario change; recompute
+  from original physical seed slots after saved edits and undo.
+- Free-end callouts show enclosure, segment, cable, number and ID. Offer only
+  compatible distinct-component/different-owner free pairs; multiple candidates
+  require explicit choice. Never suggest occupied/malformed/held/conflicting or OFF
+  ends as simple joins. RN requires its port; valid ends and OFF-only missing
+  allocations are not warning callouts. Double-click uses normal enclosure editor.
+- Run check_connection_highlight.py including Windows core click/colors/pulse,
+  callout target/open/read preservation, merge/undo, parallel bands, zoom and stale
+  cleanup, and existing node diagram/core trace/OFF/field/performance/release gates.

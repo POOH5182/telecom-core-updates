@@ -149,7 +149,7 @@ def windows_ui():
                 assert wf.completion_report(case.s)['done']==0
                 node.left_var.set(next(k for k,v in node.by_label.items() if v==case.cables[0]));node.reload_all()
                 node.left_tree.selection_set('1');node.show_core_paths();app.update()
-                assert app.highlight_cables==set(case.cables[:2])
+                assert app.highlight_cables==set(case.cables);assert len(app.highlight_connection_model['groups'])==2;assert app.highlight_cable_colors[case.cables[0]]==app.highlight_cable_colors[case.cables[1]];assert app.highlight_cable_colors[case.cables[1]]!=app.highlight_cable_colors[case.cables[2]]
                 app.all_lock_button.invoke();app.update();assert str(app.all_lock_button.cget('text'))=='🔒'
                 assert str(node.gis_control.check.cget('state'))=='disabled'
                 node.lift();node.name_entry.focus_force();app.update()

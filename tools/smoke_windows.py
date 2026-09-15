@@ -377,9 +377,12 @@ def check_route_checks(code, app):
 
     def check_highlight(window, view):
         assert app.highlight_owner is window
-        conflict_labels={cid:'같은 ID · 경로 분리\n'+number.removesuffix('번')+' · CHECK-ID' for cid,number in expected.items()}
-        assert app.highlight_core_labels == conflict_labels, app.highlight_core_labels
-        assert app.highlight_cable_colors == {cid: '#c026d3' for cid in expected}
+        assert set(app.highlight_core_labels)==set(expected),app.highlight_core_labels
+        for cid,number in expected.items():
+            assert number.removesuffix('번')+' · CHECK-ID' in app.highlight_core_labels[cid]
+            assert '구간 ' in app.highlight_core_labels[cid]
+        assert len(set(app.highlight_cable_colors.values()))==2
+        assert app.highlight_cable_colors==view['cable_colors']
         assert len(view['groups']) == 2, view
         texts = [window.diagram.itemcget(i, 'text') for i in window.diagram.find_all()
                  if window.diagram.type(i) == 'text']

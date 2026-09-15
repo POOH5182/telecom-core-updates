@@ -245,13 +245,13 @@ def windows_ui():
             try:
                 app.replace_current_from(case.path);app.deiconify();app.update();s=app.store
                 node=code['NodeDialog'](app,s,case.nodes[1]);node.left_var.set(next(k for k,v in node.by_label.items() if v==case.cables[0]));node.reload_all();app.update()
-                node.left_tree.selection_set('1');app.update();assert app.highlight_cables=={case.cables[0]}
+                node.left_tree.selection_set('1');app.update();assert app.highlight_cables==set(case.cables);assert len(app.highlight_connection_model['groups'])==3
                 assert not s.conn.execute('SELECT 1 FROM splices').fetchone()
                 trace=code['TraceDialog'](app,s);trace.q.set('CORE-A');trace.run();app.update()
-                assert '경로 3개' in trace.summary.get();assert '미완료' in trace.summary.get()
+                assert '실제 접속 3구간' in trace.summary.get();assert '미완료' in trace.summary.get()
                 trace.close()
                 wf.field_overlay_commit(s,wf.field_overlay_preview(s,case.nodes[1],'A\tB\n1\t1'));app.refresh();node.show_core_paths();app.update()
-                assert app.highlight_cables==set(case.cables[:2])
+                assert app.highlight_cables==set(case.cables);assert len(app.highlight_connection_model['groups'])==2;assert app.highlight_cable_colors[case.cables[0]]==app.highlight_cable_colors[case.cables[1]];assert app.highlight_cable_colors[case.cables[1]]!=app.highlight_cable_colors[case.cables[2]]
                 node.change_core_signal(case.slot(0),'CORE-A','off');app.update()
                 assert [s.core(*case.slot(i))['signal'] for i in range(3)]==['off','off','on']
                 assert len(wf.field_incomplete_entries(s))==1 # Unallocated OFF component is excluded.
