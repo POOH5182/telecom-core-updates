@@ -196,7 +196,9 @@ def windows_ui():
             app.save_current_drawing(silent=True)
             with patch.object(code['messagebox'],'askyesno',return_value=True):assert app.load_scenario('after')
             dialog=wf.AfterPlanDialog(app);app.update()
-            assert len(dialog.tabs.tabs())==7
+            assert [dialog.tabs.tab(tab,'text') for tab in dialog.tabs.tabs()]==[
+                '1 케이블 경로','2 자동 선번 배분','진행 단계','작업계획·전후 비교',
+                '전체 점검','용량·선번 고정','재배치 미리보기','시설별 작업표']
             assert dialog.report['total']==1
             for tab in dialog.tabs.tabs():dialog.tabs.select(tab);app.update()
             dialog.tables['compare'].selection_set('0');dialog.show_detail('compare')
