@@ -435,7 +435,7 @@ class AutoAllocationPanel(ttk.Frame):
             self.vars[key]=tk.StringVar(value=str(settings[key]));ttk.Entry(box,textvariable=self.vars[key],width=width).pack(side='left');row.add(box)
         range_box=ttk.Frame(self);range_box.pack(fill='x',pady=5)
         ttk.Label(range_box,text='용도별 번호 범위\n선택 입력',width=17).pack(side='left')
-        self.ranges=tk.Text(range_box,height=3,width=37,wrap='none');self.ranges.pack(side='left');self.ranges.insert('1.0',settings['ranges'])
+        self.ranges=tk.Text(range_box,height=3,width=37,wrap='none',highlightthickness=1,highlightbackground='#cbd5e1');self.ranges.pack(side='left');self.ranges.insert('1.0',settings['ranges'])
         ttk.Label(range_box,text='예: TRUNK=1-24 / FTTH=25-72 (한 줄에 하나)\n코어ID·내역에서 위쪽 키워드부터 비교합니다.\n기설·잠금·고정 번호와 이미 사용 중인 OFF 번호는 보호합니다.',style='Muted.TLabel').pack(side='left',padx=12)
         actions=FlowToolbar(self);actions.pack(fill='x')
         actions.add(ttk.Button(actions,text='규칙 저장',command=lambda:self.run(self.save)))
@@ -482,7 +482,7 @@ class AutoAllocationPanel(ttk.Frame):
         p=self.proposal;rows=[];net=Network(self.app.store.conn,active_only=True)
         for result in p['results']:
             numbers=' → '.join(self.service.cable_name(net,cable)+' / '+str(number) for cable,number in zip(result['route'],result['numbers']))
-            rows.append((result['status'],display_core_id(result['core_id']) or '(ID 없음)',result['detail'],result['group'],numbers,result['reason']))
+            rows.append((result['status'],result['core_id'] or '(ID 없음)',result['detail'],result['group'],numbers,result['reason']))
         for name,values in (('코어별 배분 결과',rows),('변경·접속 내역',p['actions'])):
             tree=self.trees[name];tree.delete(*tree.get_children());self.values[name]=values
             for i,values in enumerate(values):tree.insert('','end',iid=str(i),values=values,tags=('blocked' if values[0]=='보류' else 'ready',))

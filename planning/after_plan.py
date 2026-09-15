@@ -512,7 +512,7 @@ class AfterPlanDialog(RememberedToplevel):
         self.build_stages();self.build_compare();self.build_check();self.build_locks();self.build_preview();self.build_orders()
         self.route_panel=AfterRoutePanel(self.pages['1 케이블 경로'],self);self.route_panel.pack(fill='both',expand=True)
         self.allocation_panel=AutoAllocationPanel(self.pages['2 자동 선번 배분'],self);self.allocation_panel.pack(fill='both',expand=True)
-        bottom=ttk.Frame(self,padding=(10,0,10,10));bottom.pack(fill='x')
+        bottom=ttk.Frame(self,padding=(10,0,10,10));bottom.pack(side='bottom',fill='x',before=self.tabs)
         ttk.Button(bottom,text='현재 표 CSV 저장',command=lambda:self.run(self.export_table)).pack(side='left')
         ttk.Button(bottom,text='최종 완료 확인·저장',command=lambda:self.run(self.finish)).pack(side='right')
         ttk.Button(bottom,text='닫기',command=self.destroy).pack(side='right',padx=6)

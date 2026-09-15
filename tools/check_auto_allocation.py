@@ -206,7 +206,10 @@ def windows_gate():
             nodes,cables=converted(app);app.refresh();window=wf.AfterPlanDialog(app);app.update()
             panel=window.allocation_panel;window.tabs.select(window.pages['2 자동 선번 배분']);app.update()
             baseline=wf.plan_snapshot(app.store.conn);history=app.store.history_rows()
-            panel.calculate_button.invoke();app.update();assert panel.proposal and panel.proposal['actions']
+            panel.calculate_button.invoke();app.update();assert not error.called,error.call_args
+            assert panel.proposal and panel.proposal['actions']
+            assert len(panel.trees['코어별 배분 결과'].get_children())==2
+            assert str(panel.apply_button.cget('state'))=='normal'
             assert wf.plan_snapshot(app.store.conn)==baseline and app.store.history_rows()==history
             for size in ('1340x820+0+0','1000x700+0+0'):
                 window.geometry(size)
@@ -222,7 +225,8 @@ def windows_gate():
                 screenshot(window,path)
             panel.trees['코어별 배분 결과'].cycle_sort(1);app.update()
             panel.vars['reserve_tail'].set('12');app.update();assert panel.proposal is None and str(panel.apply_button.cget('state'))=='disabled'
-            panel.calculate_button.invoke();app.update();panel.apply_button.invoke();app.update()
+            panel.calculate_button.invoke();app.update();assert not error.called,error.call_args
+            panel.apply_button.invoke();app.update();assert not error.called,error.call_args
             assert wf.completion_report(app.store)['rate']==100
             assert app.store.core(cables[1],1)['core_id']=='CORE-1'
             assert '전체 연결 완료' in panel.summary.get(),panel.summary.get()
