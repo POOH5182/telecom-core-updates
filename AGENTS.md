@@ -334,3 +334,25 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
   Classification must not rewrite signals, topology, GIS evidence or annotations.
   Run check_core_trace.py including unknown-only completion, partial-route/hold/RN
   negatives, persisted-value checks and Windows survey/cable/summary/progress/undo.
+
+- V79 routes user-facing cable editing through open_detail_dialog, keeping one
+  live cable editor alongside the enclosure editor. Reuse the same cable window
+  without reloading drafts; switching cables closes the previous editor only
+  after explicit discard if unsaved header, identity-sheet or signal inputs exist.
+  Switching must not save data. Cancellation keeps the previous target/selection;
+  issue navigation may focus a core only if the requested cable actually opened.
+  Keep position memory, trace timer cleanup and locked-copy behavior. Cable
+  creation is a separate modal form. Run the Windows single-cable smoke gate.
+
+- V79 cable badges use temporary_complete, labelled 연결완료임시코어. Count
+  completed actual paths without any real ID and with temporary slots only at
+  their end cable sections (RN requires its internal port); never repeat in
+  transit or show incomplete/mixed-real-ID routes. Unknown-only remains neutral.
+  Keep raw temporary diagnostics and mandatory completion policy unchanged.
+  Reuse cable_temporary visibility for compatibility across canvas/SVG/print.
+  Run core-trace/completion and Windows endpoint-label/visibility gates.
+
+- V79 core_completion_brief reports short saved-state reasons for the selected
+  physical slot in the upper-right cable editor. Follow active-tab selection and
+  shared repaint/undo, clear stale reasons on complete/empty rows, and never
+  rebuild or commit identity drafts to update this read-only reason panel.

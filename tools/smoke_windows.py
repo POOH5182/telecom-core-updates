@@ -154,6 +154,100 @@ def check_single_enclosure_window(code, app):
     print('PASS Windows single enclosure double-click, same-window selection, previous close/position, highlight cleanup, header save/discard/cancel, field draft cancel and independent cable editor')
 
 
+def check_single_cable_window(code, app):
+    wf = code['App'].__init__.__globals__['workflow']
+    store = app.store
+    nodes = [store.add_node('케이블 창 ' + str(i), 200 + i * 200, 900) for i in range(3)]
+    left = store.add_cable(nodes[0], nodes[1], 'SINGLE-LEFT', '12C', '기설')
+    right = store.add_cable(nodes[1], nodes[2], 'SINGLE-RIGHT', '12C', '기설')
+    store.update_core(left, 1, ('LEFT-CORE', '왼쪽 원본', 'normal', '', 'off'))
+    store.update_core(right, 2, ('RIGHT-CORE', '오른쪽 원본', 'normal', '', 'on'))
+    app.mode = 'select'; app.deiconify(); app.refresh(); app.update()
+    node = code['open_detail_dialog'](app, store, 'node', nodes[0])
+
+    def only_cable():
+        windows = [w for w in app._detail_windows.values()
+                   if isinstance(w, code['CableDialog']) and w.winfo_exists()]
+        assert len(windows) == 1, windows
+        actual = [w for w in app.winfo_children()
+                  if isinstance(w, code['CableDialog']) and w.winfo_exists() and w.cable_key]
+        assert actual == windows, actual
+        return windows[0]
+
+    def open_cable(cable_id):
+        with patch.object(app, 'target', return_value=('cable', cable_id)):
+            app.double_click(None)
+        app.update()
+        return only_cable()
+
+    first = open_cable(left); first.focus_core(1); app.update()
+    assert app.highlight_owner is first
+    assert open_cable(left) is first and first.tree.selection() == ('1',)
+    before = wf.plan_snapshot(store.conn); revision = store.data_revision(); history = store.history_rows()
+    first.geometry('+55+55'); app.update(); position = first.winfo_x(), first.winfo_y()
+    with patch.object(code['messagebox'], 'askyesno', side_effect=AssertionError('Clean cable switch prompted')):
+        second = open_cable(right)
+    assert second.cable_key == right and not first.winfo_exists() and node.winfo_exists()
+    assert app.highlight_owner is not first
+    assert wf.popup_position(second._popup_position_path, 'CableDialog') == position
+    assert wf.plan_snapshot(store.conn) == before and store.data_revision() == revision
+    assert store.history_rows() == history
+
+    second.lot_var.set('저장 전 LOT')
+    with patch.object(code['messagebox'], 'askyesno', return_value=False):
+        assert open_cable(left) is second
+    assert second.lot_var.get() == '저장 전 LOT' and code['cable_lot_no'](store.cable(right)) == ''
+    second.lot_var.set(second._header_original[1]); second.focus_core(2); app.update()
+    second.edit_vars[2].set('OFF')
+    assert '선택 코어 신호' in second.pending_edits()
+    with patch.object(code['messagebox'], 'askyesno', return_value=False):
+        assert open_cable(left) is second
+    assert second.edit_vars[2].get() == 'OFF' and store.core(right, 2)['signal'] == 'on'
+    second.edit_vars[2].set(second._signal_original)
+    second.notebook.select(second.identity_tab); app.update()
+    second.open_identity_editor('2', '#3'); app.update()
+    assert second.identity_editor is not None
+    second.identity_editor.delete(0, 'end'); second.identity_editor.insert(0, '입력 중인 코어명')
+    with patch.object(code['messagebox'], 'askyesno', return_value=False):
+        assert open_cable(left) is second
+    assert second.identity_tree.item('2', 'values')[2] == '입력 중인 코어명'
+    assert second.identity_undo_stack and store.core(right, 2)['detail'] == '오른쪽 원본'
+    second.identity_tree.cycle_sort('detail'); app.update()
+    with patch.object(code['messagebox'], 'askyesno', side_effect=AssertionError('Same cable reopen prompted')):
+        assert open_cable(right) is second
+    assert second.identity_tree.sort_column == 'detail'
+    assert second.identity_tree.item('2', 'values')[2] == '입력 중인 코어명'
+
+    # Issue navigation must not apply the requested cable's core selection to a
+    # different editor when replacement is cancelled.
+    entry = dict(slot=(left, 1), row=('왼쪽 코어', 'LEFT-CORE', '위치 확인'))
+    with patch.object(code['messagebox'], 'askyesno', return_value=False):
+        app.reveal_issue(entry, open_core=True); app.update()
+    assert only_cable() is second and second.tree.selection() == ('2',)
+    assert second.identity_tree.item('2', 'values')[2] == '입력 중인 코어명'
+    with patch.object(code['messagebox'], 'askyesno', return_value=True):
+        first = open_cable(left)
+    assert not second.winfo_exists() and first.cable_key == left
+    assert wf.plan_snapshot(store.conn) == before and store.data_revision() == revision
+    assert store.history_rows() == history
+
+    # Saving normally clears the dirty marker; switching never auto-saves.
+    first.lot_var.set('저장된 LOT'); first.save_header(); app.update()
+    with patch.object(code['messagebox'], 'askyesno', side_effect=AssertionError('Saved cable switch prompted')):
+        second = open_cable(right)
+    assert code['cable_lot_no'](store.cable(left)) == '저장된 LOT'
+    store.set_node_locked(nodes[1], True); store.set_node_locked(nodes[2], True); app.refresh(); app.update()
+    second.focus_core(2); app.update(); second.copy_status_cell(column='core_id')
+    assert app.clipboard_get() == 'RIGHT-CORE'
+    with patch.object(code['messagebox'], 'askyesno', side_effect=AssertionError('Locked clean switch prompted')):
+        first = open_cable(left)
+    assert not second.winfo_exists() and node.winfo_exists()
+    first.destroy(); app.update(); first = open_cable(left)
+    first.destroy(); node.destroy(); app.update()
+    store.set_node_locked(nodes[1], False); store.set_node_locked(nodes[2], False)
+    print('PASS Windows single cable editor, same-window reuse, position/highlight cleanup, header/signal/inline draft cancel-discard, exact navigation, saved edits and locked copy')
+
+
 def check_bulk_keyboard(code, app):
     wf = code['App'].__init__.__globals__['workflow']
     store = app.store
@@ -466,6 +560,7 @@ def main():
             check_bulk_keyboard(code, app)
             check_route_checks(code, app)
             check_single_enclosure_window(code, app)
+            check_single_cable_window(code, app)
             app.update_idletasks()
             assert not errors, errors
             path = app.store.path

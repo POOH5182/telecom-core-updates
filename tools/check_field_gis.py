@@ -163,7 +163,7 @@ def windows_ui():
                 settings.apply();app.update()
                 nodes={r['id']:r for r in case.s.nodes()};warnings=case.s.cable_core_warning_summary()
                 # Synthetic warning counts isolate visibility from completion rules.
-                warnings={cid:dict(unassigned=2,incomplete_badge=3,temporary=1,marked_error=1) for cid in case.cables}
+                warnings={cid:dict(unassigned=2,incomplete_badge=3,temporary_complete=1,marked_error=1) for cid in case.cables}
                 layout=app.cable_label_layout(nodes,case.s.cables(),warnings)
                 texts=[p['text'] for item in layout for p in item['parts']]
                 assert not any(any(k in t for k in ('미배정코어','미완료코어','임시코어')) for t in texts)

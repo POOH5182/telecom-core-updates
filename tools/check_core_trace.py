@@ -19,6 +19,57 @@ class CoreTraceTests(unittest.TestCase):
     snapshot=SlotFieldTests.snapshot
     connect_all=SlotFieldTests.connect_all
 
+    def test_completed_temporary_badges_only_at_actual_ends_and_never_mixed_real_ids(self):
+        # Different neutral temporary tokens are one actual path; unused and
+        # partly connected temporary slots must not contribute to the badge.
+        for i in range(3):self.set(i,2,'임시-'+str(80+i))
+        self.s.connect(self.nodes[1],self.slot(0,2),self.slot(1,2))
+        self.assertTrue(all(w['temporary_complete']==0 for w in self.s.cable_core_warning_summary().values()))
+        self.s.connect(self.nodes[2],self.slot(1,2),self.slot(2,2))
+        self.set(0,3,'임시-90');self.set(1,3,'임시-91');self.s.connect(self.nodes[1],self.slot(0,3),self.slot(1,3))
+        self.set(2,4,'임시-80')  # Equal token elsewhere must not merge physical paths.
+        before=self.snapshot();revision=self.s.data_revision();history=self.s.history_rows();report=wf.completion_report(self.s)
+        warnings=self.s.cable_core_warning_summary()
+        self.assertEqual([warnings[c]['temporary_complete'] for c in self.cables],[1,0,1])
+        self.assertGreater(warnings[self.cables[1]]['temporary_total'],0)
+        self.assertEqual(self.snapshot(),before);self.assertEqual(self.s.data_revision(),revision);self.assertEqual(self.s.history_rows(),history)
+        self.assertEqual(wf.completion_report(self.s),report)
+        self.set(1,2,'REAL-IN-MIDDLE')
+        self.assertTrue(all(w['temporary_complete']==0 for w in self.s.cable_core_warning_summary().values()))
+        self.s.undo();self.assertEqual([self.s.cable_core_warning_summary()[c]['temporary_complete'] for c in self.cables],[1,0,1])
+        self.s.close();self.s=code['Store'](self.path)
+        self.assertEqual([self.s.cable_core_warning_summary()[c]['temporary_complete'] for c in self.cables],[1,0,1])
+
+    def test_temporary_endpoints_rn_port_and_signal_conflict(self):
+        for i in range(3):self.set(i,2,'임시-'+str(80+i))
+        for i in (1,2):self.s.connect(self.nodes[i],self.slot(i-1,2),self.slot(i,2))
+        with self.s.action('RN 끝단'):self.s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(self.nodes[3],))
+        self.s.ensure_ports(self.nodes[3],{'mp':1,'sp':1,'p':8})
+        self.assertTrue(all(w['temporary_complete']==0 for w in self.s.cable_core_warning_summary().values()))
+        self.s.connect(self.nodes[3],self.slot(2,2),('PORT:'+self.nodes[3],1))
+        self.assertEqual([self.s.cable_core_warning_summary()[c]['temporary_complete'] for c in self.cables],[1,0,1])
+        self.set(0,2,'임시-80','','on');self.set(2,2,'임시-82','','off')
+        self.assertTrue(all(w['temporary_complete']==0 for w in self.s.cable_core_warning_summary().values()))
+        # One cable between two different true terminals counts once, not twice.
+        a=self.s.add_node('단독 끝 A',0,300);b=self.s.add_node('단독 끝 B',240,300)
+        one=self.s.add_cable(a,b,'ONE','6C','기설');self.s.update_core(one,1,('임시-99','','normal','','unknown'))
+        self.assertEqual(self.s.cable_core_warning_summary()[one]['temporary_complete'],1)
+
+    def test_selected_core_brief_reasons_follow_physical_saved_state(self):
+        self.apply(1,'A\tB\n1\t1')
+        self.assertEqual(wf.core_completion_brief(self.s,self.slot(0)),('미완료','코어연결 미완료'))
+        self.set(1,1,'OTHER','','off')
+        status,reason=wf.core_completion_brief(self.s,self.slot(0));self.assertEqual(status,'미완료')
+        self.assertEqual(set(reason.split(' · ')),{'코어연결 미완료','코어ID 다름','신호 불일치'})
+        for i in range(3):self.set(i,1,'CORE-A','','unknown')
+        self.apply(2,'B\tC\n1\t1');before=self.snapshot()
+        self.assertEqual(wf.core_completion_brief(self.s,self.slot(1)),('연결완료',''))
+        self.assertEqual(wf.core_completion_brief(self.s,self.slot(1,6)),('미사용 코어',''))
+        self.assertEqual(self.snapshot(),before)
+        keys={r['key'] for r in wf.FieldSurvey(self.s,self.nodes[1]).report()}
+        wf.field_local_mark(self.s,self.nodes[1],keys,'NOT OK',self.s.data_revision(),getattr(self.s,'_view_generation',0),'직접 확인')
+        self.assertEqual(wf.core_completion_brief(self.s,self.slot(1)),('미완료','함체 NOT OK'))
+
     def test_ten_enclosures_partial_field_input_never_inherits_gis_splices(self):
         gis=code['Store'](self.home/'ten-gis.sqlite3')
         nodes=[gis.add_node(f'함체 {i+1}',i*240,0) for i in range(10)]
@@ -218,6 +269,10 @@ def windows_ui():
                 app.refresh();app.update();before=wf.plan_snapshot(s.conn)
                 assert '100.0%' in app.work_progress_rate.cget('text')
                 cable=code['CableDialog'](app,s,case.cables[1])
+                cable.focus_core(1);app.update()
+                assert cable.completion_title.get()=='1 · 연결완료'
+                assert cable.completion_box.winfo_x()>cable.lot_entry.winfo_x()+cable.lot_entry.winfo_width()
+                assert cable.completion_box.winfo_width()>200
                 summary=code['NodeSummaryDialog'](node,s,case.nodes[1])
                 survey=wf.FieldSurveyDialog(app,s,case.nodes[1]);app.update()
                 pending=code['IncompleteCoresDialog'](app,s);app.update()
@@ -233,20 +288,43 @@ def windows_ui():
                 s.disconnect(case.nodes[2],*case.slot(1));app.refresh();pending.reload();app.update()
                 assert wf.completion_report(s)['done']==0 and pending.entries
                 assert '[미완료코어]' in cable.tree.item('1','values')[0]
+                assert cable.completion_title.get()=='1 · 미완료'
+                assert cable.completion_reason.get()=='코어연결 미완료'
                 s.undo();app.refresh();pending.reload();app.update()
                 assert '100.0%' in app.work_progress_rate.cget('text') and not pending.entries
                 assert '[미완료코어]' not in cable.tree.item('1','values')[0]
+                assert cable.completion_reason.get()=='연결완료'
                 assert all(s.core(*case.slot(i))['signal']=='unknown' for i in range(3))
                 assert wf.plan_snapshot(s.conn)==before
-                pending.destroy();survey.destroy();summary.destroy();cable.destroy()
-                s.update_core(*case.slot(1),('WRONG-ID','긴 코어내역 '*30,'normal','','off'));app.refresh()
+                pending.destroy();survey.destroy();summary.destroy()
+                cable.notebook.select(cable.identity_tab);cable.identity_tree.selection_set('1');app.update()
+                cable.open_identity_editor('1','#3');cable.identity_editor.delete(0,'end');cable.identity_editor.insert(0,'저장 전 입력')
+                s.update_core(*case.slot(1),('WRONG-ID','긴 코어내역 '*30,'normal','','off'));app.refresh();app.update()
+                assert cable.completion_reason.get()=='코어ID 다름'
+                assert cable.identity_editor.get()=='저장 전 입력'
+                cable.identity_tree.selection_set('6');app.update()
+                assert cable.completion_reason.get()=='미사용 코어' and '코어ID 다름' not in cable.completion_reason.get()
+                cable.destroy()
                 trace=code['TraceDialog'](app,s);trace.q.set('CORE-A');trace.run();app.update()
                 wrong=[iid for iid in trace.tree.get_children() if trace.tree.item(iid,'values')[0]=='WRONG-ID']
                 assert len(wrong)==1 and 'mismatch' in trace.tree.item(wrong[0],'tags')
                 assert '코어ID 불일치' in trace.summary.get();assert trace.diagram.find_all()
-                trace.close();node.destroy();assert not errors,errors
+                trace.close();node.destroy()
+                for i in (1,2):s.connect(case.nodes[i],case.slot(i-1,2),case.slot(i,2))
+                s.connect(case.nodes[1],case.slot(0,3),case.slot(1,3))
+                app.display_options['badges']=True;app.display_options['cable_temporary']=True;app.refresh();app.update()
+                layout=app.cable_label_layout({r['id']:r for r in s.nodes()},s.cables(),s.cable_core_warning_summary())
+                badges={item['id']:[p['text'] for p in item['parts'] if '임시코어' in p['text']] for item in layout}
+                assert [badges[c] for c in case.cables]==[['연결완료임시코어 1'],[],['연결완료임시코어 1']]
+                canvas_text=[app.canvas.itemcget(i,'text') for i in app.canvas.find_all() if app.canvas.type(i)=='text']
+                assert canvas_text.count('연결완료임시코어 1')==2
+                assert app.drawing_svg().count('연결완료임시코어 1')==2
+                assert code['DISPLAY_LABELS']['cable_temporary']=='연결완료임시코어 표시'
+                app.display_options['cable_temporary']=False;app.refresh();app.update()
+                assert '연결완료임시코어' not in app.drawing_svg()
+                assert not errors,errors
             finally:app.on_close()
-        print('PASS Windows partial highlights, mismatch rows, paired signals, unknown-only completion across survey/cable/summary/dashboard, incomplete lists and undo repaint')
+        print('PASS Windows field traces, unknown-only completion, selected-core brief reasons/draft preservation, temporary endpoint badges on canvas/SVG and visibility')
     finally:case.tearDown()
 
 

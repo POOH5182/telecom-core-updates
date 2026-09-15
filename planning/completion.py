@@ -113,6 +113,32 @@ def completion_rate_text(report):
     return '대상 없음' if report['rate'] is None else f"{report['rate']:.1f}% ({report['done']}/{report['total']})"
 
 
+def core_completion_brief(store,slot):
+    """Short saved-state reasons for the selected physical core, without tracing."""
+    slot=tuple(slot)
+    if field_slot_mode(store):
+        entry=field_slot_audit(store)['by_slot'].get(slot)
+        if not entry:return '미사용 코어',''
+        temporary=not entry['real_ids']
+    else:
+        entry=completion_report(store)['by_slot'].get(slot)
+        if not entry:return '미사용 코어',''
+        temporary=entry['temporary']
+    if entry['complete']:return ('연결완료임시코어' if temporary else '연결완료'),''
+    if not entry['required']:return '필수 연결 대상 아님',''
+    causes=set(entry['causes']);reasons=[]
+    for keys,label in (({'unconnected','endpoints'},'코어연결 미완료'),({'port'},'RN 내부포트 미접속'),
+                       ({'identity'},'코어ID 다름'),({'signal'},'신호 불일치'),({'split'},'코어경로 분리'),
+                       ({'branch'},'중복·분기 연결'),({'invalid'},'접속정보 오류'),({'marked'},'오류 상태 표시')):
+        if causes&keys:reasons.append(label)
+    if 'identity' in causes and not str(store.core(*slot)['core_id'] or '').strip() and not field_slot_mode(store):
+        reasons[reasons.index('코어ID 다름')]='코어ID 없음'
+    holds=entry.get('holds',())
+    if any(s.startswith('함체 NOT OK:') for s in holds):reasons.append('함체 NOT OK')
+    if any(not s.startswith('함체 NOT OK:') for s in holds) or 'field' in causes:reasons.append('현장 선번 확인 필요')
+    return '미완료',' · '.join(reasons) or '연결 상태 확인 필요'
+
+
 def completion_check_groups(rows):
     """One displayed row per exact core ID; retain every diagnostic and location.
 

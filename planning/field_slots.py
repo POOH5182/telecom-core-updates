@@ -320,7 +320,18 @@ def field_slot_needs(store,node_id):
 def field_slot_warning_summary(store):
     audit=field_slot_audit(store)
     if getattr(store,'_field_slot_warning_audit',None) is audit and store._cable_warning_cache is not None:return store._cable_warning_cache
-    completion=field_slot_completion(store);result={};errors=[];incomplete=[];marked=[]
+    completion=field_slot_completion(store);result={};errors=[];incomplete=[];marked=[];temporary_ends=defaultdict(set)
+    # Count actual ID-less completed paths only at their terminal cable sections.
+    # A temporary token is neutral: separate tokens along one path are one core.
+    for comp in audit['components']:
+        if comp['real_ids'] or not comp['complete']:continue
+        if not any(str(r.get('core_id') or '').strip().startswith('임시-') for r in comp['records']):continue
+        for slot in comp['slots']:
+            cable=audit['net'].cables.get(slot[0])
+            if not cable:continue
+            if any(not any(n==nid and not peer[0].startswith('PORT:') for n,peer in audit['net'].links.get(slot,()))
+                   for nid in (cable['n1id'],cable['n2id'])):
+                temporary_ends[slot[0]].add(slot[1])
     def entry(slot,comp):
         row=audit['rows'].get(slot,{});cable=audit['net'].cables.get(slot[0])
         nodes=(cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)
@@ -339,7 +350,8 @@ def field_slot_warning_summary(store):
         bad=[(s,c) for s,c in slots if c['error']]
         bad_ids={str(audit['rows'].get(s,{}).get('core_id') or '') for s,c in bad}-{''}
         result[cid]=dict(unassigned=len(free),incomplete=len(missing),incomplete_indices=frozenset(missing),incomplete_badge=len(missing-free),incomplete_total=len(missing),
-            temporary=len(temp),temporary_total=len(temp),marked_error=len(bad_ids),marked_error_ids=frozenset(bad_ids),marked_error_total=len(bad_ids),
+            temporary=len(temp),temporary_total=len(temp),temporary_complete=len(temporary_ends[cid]),
+            marked_error=len(bad_ids),marked_error_ids=frozenset(bad_ids),marked_error_total=len(bad_ids),
             error=len(bad),error_messages=[f'{s[1]}번: '+c['reason'] for s,c in bad])
     store._connection_progress=completion;store._connection_errors=errors;store._marked_error_entries=marked
     store._input_errors=[];store._incomplete_entries=incomplete;store._cable_warning_cache=result;store._field_slot_warning_audit=audit

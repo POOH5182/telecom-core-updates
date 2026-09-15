@@ -24,6 +24,22 @@ class CompletionTests(unittest.TestCase):
     def report(self):return self.store.drawing_connection_progress()
     def snapshot(self):return wf.plan_snapshot(self.store.conn),self.store.data_revision(),self.store.history_rows()
 
+    def test_legacy_temporary_completed_badge_requires_complete_path(self):
+        s=self.store;self.core(1,'임시-100');self.connect(1)
+        tail=s.add_node('마지막 말단',900,0);last=s.add_cable(self.b,tail,'LAST','12C','기설')
+        self.assertTrue(all(w['temporary_complete']==0 for w in s.cable_core_warning_summary().values()))
+        s.connect(self.b,(self.right,1),(last,1))
+        before=self.snapshot();warnings=s.cable_core_warning_summary()
+        self.assertEqual([warnings[c]['temporary_complete'] for c in (self.left,self.right,last)],[1,0,1])
+        self.assertEqual(self.report()['total'],0);self.assertEqual(self.snapshot(),before)
+        s.disconnect(self.h,self.left,1)
+        self.assertTrue(all(w['temporary_complete']==0 for w in s.cable_core_warning_summary().values()))
+
+    def test_legacy_selected_core_brief_matches_completion(self):
+        self.core(1,'ONE');status,reason=wf.core_completion_brief(self.store,(self.left,1))
+        self.assertEqual(status,'미완료');self.assertIn('코어연결 미완료',reason)
+        self.connect(1);self.assertEqual(wf.core_completion_brief(self.store,(self.left,1)),('연결완료',''))
+
     def test_explicit_before_after_policy_matrix_and_exclusion_precedence(self):
         cases=[('REAL','',[],True,True),('REAL','on',[],True,True),('임시-1','',[],False,False),
                ('임시-1','on',[],True,True),('REAL','on',['예외'],False,True),('REAL','on',['끊김'],False,True),
