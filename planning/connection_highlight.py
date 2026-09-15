@@ -1,10 +1,11 @@
-"""Saved physical components, stable segment colors and local open-end hints.
+"""Physical segment colors, shared-cable highlights and local open-end hints.
 
 Same-ID components are context only. A hint never adds a splice or chooses an
 ambiguous pair. OFF and valid terminal ends never request an allocation.
 """
 
-SEGMENT_COLORS=('#1565c0','#d97706','#00897b','#7c3aed','#b45379','#657c16','#006b88','#795548')
+OVERLAP_COLOR='#e600a9'
+SEGMENT_COLORS=('#ff7a00','#7c3aed','#00897b','#1565c0','#b45379','#657c16','#006b88','#795548')
 
 
 def core_segment_color(index):
@@ -23,7 +24,7 @@ def core_connection_highlight(store,slots):
     identities={cid for c in chosen.values() for cid in c['real_ids']}
     for cid in identities:
         for c in audit['by_id'].get(cid,()):components[c['key']]=c
-    groups=[];by_slot={};bands=defaultdict(list);free=defaultdict(list);label_colors={}
+    groups=[];by_slot={};bands=defaultdict(list);free=defaultdict(list);label_colors={};cable_slots=defaultdict(set)
     for index,comp in enumerate(sorted(components.values(),key=lambda c:c['slots'][0])):
         number=index+1;color=core_segment_color(index)
         group=dict(key=comp['key'],number=number,color=color,slots=tuple(comp['slots']),ids=tuple(comp['real_ids']),
@@ -31,6 +32,7 @@ def core_connection_highlight(store,slots):
         groups.append(group);cable_lines=defaultdict(list)
         for slot in comp['slots']:
             by_slot[slot]=group;row=audit['rows'].get(slot,{})
+            if slot[0] in net.cables:cable_slots[slot[0]].add(slot)
             cid=str(row.get('core_id') or '').strip()
             number_text=str(row.get('label') or slot[1]) if slot[0].startswith('PORT:') else str(slot[1])
             line=number_text+' · '+(cid or 'ID 없음')+(' · OFF' if core_signal_off(row) else '')
@@ -80,8 +82,11 @@ def core_connection_highlight(store,slots):
         boundaries.append(dict(node_id=nid,name=node.get('name') or nid,title=title,kind=kind,ends=ends,
             candidates=tuple(candidates),color='#a16207' if kind in ('pair','ambiguous','open') else '#c62828',
             text=(node.get('name') or nid)+' · '+title+'\n'+'\n'.join(e['text']+(' · OFF 배정 제외' if e['off'] else '') for e in ends)))
-    colors={c:items[0]['color'] for c,items in bands.items()}
-    labels={c:'\n'.join(item['text'] for item in items) for c,items in bands.items()}
-    summary=f'실제 접속 {len(groups)}구간 · 미접속 함체 {len(boundaries)}곳 · 같은 구간은 같은 색'
+    # Count distinct cable slots, not selections, port rows or geometric crossings.
+    # One route may also traverse the same cable on different physical cores.
+    overlaps={c for c,slots in cable_slots.items() if len(slots)>1}
+    colors={c:OVERLAP_COLOR if c in overlaps else items[0]['color'] for c,items in bands.items()}
+    labels={c:(f'겹침 · {len(cable_slots[c])}개 코어\n' if c in overlaps else '')+'\n'.join(item['text'] for item in items) for c,items in bands.items()}
+    summary=f'실제 접속 {len(groups)}구간 · 미접속 함체 {len(boundaries)}곳 · 겹침 케이블 {len(overlaps)}개(진분홍)'
     return dict(groups=groups,by_slot=by_slot,bands=dict(bands),colors=colors,labels=labels,label_colors=label_colors,
-                boundaries=boundaries,summary=summary,seed_slots=tuple(sorted(seeds)))
+                boundaries=boundaries,summary=summary,seed_slots=tuple(sorted(seeds)),overlaps=frozenset(overlaps))

@@ -410,3 +410,18 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
 - Run check_connection_highlight.py including Windows core click/colors/pulse,
   callout target/open/read preservation, merge/undo, parallel bands, zoom and stale
   cleanup, and existing node diagram/core trace/OFF/field/performance/release gates.
+
+
+- V83 supersedes V82's constant colors/width-only pulse and parallel map bands.
+  Actual 330-ms timer ticks alternate all highlighted cable strokes between
+  highlight color/width/halo and original base color/width with hidden halo.
+  Never leave a permanent overlay that hides the blink or moves cable geometry.
+- Shared physical cables use OVERLAP_COLOR and a readable overlap/core-number label,
+  also in the detail diagram. Count distinct physical cable slots, not duplicated
+  selections, RN port rows or merely crossing lines. Include a component that
+  returns over a different core in the same cable. Preserve component grouping,
+  gap hints, errors, OFF policy and no-write behavior.
+- check_connection_highlight.py must observe real Windows timer callbacks and
+  rendered colors/halo visibility for both overlap and ordinary cables, including
+  repaint/zoom/selection and clear/stale cleanup. A boolean or width-only assertion
+  is insufficient. Run the existing full Windows release pipeline before publishing.
