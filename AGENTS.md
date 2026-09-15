@@ -463,3 +463,17 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
   failure gate normalizes only its test snapshot reference to isolate readiness
   and rollback timing; normal/update/duplicate gates use the unmodified launcher.
   Do not claim that this application-only update repairs that launcher defect.
+
+- V85 CloudController.copy_drawing adds an independently identified local/cloud
+  drawing without switching the active original. Validate/copy working + GIS +
+  before + after snapshots with history, splices, locks and metadata intact.
+  Names never determine paths. Register only after all independent files exist.
+- Prefer current/local unsent content; fetch a newer remote source only if the
+  inactive cache matches its last synced digest, or no cache exists. Validate
+  loaded ID/hash/bundle and retain the existing authenticated owner-only RPC.
+  No server schema or permission changes are needed.
+- Persist copy_pending operation IDs so an interrupted outbox write can resume;
+  retain normal CAS/lost-ACK handling. Retry pending copies even with no active
+  drawing. Cancellation/failed validation must not switch or replace the original.
+  Run check_drawing_copy.py including Windows list button, cancellation, selection
+  and independent open, plus the cloud and full Windows release gates.

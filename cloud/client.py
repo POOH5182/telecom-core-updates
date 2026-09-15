@@ -346,7 +346,10 @@ def cloud_sqlite_copy(source, destination):
 def cloud_bundle(store, scenario_folder):
     with tempfile.TemporaryDirectory() as temp:
         folder = Path(temp)
-        store.backup_to(folder/'working.sqlite3')
+        if isinstance(store,(str,Path)):
+            cloud_sqlite_copy(store,folder/'working.sqlite3')
+        else:
+            store.backup_to(folder/'working.sqlite3')
         for name in ('gis','before','after'):
             source = Path(scenario_folder)/(name+'.sqlite3')
             if source.exists():
@@ -488,6 +491,7 @@ class CloudController:
     def send_next(self, done=None, failed=None):
         if self.jobs.busy:
             return False
+        self.queue_drawing_copies()
         pending=sorted(self.outbox().glob('*.json'))
         if not pending:
             if done:
@@ -574,12 +578,12 @@ class CloudController:
         if self.closing:
             return
         try:
-            if not self.access_lost and not self.jobs.busy and self.current and time.monotonic()>=self.retry_at:
+            if not self.access_lost and not self.jobs.busy and (self.current or any(self.outbox().glob('*.json')) or any(e.get('copy_pending') for e in self.index['docs'].values())) and time.monotonic()>=self.retry_at:
                 if self.editable_idle():
                     self.capture()
-                if any(self.outbox().glob('*.json')):
+                if any(self.outbox().glob('*.json')) or any(e.get('copy_pending') for e in self.index['docs'].values()):
                     self.send_next()
-                elif time.monotonic()>=self.refresh_at and not self.has_dialogs():
+                elif self.current and time.monotonic()>=self.refresh_at and not self.has_dialogs():
                     self.refresh_at=time.monotonic()+20
                     self.poll_remote()
         except Exception as error:
@@ -685,6 +689,82 @@ class CloudController:
                 self.dialog.destroy()
             self.sync_now()
         self.ensure_saved(create)
+
+    def queue_drawing_copies(self):
+        """Recover an interrupted copy without losing it or inventing a new save ID."""
+        for drawing_id,entry in list(self.index['docs'].items()):
+            operation=entry.get('copy_pending')
+            if not operation:continue
+            path=self.outbox()/(drawing_id+'.json')
+            if not path.exists():
+                data=cloud_bundle(self.working(entry),self.home/'scenarios'/entry['stem'])
+                cloud_json(path,dict(id=drawing_id,name=entry['name'],base_revision=0,
+                    operation_id=operation,sha256=hashlib.sha256(data).hexdigest(),
+                    payload=base64.b64encode(data).decode(),_signature=''))
+            del entry['copy_pending']
+            try:self.persist()
+            except Exception:
+                entry['copy_pending']=operation
+                raise
+
+    def save_drawing_copy(self,data,name):
+        if not isinstance(name,str) or not name.strip() or len(name)>120:raise CloudError('도면 이름을 1~120자로 입력해 주세요.')
+        contents=cloud_unpack(data)
+        drawing_id=str(uuid.uuid4());stem=uuid.UUID(drawing_id).hex
+        entry=dict(name=name,stem=stem,base_revision=0,copy_pending=str(uuid.uuid4()))
+        path=self.working(entry);folder=self.home/'scenarios'/stem
+        folder.mkdir(parents=True,exist_ok=False)
+        # Register only a fully validated, independently stored generation.
+        for filename,content in contents.items():
+            cloud_atomic(path if filename=='working.sqlite3' else folder/filename,content)
+        self.index['docs'][drawing_id]=entry
+        try:self.persist()
+        except Exception:
+            self.index['docs'].pop(drawing_id,None)
+            raise
+        return drawing_id
+
+    def copy_drawing(self,row,changed=None):
+        if self.access_lost or self.closing:return
+        parent=self.dialog if self.dialog and self.dialog.winfo_exists() else self.app
+        if self.jobs.busy or not self.editable_idle():
+            messagebox.showinfo('도면 복사','진행 중인 편집·동기화가 끝난 뒤 다시 눌러 주세요.',parent=parent);return
+        source_id=str(uuid.UUID(row['id']));entry=self.index['docs'].get(source_id)
+        source_name=entry['name'] if source_id==self.current and entry else row['name']
+        name=simpledialog.askstring('도면 복사','복사본 이름을 입력하세요. (최대 120자)\n저장된 도면과 GIS·현장반영·후도면을 함께 복사합니다.',
+                                   initialvalue=source_name[:114]+' - 복사본',parent=parent)
+        if name is None:return
+        name=name.strip()
+        if not name or len(name)>120:
+            messagebox.showwarning('도면 이름 확인','도면 이름을 1~120자로 입력해 주세요.',parent=parent);return
+        if self.access_lost or self.closing:return
+        if self.jobs.busy or not self.editable_idle():
+            messagebox.showinfo('도면 복사','진행 중인 편집·동기화가 끝난 뒤 다시 눌러 주세요.',parent=parent);return
+        def create(data):
+            if self.access_lost or self.closing:return
+            try:
+                drawing_id=self.save_drawing_copy(data,name)
+                if changed:changed(drawing_id)
+                self.status.set('도면 복사 완료 · '+name+' · 동기화 대기')
+                self.send_next()
+            except Exception as error:self.failed(error)
+        try:
+            # Keep uncaptured local edits, including a cache left by a crash.
+            # A clean, older cache can instead use the server's latest snapshot.
+            if entry and self.working(entry).exists():
+                data=cloud_bundle(self.app.store,self.app.scenario_folder()) if source_id==self.current else cloud_bundle(self.working(entry),self.home/'scenarios'/entry['stem'])
+                dirty=entry.get('base_revision',0)==0 or hashlib.sha256(data).hexdigest()!=entry.get('synced_sha')
+                if source_id==self.current or dirty or entry.get('base_revision',0)>=row.get('revision',0):
+                    create(data);return
+            def download():
+                drawing=self.session.call('load',id=source_id)
+                data=base64.b64decode(drawing['payload'],validate=True)
+                if drawing['id']!=source_id or hashlib.sha256(data).hexdigest()!=drawing['sha256']:
+                    raise CloudError('복사할 도면의 검증에 실패했습니다. 원본은 유지됩니다.')
+                cloud_unpack(data)
+                return data
+            self.jobs.run(download,create,self.failed)
+        except Exception as error:self.failed(error)
 
     def rename_drawing(self,row,changed=None):
         if self.access_lost:
@@ -811,7 +891,7 @@ class CloudController:
         window=tk.Toplevel(self.app)
         self.dialog=window
         window.title('내 도면 · '+self.session.profile['email'])
-        window.geometry('840x500')
+        window.geometry('940x500')
         window.transient(self.app)
         window.grab_set()
         window.protocol('WM_DELETE_WINDOW',window.destroy if self.current else self.close)
@@ -824,9 +904,10 @@ class CloudController:
         rows={}
         label=ttk.Label(window,text='목록 불러오는 중…',padding=8)
         label.pack(fill='x')
-        def populate(remote):
+        def populate(remote,selected_id=None):
             if not window.winfo_exists():
                 return
+            selected_id=selected_id or (tree.selection()[0] if tree.selection() else self.index.get('current'))
             rows.clear()
             rows.update({r['id']:r for r in remote})
             for key,entry in self.index['docs'].items():
@@ -835,9 +916,9 @@ class CloudController:
             tree.delete(*tree.get_children())
             for key,row in rows.items():
                 tree.insert('','end',iid=key,values=(row['name'],row['revision'],row['updated_at']))
-            if self.index.get('current') in rows:
-                tree.selection_set(self.index['current'])
-            label.configure(text='도면을 선택하고 열기 또는 이름 변경을 누르세요.' if rows else '새 도면을 만들거나 기존 PC 도면을 가져오세요.')
+            if selected_id in rows:
+                tree.selection_set(selected_id)
+            label.configure(text='도면을 선택하고 열기·도면 복사·이름 변경을 누르세요.' if rows else '새 도면을 만들거나 기존 PC 도면을 가져오세요.')
         def load_rows():
             if not window.winfo_exists():
                 return
@@ -852,9 +933,17 @@ class CloudController:
             else:
                 label.configure(text='이름을 변경할 도면을 먼저 선택하세요.')
             return 'break'
+        def copied(drawing_id):
+            if not window.winfo_exists():return
+            populate(list(rows.values()),selected_id=drawing_id)
+            tree.see(drawing_id)
+            label.configure(text='복사본을 만들었습니다. 선택한 복사본을 열면 별도로 수정할 수 있습니다.')
+        def copy_selected():
+            if tree.selection():self.copy_drawing(rows[tree.selection()[0]],changed=copied)
+            else:label.configure(text='복사할 도면을 먼저 선택하세요.')
         buttons=ttk.Frame(window,padding=10)
         buttons.pack(fill='x')
-        for text,command in [('열기',selected),('이름 변경',rename_selected),('새 도면',self.new_drawing),('기존 PC 도면 가져오기',self.import_previous),('파일 선택해서 가져오기',self.import_external),('새로고침',load_rows)]:
+        for text,command in [('열기',selected),('도면 복사',copy_selected),('이름 변경',rename_selected),('새 도면',self.new_drawing),('기존 PC 도면 가져오기',self.import_previous),('파일 선택해서 가져오기',self.import_external),('새로고침',load_rows)]:
             ttk.Button(buttons,text=text,command=command).pack(side='left',padx=3)
         tree.bind('<Double-1>',lambda e:selected())
         tree.bind('<F2>',rename_selected)

@@ -55,6 +55,8 @@ jobs:
         run: python tools/smoke_windows.py
       - name: Windows 로그인과 도면 동기화 검증
         run: python tools/smoke_cloud_windows.py
+      - name: 내 도면 복사·원본 보존·독립 동기화·실제 버튼 검증
+        run: python tools/check_drawing_copy.py
       - name: 후도면 전체 점검과 선번 재배치 보존 검증
         run: python tools/check_after_plan.py
       - name: 후도면 최소 케이블 경로·OK NOK·직접 지정 및 도면 보존 검증
