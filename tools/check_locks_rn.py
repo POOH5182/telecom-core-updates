@@ -25,12 +25,12 @@ class LocksRNTests(unittest.TestCase):
         self.cable=s.add_cable(self.a,self.rn,'CABLE','6C','기설')
         s.ensure_ports(self.rn,{'mp':1,'sp':1,'p':1})
     def tearDown(self):self.store.close();self.temp.cleanup()
-    def used(self,index=1):
-        self.store.update_core(self.cable,index,(f'ID-{index}',f'내역 {index}','normal','','off'))
+    def used(self,index=1,signal='off'):
+        self.store.update_core(self.cable,index,(f'ID-{index}',f'내역 {index}','normal','',signal))
     def inspect(self,index=1):return wf.Network(self.store.conn).inspect(f'ID-{index}',wf.DEFAULTS)
 
     def test_rn_legacy_terminal_flag_does_not_end_unconnected_cable(self):
-        s=self.store;self.used()
+        s=self.store;self.used(signal='unknown')
         with s.action('구버전 RN 말단 설정'):
             s.conn.execute("UPDATE nodes SET extra_json=json_set(extra_json,'$.terminal',1) WHERE id=?",(self.rn,))
         self.assertFalse(wf.cable_terminal(s.node(self.rn),1))
@@ -57,7 +57,7 @@ class LocksRNTests(unittest.TestCase):
         self.assertEqual(s.drawing_connection_progress()['done'],3)
 
     def test_rn_field_ports_apply_undo_and_terminal_enclosure_exclusion(self):
-        s=self.store;self.used();old=wf.plan_snapshot(s.conn)
+        s=self.store;self.used(signal='unknown');old=wf.plan_snapshot(s.conn)
         self.assertFalse(wf.field_required(s,s.node(self.a)))
         self.assertEqual(wf.field_summary(s,self.a)['total'],0)
         self.assertTrue(wf.field_required(s,s.node(self.rn)))

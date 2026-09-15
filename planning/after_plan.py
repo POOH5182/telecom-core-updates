@@ -115,7 +115,7 @@ class AfterPlanner:
             if links and not str(net.slots.get(slot, {}).get('core_id') or '').strip():
                 global_issues.append(net.title(slot)+': 코어ID 없는 접속')
         for slot, row in net.slots.items():
-            if plan_used(row) and not str(row.get('core_id') or '').strip():
+            if plan_used(row) and not core_signal_off(row) and not str(row.get('core_id') or '').strip():
                 global_issues.append(net.title(slot)+': 입력 내역은 있으나 코어ID가 없음')
         for survey in current['survey_rows']:
             if survey.get('invalid'): global_issues.append('선번 입력 오류: '+str(survey.get('error_message') or survey['id']))

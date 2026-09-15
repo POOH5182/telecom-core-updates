@@ -377,3 +377,17 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
 - Run tools/check_node_diagram.py including Windows button/reuse/zoom/locked copy/
   SVG/status repaint/conflict label/clear-on-fix/stale-view gates, plus existing
   field/completion/performance/Windows release gates before publishing.
+
+- V81 follows the user's OFF allocation exemption. Explicit OFF slots do not
+  create enclosure assignment needs, cable unassigned counts or an unsurveyed
+  missing-allocation error. OFF-only paths are excluded from mandatory targets;
+  isolated OFF copies of a real ID must not block a live required path of that ID.
+  This supersedes earlier required-ID/name/expected rules for OFF. Unknown remains
+  neutral and keeps the existing ID/name requirement; changing signal/undo/reopen
+  must recompute the policy without rewriting metadata, GIS evidence or splices.
+- Preserve actual connected identity/signal conflicts, marked errors, malformed
+  graphs and explicit survey/review holds even on excluded OFF paths. Exemption
+  never creates a physical endpoint or completed temporary route. Surface
+  OFF · 배정 제외 in the selected cable reason and unconnected enclosure summary.
+  Run check_off_assignment.py including Windows cable/summary/canvas/undo repaint,
+  updated completion/field/after-route/summary gates and the full release pipeline.

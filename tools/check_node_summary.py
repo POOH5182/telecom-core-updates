@@ -38,12 +38,14 @@ class SummaryTests(unittest.TestCase):
     def test_group_keeps_actual_pair_and_unconnected_positions_separate(self):
         self.apply(1,'A\tB\n1\t1');self.set(0,3,'CORE-A','다른 이름','off')
         before=self.snapshot();row=self.containing(self.slot(0))
-        self.assertEqual(row['values'][2:5],('1 · 3','1','연결 / 배정필요'))
+        self.assertEqual(row['values'][2:5],('1 · 3','1','연결 / OFF · 배정 제외'))
         self.assertIn('다른 이름',row['values'][1]);self.assertIn('OFF',row['values'][-1])
         self.assertEqual(row['connection'].count('↔'),1)
         self.assertNotIn('연결 확인필요',row['values'][-3])
         self.assertEqual(self.snapshot(),before)
         self.s.toggle_assignment_exception(self.nodes[1],*self.slot(0,3))
+        self.assertEqual(self.containing(self.slot(0))['values'][-3],'연결 / OFF · 배정 제외')
+        self.set(0,3,'CORE-A','다른 이름','unknown')
         self.assertEqual(self.containing(self.slot(0))['values'][-3],'연결 / 예외')
 
     def test_conflicting_pair_keeps_both_ids_and_signal_error_visible(self):

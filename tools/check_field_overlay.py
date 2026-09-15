@@ -127,7 +127,7 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(row['local_status'],'OK');self.assertEqual(row['local_mode'],'현장 신규 자동 OK')
         self.assertEqual(self.snapshot(),saved);self.assertEqual(self.s.data_revision(),revision)
         self.assertEqual(wf.field_local_slots(self.s,self.h)[(self.right,3)],'OK')
-        self.assertEqual(wf.field_local_slots(self.s,self.b)[(self.right,3)],'NOT OK')
+        self.assertNotIn((self.right,3),wf.field_local_slots(self.s,self.b))
         # An intentional manual NOT OK remains available after automatic OK.
         wf.field_local_mark(self.s,self.h,{row['key']},'NOT OK',self.s.data_revision(),self.s._view_generation,'현장 재조사 필요')
         self.apply('A\tB\n3\t3')

@@ -115,7 +115,7 @@ class AfterRoutePlanner:
                              segments=len(problem['components']),complete=problem['saved_ok'],problem=problem))
         rows.sort(key=lambda r:(r['core_id'],r['key']))
         done=sum(r['complete'] for r in rows)
-        return dict(rows=rows,total=len(rows),done=done,ready=bool(rows) and done==len(rows),context=ctx)
+        return dict(rows=rows,total=len(rows),done=done,ready=done==len(rows),context=ctx)
 
     def edges(self,problem):
         net=problem['context']['net'];adj=defaultdict(list);points=defaultdict(int);internal=set()

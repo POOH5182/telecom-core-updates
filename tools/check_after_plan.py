@@ -50,7 +50,7 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((report['total'],report['done']),(3,3));self.assertTrue(report['ready'])
         # No removed cable exists: the old limited report would have zero required cores.
         self.assertEqual(self.store._work_required_from_connection(self.store.conn),[])
-        update(self.store,self.big,5,{'core_id':'NEW','detail':'신규','signal':'off'})
+        update(self.store,self.big,5,{'core_id':'NEW','detail':'신규','signal':'unknown'})
         row=self.row('NEW');self.assertEqual(row['change'],'신규');self.assertFalse(row['complete'])
         self.assertTrue(any('미접속' in n for n in row['notes']))
         self.service.review(['NEW'],'신규 연결 계획 확인',self.service.report()['token'])
@@ -136,6 +136,7 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(wf.plan_snapshot(self.store.conn),original)
 
     def test_pending_connections_and_bad_splices(self):
+        update(self.store,self.big,1,{'signal':'unknown'})
         self.store.disconnect(self.h,self.small,2)
         row=self.row('ID-A');self.assertFalse(row['complete']);self.assertTrue(any('끊어짐' in x for x in row['notes']))
         self.assertNotIn((self.small,2),self.service.preview()['mapping'])

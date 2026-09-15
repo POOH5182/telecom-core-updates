@@ -102,6 +102,7 @@ class SheetTests(unittest.TestCase):
 
     def test_delete_only_middle_cable_both_enclosures_need_assignment_again(self):
         s=self.store;end=s.add_node('다음 끝',720,0);tail=s.add_cable(self.b,end,'TAIL','6C','기설')
+        s.set_core_signal('OLD-1','on',slot=(self.left,1))
         s.connect(self.b,(self.right,1),(tail,1))
         s.connect(self.b,(self.right,2),(tail,2))
         outer={slot:dict(s.core(*slot)) for slot in ((self.left,1),(tail,1))}

@@ -122,6 +122,7 @@ def field_slot_overlay(store,node_id,raw,revision,generation,reference=None,keys
 
 
 def field_slot_required(row):
+    if core_signal_off(row):return False
     cid=str(row.get('core_id') or '').strip()
     return bool((cid and not cid.startswith('임시-')) or str(row.get('detail') or '').strip() or row.get('signal')=='on')
 
@@ -136,7 +137,7 @@ def field_slot_audit(store):
             for nid in (cable['n1id'],cable['n2id']):net.degree[nid]+=1
     # Empty capacity is not an obligation. A referenced blank slot still appears
     # in the audit so corrupt/imported connections cannot be silently ignored.
-    used={s for s,r in all_rows.items() if str(r.get('core_id') or '').strip() or field_slot_required(r)}
+    used={s for s,r in all_rows.items() if str(r.get('core_id') or '').strip() or field_slot_required(r) or core_signal_off(r)}
     used.update(net.links);used.update(net.bad)
     remaining=set(used);components=[];by_slot={};by_id=defaultdict(list)
     for first in sorted(used):
@@ -183,7 +184,7 @@ def field_slot_audit(store):
         edge_count=sum(len(net.links.get(s,())) for s in slots)//2
         if edge_count>=len(slots):fail('순환 경로: 연결이 되돌아와 끝점을 확인할 수 없음','branch')
         if len(ends)!=2 or (len(ends)==2 and ends[0][0]==ends[1][0]):fail('서로 다른 두 끝단까지 연결해야 합니다. RN은 내부 포트 접속이 필요합니다.','endpoints')
-        component=dict(key=('route',first),slots=sorted(slots),real_ids=real_ids,signals=signals,required=required,
+        component=dict(key=('route',first),slots=sorted(slots),real_ids=real_ids,signals=signals,required=required,off_only=all(core_signal_off(r) for r in records),
                        notes=notes,causes=causes,ends=ends,free=free,holds=[],blocking=[],records=records,
                        placed=bool(edge_count) or not bool(causes&{'unconnected','endpoints','port','branch','invalid'}))
         components.append(component)
@@ -240,7 +241,8 @@ def field_slot_audit(store):
     for slot,comp in by_slot.items():by_cable[slot[0]].append((slot,comp))
     for comp in components:
         if comp['required']:
-            for nid,slot in comp['free']:needs_by_node[nid][slot[0]].add(slot[1])
+            for nid,slot in comp['free']:
+                if not core_signal_off(all_rows.get(slot)):needs_by_node[nid][slot[0]].add(slot[1])
     result=dict(net=net,components=components,by_slot=by_slot,by_id=dict(by_id),rows=all_rows,observed_slots=observed_slots,
                 by_cable=dict(by_cable),needs_by_node={nid:dict(value) for nid,value in needs_by_node.items()})
     store._field_slot_audit_stamp=stamp;store._field_slot_audit_value=result
@@ -252,30 +254,33 @@ def field_slot_completion(store):
     if 'completion' in audit:return audit['completion']
     groups={}
     for comp in audit['components']:
-        if comp['real_ids']:
+        # An unassigned OFF placement must not hold up a live path with the same
+        # ID. Keep its actual graph (and any real conflicts) available separately.
+        if comp['off_only']:groups[('off',comp['key'])]=[comp]
+        elif comp['real_ids']:
             for cid in comp['real_ids']:groups.setdefault(('id',cid),[]).append(comp)
         else:groups[comp['key']]=[comp]
     targets=[];excluded=[];by_id={};by_slot={}
     for key,components in groups.items():
-        cid=key[1] if key[0]=='id' else ''
+        cid=key[1] if key[0]=='id' else components[0]['real_ids'][0] if key[0]=='off' and len(components[0]['real_ids'])==1 else ''
         slots=sorted({s for c in components for s in c['slots']});records=[audit['rows'].get(s,{}) for s in slots]
         required=any(c['required'] for c in components)
         notes=list(dict.fromkeys(note for c in components for note in c['notes']+c['holds']+c['approval_notes']))
-        reason=' / '.join(notes) if required else '실제 코어ID·코어명·ON 신호 없는 임시 경로'
+        reason=' / '.join(notes) if required else 'OFF · 배정 제외' if key[0]=='off' else '실제 코어ID·코어명·ON 신호 없는 임시 경로'
         basis=' / '.join(label for yes,label in ((bool(cid),'코어ID 있음'),(any(str(r.get('detail') or '').strip() for r in records),'코어명 있음'),(any(r.get('signal')=='on' for r in records),'신호 있음')) if yes)
         entry=dict(key=key,core_id=cid,slots=slots,active_slots=slots,all_slots=slots,required=required,complete=required and all(c['complete'] for c in components),
                    detail=' / '.join(dict.fromkeys(str(r.get('detail') or '') for r in records if r.get('detail'))),reason=reason,reason_items=tuple(notes),
                    causes=frozenset(cause for c in components for cause in c['causes'])|({'field'} if any(c['holds'] for c in components) else set()),
-                   basis=basis,excluded_reason='' if required else reason,on=any(r.get('signal')=='on' for r in records),temporary=not bool(cid),expected=False)
+                   basis=basis,excluded_reason='' if required else reason,on=any(r.get('signal')=='on' for r in records),temporary=not any(c['real_ids'] for c in components),expected=False)
         (targets if required else excluded).append(entry)
-        if cid:by_id[cid]=entry
+        if cid and (cid not in by_id or required):by_id[cid]=entry
         for slot in slots:
             if slot not in by_slot or str(audit['rows'].get(slot,{}).get('core_id') or '')==cid:by_slot[slot]=entry
     done=sum(r['complete'] for r in targets);total=len(targets)
     result=dict(kind='before',total=total,done=done,rate=100.0*done/total if total else None,rows=targets,
                 excluded=len(excluded),excluded_rows=excluded,by_id=by_id,by_slot=by_slot,degree=dict(audit['net'].degree),
                 required_slots=frozenset(s for r in targets for s in r['slots']),
-                excluded_counts={'실제 코어ID·코어명·ON 신호 없는 임시 경로':len(excluded)} if excluded else {})
+                excluded_counts=dict(Counter(r['excluded_reason'] for r in excluded)))
     audit['completion']=result;return result
 
 
@@ -345,7 +350,7 @@ def field_slot_warning_summary(store):
     for cid in audit['net'].cables:
         slots=audit['by_cable'].get(cid,())
         missing={s[1] for s,c in slots if c['required'] and not c['complete']}
-        free={s[1] for s,c in slots if c['required'] and any(pos==s for _,pos in c['free'])}
+        free={s[1] for s,c in slots if c['required'] and not core_signal_off(audit['rows'].get(s)) and any(pos==s for _,pos in c['free'])}
         temp={s[1] for s,c in slots if str(audit['rows'].get(s,{}).get('core_id') or '').startswith('임시-')}
         bad=[(s,c) for s,c in slots if c['error']]
         bad_ids={str(audit['rows'].get(s,{}).get('core_id') or '') for s,c in bad}-{''}
@@ -365,6 +370,14 @@ def field_slot_check_rows(store):
         slot=row['slots'][0]
         result.append(dict(level='오류',category='현장 연결 미완료',location=store._slot_title(*slot),target='',message=row['reason'],
                            node_id='',cable_id=slot[0],core_index=slot[1],core_id=row['core_id']))
+    # Excluded OFF paths still report actual identity/signal/graph faults and
+    # explicit saved review holds. Missing allocation alone is not an error.
+    for comp in field_slot_audit(store)['components']:
+        if not comp['off_only'] or not (comp['error'] or comp['holds']):continue
+        for cid in comp['real_ids'] or ['']:
+            slot=next((s for s in comp['slots'] if store.core(*s)['core_id']==cid),comp['slots'][0])
+            result.append(dict(level='오류',category='현장 연결 오류',location=store._slot_title(*slot),target='',message=comp['reason'],
+                               node_id='',cable_id=slot[0],core_index=slot[1],core_id=cid))
     # Malformed observations with no valid slots must not vanish from the gate.
     for nid,record in field_records(store).items():
         if not store.node(nid):continue

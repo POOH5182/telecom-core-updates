@@ -279,6 +279,7 @@ class FieldSurvey:
         attached={slot for p in self.pairs for slot in p}
         pending.extend((slot,) for slot,row in sorted(self.slots.items())
                        if slot not in covered and slot not in attached and str(row.get('core_id') or '').strip()
+                       and not core_signal_off(row)
                        and not {'cancel','broken','exception'}.intersection(statuses(row)))
         for pair in pending:
             results.append({'key':'missing:'+field_pair_key(pair),'row':'—','source':'미조사','slots':pair,'errors':[],

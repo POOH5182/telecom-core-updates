@@ -10,6 +10,10 @@ def completion_kind(store):
     return 'after' if row and row[0]=='after' else ('gis' if row and row[0]=='gis' else 'before')
 
 
+def core_signal_off(row):
+    return bool(row) and str(dict(row).get('signal') or '').strip().lower()=='off'
+
+
 def completion_policy(rows,kind):
     rows=[dict(row) for row in rows];flags=set()
     for row in rows:
@@ -24,6 +28,7 @@ def completion_policy(rows,kind):
     else:
         if flags&{'exception','예외','예외코어'}:reason='예외코어'
         elif flags&{'broken','끊김','끊킴','끊김코어','끊킴코어'}:reason='끊김코어'
+    if rows and all(core_signal_off(row) for row in rows):reason='OFF · 배정 제외'
     if not reason and temporary and not on:reason='신호 없는 임시코어'
     required=not reason and (on or (bool(ids) and not temporary) or (kind=='after' and expected))
     if not required and not reason:reason='신호·코어ID 없는 번호'
@@ -70,6 +75,14 @@ def completion_report(store,kind=None):
         cid=str(rows[0].get('core_id') or '').strip();policy=completion_policy(rows,kind)
         slots=sorted((row['cable_id'],int(row['core_index'])) for row in rows)
         active_slots=sorted(s for s in slots if s in net.slots)
+        if policy['required']:
+            # Only isolated OFF metadata can be ignored here. Existing splices,
+            # malformed connections and explicit errors remain in the route.
+            ignored={s for s in active_slots if core_signal_off(net.slots[s]) and not net.links.get(s) and not net.bad.get(s)
+                     and 'error' not in statuses(net.slots[s])
+                     and not (s[0] in net.cables and all(cable_terminal(net.nodes.get(n),net.degree[n]) for n in (net.cables[s[0]]['n1id'],net.cables[s[0]]['n2id'])))}
+            active_slots=[s for s in active_slots if s not in ignored]
+            if cid:net.by_id[cid]=net.by_id[cid]-ignored
         entry={'key':group_key,'core_id':cid,'slots':active_slots or slots,'active_slots':active_slots,'all_slots':slots,
                'detail':' / '.join(dict.fromkeys(str(row.get('detail') or '') for row in rows if row.get('detail'))),**policy}
         if not policy['required']:
@@ -116,17 +129,24 @@ def completion_rate_text(report):
 def core_completion_brief(store,slot):
     """Short saved-state reasons for the selected physical core, without tracing."""
     slot=tuple(slot)
+    off=core_signal_off(store.core(*slot))
     if field_slot_mode(store):
         entry=field_slot_audit(store)['by_slot'].get(slot)
-        if not entry:return '미사용 코어',''
+        if not entry:return ('OFF · 배정 제외','') if off else ('미사용 코어','')
         temporary=not entry['real_ids']
     else:
         entry=completion_report(store)['by_slot'].get(slot)
-        if not entry:return '미사용 코어',''
+        if not entry:return ('OFF · 배정 제외','') if off else ('미사용 코어','')
         temporary=entry['temporary']
+        if off:
+            actual=field_slot_audit(store)['by_slot'].get(slot)
+            if actual and (actual['error'] or actual['holds']):entry=actual
     if temporary and slot in completed_temporary_slots(store):return '연결완료임시코어',''
+    # OFF exempts allocation, not real faults on an existing connection.
+    if off and not entry.get('error') and not entry.get('holds') and not entry['causes']&{'identity','signal','split','branch','invalid','marked','field'}:
+        return 'OFF · 배정 제외',''
     if entry['complete']:return '연결완료',''
-    if not entry['required']:return '필수 연결 대상 아님',''
+    if not entry['required'] and not (entry.get('error') or entry.get('holds')):return '필수 연결 대상 아님',''
     causes=set(entry['causes']);reasons=[]
     for keys,label in (({'unconnected','endpoints'},'코어연결 미완료'),({'port'},'RN 내부포트 미접속'),
                        ({'identity'},'코어ID 다름'),({'signal'},'신호 불일치'),({'split'},'코어경로 분리'),
@@ -137,7 +157,7 @@ def core_completion_brief(store,slot):
     holds=entry.get('holds',())
     if any(s.startswith('함체 NOT OK:') for s in holds):reasons.append('함체 NOT OK')
     if any(not s.startswith('함체 NOT OK:') for s in holds) or 'field' in causes:reasons.append('현장 선번 확인 필요')
-    return '미완료',' · '.join(reasons) or '연결 상태 확인 필요'
+    return '연결 오류' if not entry['required'] and (entry.get('error') or entry.get('holds')) else '미완료',' · '.join(reasons) or '연결 상태 확인 필요'
 
 
 def completed_temporary_slots(store):

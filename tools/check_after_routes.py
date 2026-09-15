@@ -83,7 +83,11 @@ class RouteTests(unittest.TestCase):
         update(self.s,i['left'],7,dict(core_id='',signal='on'))
         rows=self.service.summary()['rows'];ids=[r['core_id'] for r in rows]
         self.assertEqual(ids.count('CORE-1'),1);self.assertNotIn('CANCEL',ids);self.assertNotIn('임시-OFF',ids)
-        self.assertTrue({'임시-ON','EXPECTED','EXCEPTION',''}.issubset(ids))
+        self.assertTrue({'임시-ON',''}.issubset(ids))
+        self.assertNotIn('EXPECTED',ids);self.assertNotIn('EXCEPTION',ids)
+        update(self.s,i['left'],5,dict(core_id='EXPECTED',status1='cancel_expected',signal='unknown'))
+        update(self.s,i['left'],6,dict(core_id='EXCEPTION',status1='exception',signal='unknown'))
+        self.assertTrue({'EXPECTED','EXCEPTION'}.issubset(r['core_id'] for r in self.service.summary()['rows']))
         empty=next(r for r in rows if not r['core_id']);self.assertFalse(self.service.recommend(empty['problem'])['ok'])
         with self.s.action('현재 선번만 제거'):
             self.s.conn.execute("DELETE FROM splices");self.s.conn.execute("UPDATE cores SET core_id='',detail='',signal='' WHERE core_id='CORE-1'")

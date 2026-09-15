@@ -188,6 +188,8 @@ class SlotFieldTests(unittest.TestCase):
     def test_cleanup_can_be_disabled_and_required_pending_still_blocks_100_percent(self):
         self.set(1,3,'CORE-A','아직 대기','off');self.connect_all();self.confirm(cleanup=False)
         self.assertEqual(self.s.core(*self.slot(1,3))['core_id'],'CORE-A')
+        self.assertEqual(wf.completion_report(self.s)['done'],1)
+        self.set(1,3,'CORE-A','아직 대기','unknown')
         self.assertEqual(wf.completion_report(self.s)['done'],0)
         self.confirm();self.assertEqual(wf.completion_report(self.s)['done'],1)
 
