@@ -458,3 +458,8 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
   disposition; never invent splices/endpoints or a completed temporary route. A
   different unaccepted real ID sharing the component must remain actionable.
   Run check_exception_completion.py including Windows cable/enclosure/filter/undo.
+- The installed V71 launcher has an existing Windows backup-path separator bug
+  (snapshot returns backslashes, restore validates forward slashes). The V84
+  failure gate normalizes only its test snapshot reference to isolate readiness
+  and rollback timing; normal/update/duplicate gates use the unmodified launcher.
+  Do not claim that this application-only update repairs that launcher defect.
