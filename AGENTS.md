@@ -532,3 +532,28 @@ publication of requested app changes through the existing main release workflow.
 - Run check_desktop_design.py on Windows with narrow/normal sizes and existing full
   release gates. desktop-preview.yml runs only synthetic, non-publishing visual
   previews on design-preview; emitted screenshots must contain no customer data.
+
+- V90 implements after step 2 in planning/auto_allocation.py. Bundle after the
+  desktop theme. AfterAllocator targets mandatory after-route entries, including
+  missing before identities after physical cable deletion, never the narrower
+  legacy transfer-work list. Retain V87 exclusions and exception completion.
+- Preview is read-only: protect retained existing numbers, locked/fixed/occupied
+  exempt slots, RN ports and explicit NOK/manual drafts. Existing components are
+  indivisible. Defaults rebuild only new cable numbers; configurable fill-gaps,
+  reservations, per-keyword ranges and priorities belong in after_plan.allocation.
+  Match numbers per cable before soft same-number optimization. No global routing
+  optimality claim: capacity and ambiguous endpoints may require manual decisions.
+- Applying a reviewed proposal may create new slot identities and local splices
+  and explicitly remove conflicting retired-cable splices in the after drawing.
+  Preserve source metadata through complete permutations, survey/exception slot
+  references, annotations and RN ports. Do not invent RN internal ports or edit
+  baseline snapshots. Keep generation/revision/proposal guards, pre-apply backup,
+  physical end-to-end validation and one atomic undo group. Use the existing
+  permutation history label to suppress identity annotation transport.
+- All mandatory targets remain visible, including deferred identities absent
+  from the current drawing. Never claim whole completion from a partial accepted
+  batch; use actual completion plus the missing-before target set. Preview shows
+  locations/counts/reasons and every change; settings edits invalidate application.
+- Run check_auto_allocation.py including real Windows tab/buttons, narrow layout,
+  apply/undo, and after-plan/after-route/completion/full release gates. The
+  design-preview branch also runs this gate without publication.

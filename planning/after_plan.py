@@ -504,13 +504,14 @@ class AfterPlanDialog(RememberedToplevel):
         top=ttk.Frame(self,padding=10);top.pack(fill='x')
         ttk.Label(top,textvariable=self.summary,font=('Malgun Gothic',11,'bold')).pack(side='left')
         ttk.Button(top,text='전체 다시 점검',command=lambda:self.run(self.refresh)).pack(side='right')
-        ttk.Label(self,text='현재 진행: 1단계 케이블 경로 설정. 코어 배분은 경로를 모두 정한 뒤 진행합니다.',padding=(10,0)).pack(fill='x')
+        ttk.Label(self,text='1단계에서 경로를 정하거나, 2단계 자동 배분에서 경로 추천과 선번 배분을 함께 검토하세요.',padding=(10,0)).pack(fill='x')
         self.tabs=ttk.Notebook(self);self.tabs.pack(fill='both',expand=True,padx=10,pady=8)
         self.pages={};self.tables={};self.headers={};self.values={}
-        for name in ('1 케이블 경로','진행 단계','작업계획·전후 비교','전체 점검','용량·선번 고정','재배치 미리보기','시설별 작업표'):
+        for name in ('1 케이블 경로','2 자동 선번 배분','진행 단계','작업계획·전후 비교','전체 점검','용량·선번 고정','재배치 미리보기','시설별 작업표'):
             frame=ttk.Frame(self.tabs,padding=8);self.pages[name]=frame;self.tabs.add(frame,text=name)
         self.build_stages();self.build_compare();self.build_check();self.build_locks();self.build_preview();self.build_orders()
         self.route_panel=AfterRoutePanel(self.pages['1 케이블 경로'],self);self.route_panel.pack(fill='both',expand=True)
+        self.allocation_panel=AutoAllocationPanel(self.pages['2 자동 선번 배분'],self);self.allocation_panel.pack(fill='both',expand=True)
         bottom=ttk.Frame(self,padding=(10,0,10,10));bottom.pack(fill='x')
         ttk.Button(bottom,text='현재 표 CSV 저장',command=lambda:self.run(self.export_table)).pack(side='left')
         ttk.Button(bottom,text='최종 완료 확인·저장',command=lambda:self.run(self.finish)).pack(side='right')
@@ -544,7 +545,8 @@ class AfterPlanDialog(RememberedToplevel):
         self.route_stage_status=tk.StringVar(value='경로 목록을 불러오는 중');ttk.Label(first,textvariable=self.route_stage_status).pack(side='left')
         ttk.Button(first,text='코어 목록·최소경로 열기',command=lambda:self.tabs.select(self.pages['1 케이블 경로'])).pack(side='right')
         second=ttk.LabelFrame(page,text='2. 코어 배분',padding=8);second.pack(fill='x',pady=4)
-        ttk.Label(second,text='1단계에서 전체 코어 경로를 정한 뒤 진행합니다. 배분 방식은 다음 작업에서 정합니다.').pack(anchor='w')
+        ttk.Label(second,text='신설 구간 재배치·같은 번호 우선·예비 번호·용도별 범위를 정하고 실제 접속까지 미리보기 후 적용합니다.').pack(side='left')
+        ttk.Button(second,text='자동 선번 배분 열기',command=lambda:self.tabs.select(self.pages['2 자동 선번 배분'])).pack(side='right')
         legacy=ttk.LabelFrame(page,text='기존 최종 점검 도구',padding=4);legacy.pack(fill='x',pady=5)
         for idx,name in enumerate(PLAN_STAGES):
             frame=ttk.Frame(legacy,padding=3);frame.pack(fill='x',pady=1)
@@ -552,7 +554,7 @@ class AfterPlanDialog(RememberedToplevel):
             label=ttk.Label(frame,text='미확인');label.pack(side='left');self.stage_labels.append(label)
             ttk.Button(frame,text='이 단계 확인',command=lambda n=name:self.run(lambda:self.mark(n))).pack(side='right')
         self.notice=tk.Text(page,height=5,wrap='word',font=('Malgun Gothic',10));self.notice.pack(fill='both',expand=True,pady=8)
-        self.notice.insert('1.0','1단계는 케이블 경로를 계획하는 단계입니다. 실제 코어번호와 접속은 그대로입니다.\n코어를 선택하면 기존 구간을 모두 포함하는 최소 추가 케이블 경로를 보여 줍니다. OK로 확정하거나 NOK 후 직접 경로를 순서대로 지정하세요.\n모든 필수 코어를 OK로 확정하면 1단계 완료입니다. 경로 확정률과 실제 코어 연결 완료율은 별도입니다.\n\n기존 점검·용량·재배치·작업표 도구도 다른 탭에서 열 수 있습니다. 최종 완료에는 실제 연결과 기존 점검도 모두 필요합니다.')
+        self.notice.insert('1.0','1단계에서는 코어별 케이블 경로를 검토하고 OK로 확정하거나 직접 지정합니다. 경로 확인만으로 실제 연결이 생기지는 않습니다.\n2단계 자동 선번 배분에서는 미확정 경로 추천도 함께 계산할 수 있습니다. 신설로 변경한 케이블과 새로 그린 케이블을 모두 사용하며 삭제 전 필수 코어도 전도면에서 찾습니다.\n규칙을 정하고 미리보기를 계산한 뒤 배분안을 적용하면 선번과 함체 접속이 함께 반영됩니다. 잠금·번호 부족·불명확한 끝단 등 보류 사유를 해결한 뒤 다시 계산하세요.\n\n경로 확정률과 실제 코어 연결 완료율은 별도입니다. 필수 대상 전체가 실제로 연결되어야 전체 연결 완료이며, 최종 저장에는 기존 점검도 필요합니다.')
         self.notice.configure(state='disabled')
 
     def build_compare(self):
@@ -608,6 +610,7 @@ class AfterPlanDialog(RememberedToplevel):
     def refresh(self):
         self.report=self.service.report();r=self.report
         self.route_panel.reload()
+        self.allocation_panel.refresh()
         self.summary.set("필수 코어 연결 "+completion_rate_text(r["connection"])+f" · 집계 제외 {r['connection']['excluded']}개 · 작업 검토 {r['done']}/{r['total']} · 공통 오류 {len(r['issues'])}건")
         for i,label in enumerate(self.stage_labels):label.configure(text='✓ 확인 완료' if r['stages'][i] else '○ 미확인 / 변경 시 재확인',foreground='#1b5e20' if r['stages'][i] else '#9a6700')
         self.issue_text.configure(state='normal');self.issue_text.delete('1.0','end');self.issue_text.insert('1.0','\n'.join(r['issues']) or '공통 구조 오류 없음. 아래 코어별 항목도 확인하세요.');self.issue_text.configure(state='disabled')
@@ -726,6 +729,7 @@ class AfterPlanDialog(RememberedToplevel):
 
     def export_table(self):
         name=self.tabs.tab(self.tabs.select(),'text')
+        if name=='2 자동 선번 배분':return self.allocation_panel.export()
         if name=='1 케이블 경로':
             self.route_panel.require_current() if self.route_panel.problem else None
             path=filedialog.asksaveasfilename(parent=self,title='코어별 케이블 경로 저장',defaultextension='.csv',initialfile='후도면_1단계_케이블경로.csv',filetypes=[('Excel CSV','*.csv')])
