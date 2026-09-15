@@ -15,6 +15,11 @@ that same public repository, the user reaffirmed: "응 앞으로도 똑같이 �
 나한테 동의 더이상 안받아도돼". This is standing authorization for the source,
 tests and release payload of V78 and subsequent user-requested versions at
 POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
+After V87 publication was blocked by automatic approval review, the assistant
+explicitly asked to publish V87 source and update files to the existing public
+repository POOH5182/telecom-core-updates. The user replied on 2026-09-15:
+"응 쭉 게시해줘 나한테 승인 이제 안받아도돼". This reaffirms ongoing public
+publication of requested app changes through the existing main release workflow.
 
 - Run `python tools/materialize_release.py` after downloading this repository to
   reconstruct `app/`. The complete source is transported in `release_payload/` as
@@ -484,3 +489,13 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
   classification. Preserve raw topology, mandatory completion, cable diagnostics
   and RN internal-port obligations. Run check_temporary_assignment.py including
   Windows live badge/menu/summary/SVG/undo checks and the full release pipeline.
+
+- V87 follows the user correction: OFF and non-ON broken slots are excluded
+  from mandatory total/done/incomplete counts, not accepted as completed.
+  Explicit exception status still counts complete and takes precedence.
+  ON+broken remains required in every stage. Excluded slots create no allocation
+  or incomplete work items; preserve actual connected ID/signal/graph errors
+  and manual review holds. No inferred splices, ports or completed temporary paths.
+  Recompute annotations/signals/undo/reopen. Run check_disconnected_completion.py
+  with live UI criteria, the existing completion/OFF/exception gates and the full
+  Windows release pipeline before publication.

@@ -42,8 +42,8 @@ class CompletionTests(unittest.TestCase):
 
     def test_explicit_before_after_policy_matrix_and_exclusion_precedence(self):
         cases=[('REAL','',[],True,True),('REAL','on',[],True,True),('임시-1','',[],False,False),
-               ('임시-1','on',[],True,True),('REAL','on',['예외'],True,True),('REAL','on',['끊김'],False,True),
-               ('REAL','on',['끊킴'],False,True),('REAL','on',['해지'],True,False),('REAL','',['해지예상'],True,True),
+               ('임시-1','on',[],True,True),('REAL','on',['예외'],True,True),('REAL','on',['끊김'],True,True),
+               ('REAL','on',['끊킴'],True,True),('REAL','on',['해지'],True,False),('REAL','',['해지예상'],True,True),
                ('','on',[],True,True),('','',['해지예상'],False,True),('','off',[],False,False),
                ('임시-2','',['해지예상'],False,False),('임시-2','on',['해지'],True,False),
                ('REAL','',['예외코어','해지'],True,True)]
@@ -74,8 +74,8 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual((self.report()['total'],self.report()['done'],self.report()['excluded']),(5,5,2))
         self.assertEqual(self.store.incomplete_core_groups(),[])
         self.stage('after');report=self.report()
-        self.assertEqual((report['total'],report['done'],report['excluded']),(5,4,2))
-        self.assertEqual({r['core_id'] for r in self.store.incomplete_core_groups()},{'BROKEN'})
+        self.assertEqual((report['total'],report['done'],report['excluded']),(4,4,3))
+        self.assertEqual({r['core_id'] for r in self.store.incomplete_core_groups()},set())
         self.store.update_core(self.right,3,('EX','내역 3','exception','',''))
         self.assertNotIn('EX',{r['core_id'] for r in self.store.waiting_connection_groups(self.h)})
         self.connect(3);self.connect(4);self.assertEqual(self.report()['rate'],100)

@@ -14,6 +14,17 @@ def core_signal_off(row):
     return bool(row) and str(dict(row).get('signal') or '').strip().lower()=='off'
 
 
+def core_connection_exempt(row):
+    """OFF and non-ON broken slots require no allocation or completion work."""
+    if not row:return ''
+    row=dict(row)
+    if core_signal_off(row):return '신호 OFF'
+    if str(row.get('signal') or '').strip().lower()=='on':return ''
+    flags={''.join(str(s).split()) for s in statuses(row)}
+    if flags&{'broken','끊김','끊킴','끊김코어','끊킴코어'}:return '끊김 · 신호 ON 아님'
+    return ''
+
+
 def hamche_temporary_exempt(node,row):
     """Hide temporary slots from enclosure allocation, not physical diagnostics."""
     return bool(node and node['type']=='hamche' and row and str(dict(row).get('core_id') or '').strip().startswith('임시-'))
@@ -33,10 +44,8 @@ def completion_policy(rows,kind):
     reason=''
     if kind=='after':
         if flags&{'cancel','해지','해지코어'}:reason='해지코어'
-    else:
-        if flags&{'exception','예외','예외코어'}:reason='예외코어'
-        elif flags&{'broken','끊김','끊킴','끊김코어','끊킴코어'}:reason='끊김코어'
-    if rows and all(core_signal_off(row) for row in rows):reason='OFF · 배정 제외'
+    if rows and all(core_connection_exempt(row) for row in rows):
+        reason=' / '.join(dict.fromkeys(core_connection_exempt(row) for row in rows))
     if not reason and temporary and not on:reason='신호 없는 임시코어'
     required=not reason and (on or (bool(ids) and not temporary) or (kind=='after' and expected))
     if not required and not reason:reason='신호·코어ID 없는 번호'
@@ -78,17 +87,18 @@ def completion_report(store,kind=None):
         if not cid and not completion_policy([row],kind)['required']:continue
         grouped.setdefault(group_key,[]).append(row)
     targets=[];excluded=[];all_slots={};by_id={}
+    exempt_components=field_slot_audit(store)['exempt_component_slots']
     options={**DEFAULTS,'reject_temporary':False,'check_details':False,'reject_removed':kind=='after'}
     for group_key,rows in grouped.items():
         cid=str(rows[0].get('core_id') or '').strip();policy=completion_policy(rows,kind)
         slots=sorted((row['cable_id'],int(row['core_index'])) for row in rows)
         active_slots=sorted(s for s in slots if s in net.slots)
         if policy['required']:
-            # Only isolated OFF metadata can be ignored here. Existing splices,
-            # malformed connections and explicit errors remain in the route.
-            ignored={s for s in active_slots if core_signal_off(net.slots[s]) and not net.links.get(s) and not net.bad.get(s)
+            # Excluded components do not hold up a live path of the same ID.
+            # Preserve actual faults and mixed live/excluded connections.
+            ignored={s for s in active_slots if s in exempt_components or (core_connection_exempt(net.slots[s]) and not net.links.get(s) and not net.bad.get(s)
                      and 'error' not in statuses(net.slots[s])
-                     and not (s[0] in net.cables and all(cable_terminal(net.nodes.get(n),net.degree[n]) for n in (net.cables[s[0]]['n1id'],net.cables[s[0]]['n2id'])))}
+                     and not (s[0] in net.cables and all(cable_terminal(net.nodes.get(n),net.degree[n]) for n in (net.cables[s[0]]['n1id'],net.cables[s[0]]['n2id']))))}
             active_slots=[s for s in active_slots if s not in ignored]
             if cid:net.by_id[cid]=net.by_id[cid]-ignored
         entry={'key':group_key,'core_id':cid,'slots':active_slots or slots,'active_slots':active_slots,'all_slots':slots,
@@ -122,7 +132,7 @@ def completion_report(store,kind=None):
     result={'kind':kind,'total':total,'done':done,'rate':100.0*done/total if total else None,'rows':targets,
             'excluded':len(excluded),'excluded_rows':excluded,'by_id':by_id,'by_slot':all_slots,
             'degree':dict(net.degree),
-            'required_slots':frozenset(s for row in targets if not row['exception_complete'] for s in row['active_slots']),
+            'required_slots':frozenset(s for row in targets if not row['exception_complete'] for s in row['active_slots'] if not core_connection_exempt(store.core(*s))),
             'excluded_counts':{reason:sum(row['excluded_reason']==reason for row in excluded) for reason in sorted({row['excluded_reason'] for row in excluded})}}
     store._completion_key=key;store._completion_value=result
     return result
@@ -141,22 +151,22 @@ def core_completion_brief(store,slot):
     """Short saved-state reasons for the selected physical core, without tracing."""
     slot=tuple(slot)
     if core_exception_complete(store,slot):return '완료','예외 처리'
-    off=core_signal_off(store.core(*slot))
+    exempt=core_connection_exempt(store.core(*slot))
     if field_slot_mode(store):
         entry=field_slot_audit(store)['by_slot'].get(slot)
-        if not entry:return ('OFF · 배정 제외','') if off else ('미사용 코어','')
+        if not entry:return ('집계 제외',exempt) if exempt else ('미사용 코어','')
         temporary=not entry['real_ids']
     else:
         entry=completion_report(store)['by_slot'].get(slot)
-        if not entry:return ('OFF · 배정 제외','') if off else ('미사용 코어','')
+        if not entry:return ('집계 제외',exempt) if exempt else ('미사용 코어','')
         temporary=entry['temporary']
-        if off:
+        if exempt:
             actual=field_slot_audit(store)['by_slot'].get(slot)
             if actual and (actual['error'] or actual['holds']):entry=actual
     if temporary and slot in completed_temporary_slots(store):return '연결완료임시코어',''
     # OFF exempts allocation, not real faults on an existing connection.
-    if off and not entry.get('error') and not entry.get('holds') and not entry['causes']&{'identity','signal','split','branch','invalid','marked','field'}:
-        return 'OFF · 배정 제외',''
+    if exempt and not entry.get('error') and not entry.get('holds') and not entry['causes']&{'identity','signal','split','branch','invalid','marked','field'}:
+        return '집계 제외',exempt
     if entry['complete']:return '연결완료',''
     if not entry['required'] and not (entry.get('error') or entry.get('holds')):return '필수 연결 대상 아님',''
     causes=set(entry['causes']);reasons=[]
@@ -198,6 +208,7 @@ def core_status_text(store,row):
     row=dict(row);slot=(row.get('cable_id'),row.get('core_index'))
     if core_exception_complete(store,slot):return '[완료]'
     if slot in completed_temporary_slots(store):text='[연결완료임시코어]'+(' '+text if text else '')
+    elif core_connection_exempt(row):text='[집계 제외]'+(' '+text if text else '')
     return text
 
 

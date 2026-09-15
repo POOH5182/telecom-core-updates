@@ -32,10 +32,10 @@ class OffFieldTests(unittest.TestCase):
         self.assertFalse([r for r in self.s.before_drawing_check_rows() if r['level']=='오류'])
         self.assertEqual(wf.FieldSurvey(self.s,self.nodes[1]).report(),[])
         for slot in (self.slot(0),self.slot(0,2),self.slot(1,3)):
-            self.assertEqual(wf.core_completion_brief(self.s,slot),('OFF · 배정 제외',''))
+            self.assertEqual(wf.core_completion_brief(self.s,slot),('집계 제외','신호 OFF'))
             self.assertFalse(wf.field_slot_audit(self.s)['by_slot'][slot]['complete'])
         rows=code['node_summary_rows'](self.s,self.nodes[1],self.s.node_cable_choices(self.nodes[1]))
-        self.assertTrue(rows);self.assertTrue(all('배정필요' not in r['connection'] and 'OFF · 배정 제외' in r['connection'] for r in rows))
+        self.assertTrue(rows);self.assertTrue(all('배정필요' not in r['connection'] and '집계 제외' in r['connection'] for r in rows))
         self.assertEqual(self.snapshot(),before);self.assertEqual(self.s.data_revision(),revision);self.assertEqual(self.s.history_rows(),history)
         self.assertEqual(self.gis.read_bytes(),self.gis_bytes)
 
@@ -146,15 +146,15 @@ def windows_ui():
                 summary=code['NodeSummaryDialog'](node,s,case.nodes[1]);app.update()
                 assert cable.completion_reason.get()=='코어연결 미완료'
                 case.all_off();app.refresh();app.update()
-                assert cable.completion_reason.get()=='OFF · 배정 제외'
+                assert cable.completion_reason.get()=='신호 OFF'
                 assert '[미완료코어]' not in cable.tree.item('1','values')[0]
                 assert all(v['unassigned']==0 for v in s.cable_core_warning_summary().values())
                 row=next(i for i,slots in summary.row_slots.items() if case.slot(0) in slots)
-                assert 'OFF · 배정 제외' in str(summary.tree.item(row,'values'))
+                assert '집계 제외' in str(summary.tree.item(row,'values'))
                 texts=[app.canvas.itemcget(i,'text') for i in app.canvas.find_all() if app.canvas.type(i)=='text']
                 assert not any('배정필요' in t or '미배정코어' in t for t in texts),texts
                 s.undo();app.refresh();app.update();assert cable.completion_reason.get()=='코어연결 미완료'
-                s.redo();app.refresh();app.update();assert cable.completion_reason.get()=='OFF · 배정 제외'
+                s.redo();app.refresh();app.update();assert cable.completion_reason.get()=='신호 OFF'
                 assert not errors,errors;assert not error.called,error.call_args
                 summary.destroy()
             finally:app.on_close()

@@ -170,7 +170,7 @@ def field_incomplete_entries(store):
         if not comp['required'] or comp['complete']:continue
         members=[]
         for slot in comp['slots']:
-            if slot in audit['exception_complete_slots']:continue
+            if slot in audit['exception_complete_slots'] or core_connection_exempt(audit['rows'].get(slot)):continue
             row=audit['rows'].get(slot,{})
             cable=net.cables.get(slot[0]);nodes=(cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)
             members.append(dict(slot=slot,nodes=nodes,core_id=str(row.get('core_id') or ''),detail=str(row.get('detail') or ''),
