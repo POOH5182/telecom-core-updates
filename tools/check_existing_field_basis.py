@@ -74,7 +74,7 @@ class ExistingBasisTests(unittest.TestCase):
         self.assertTrue(self.s.before_drawing_check_rows())
         saved=self.snapshot()
         wf.field_overlay_commit(self.s,wf.field_overlay_preview(self.s,nid,'A\tB\n1\t2'))
-        self.assertEqual(self.s.splice_for(nid,left,1)['core2_index'],2)
+        self.assertIn(wf.field_pair(((left,1),(mid,2))),wf.FieldSurvey(self.s,nid).pairs)
         self.assertIsNone(self.s.splice_for(nid,left,2));self.progress(0)
         for index in (1,2):self.assertIsNotNone(self.s.splice_for(self.nodes[2],mid,index))
         self.assertEqual(self.s.core(mid,2)['core_id'],'ID-2')
@@ -154,7 +154,7 @@ def windows_ui():
                     return result
                 print('UI V88: survey apply',flush=True)
                 with patch.object(wf,'TableDialog',side_effect=reviewed):dialog.overlay_button.invoke();app.update()
-                assert s.splice_for(nodes[1],cables[0],1)['core2_index']==2
+                assert wf.field_pair(((cables[0],1),(cables[1],2))) in wf.FieldSurvey(s,nodes[1]).pairs
                 assert all(s.splice_for(nodes[2],cables[1],i) for i in (1,2))
                 assert wf.completion_report(s)['done']==0
                 print('UI V88: undo and recheck',flush=True)
