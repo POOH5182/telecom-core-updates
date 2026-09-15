@@ -36,7 +36,7 @@ class OverlayTests(unittest.TestCase):
     def test_partial_2_to_2_preserves_1_to_1_and_incremental_observations(self):
         original=wf.plan_snapshot(self.s.conn);result=self.apply('A\tB\n2\t2')
         self.assertEqual(wf.plan_snapshot(self.s.conn),original)
-        self.assertEqual(wf.field_local_summary(self.s,self.h),{'ok':1,'not_ok':1,'total':2})
+        self.assertEqual(wf.field_local_summary(self.s,self.h),{'ok':2,'not_ok':0,'total':2})
         self.assertEqual(next(r for r in self.rows() if r['source']=='미조사')['slots'],self.pair(self.left,1,self.right,1))
         self.assertTrue(result['backup'].exists())
         self.apply('B\tA\n3\t3')
@@ -161,6 +161,8 @@ class OverlayTests(unittest.TestCase):
 
     def test_local_checks_are_independent_and_id_changes_invalidate_ok_not_names(self):
         self.apply('A\tB\n2\t2');self.apply('B\tC\n2\t2',self.b)
+        other=next(r for r in wf.FieldSurvey(self.s,self.b).report() if r['source']=='미조사')
+        wf.field_local_mark(self.s,self.b,{other['key']},'NOT OK',self.s.data_revision(),self.s._view_generation)
         missing=next(r for r in self.rows() if r['source']=='미조사')
         self.mark([missing])
         self.assertEqual(wf.field_local_slots(self.s,self.h)[(self.right,1)],'OK')
@@ -222,7 +224,7 @@ class OverlayTests(unittest.TestCase):
         self.apply('A\tB\n2\t2');warning=self.s.node_warning_summary()[self.h]
         options=dict(code['DISPLAY_DEFAULTS'],badges=False)
         badges=code['node_badge_rows'](code['visible_node_warning'](warning,options))
-        self.assertEqual([b[0] for b in badges],['OK 1','NOT OK 1'])
+        self.assertEqual([b[0] for b in badges],['OK 2','NOT OK 0'])
         options['field_checks']=False
         self.assertFalse(code['node_badge_rows'](code['visible_node_warning'](warning,options)))
         path=self.home/'display_options.json';code['save_display_options'](path,options)
@@ -256,7 +258,12 @@ def windows_ui():
                 app.after(200,lambda:review(False));dialog.overlay_button.invoke();app.update()
                 assert wf.plan_snapshot(s.conn)==before and not wf.field_records(s)
                 app.after(200,lambda:review(True));dialog.overlay_button.invoke();app.update()
-                assert s.splice_for(h,left,1) and wf.field_local_summary(s,h)=={'ok':1,'not_ok':1,'total':2}
+                assert s.splice_for(h,left,1) and wf.field_local_summary(s,h)=={'ok':2,'not_ok':0,'total':2}
+                # Missing survey alone is now OK; explicit local holds still differ.
+                for nid in (h,b):
+                    row=next(r for r in wf.FieldSurvey(s,nid).report() if (right,1) in r['slots'])
+                    wf.field_local_mark(s,nid,{row['key']},'NOT OK',s.data_revision(),s._view_generation,'직접 확인')
+                dialog.reload();app.update()
                 dialog.filter.set('NOT OK');dialog.show_rows();app.update();assert len(dialog.visible)==1
                 dialog.tree.selection_set('0');dialog.mark('OK');app.update()
                 assert wf.field_local_slots(s,h)[(right,1)]=='OK' and wf.field_local_slots(s,b)[(right,1)]=='NOT OK'

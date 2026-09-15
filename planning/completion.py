@@ -87,7 +87,7 @@ def completion_report(store,kind=None):
         if not cid and not completion_policy([row],kind)['required']:continue
         grouped.setdefault(group_key,[]).append(row)
     targets=[];excluded=[];all_slots={};by_id={}
-    exempt_components=field_slot_audit(store)['exempt_component_slots']
+    audit=field_slot_audit(store);exempt_components=audit['exempt_component_slots']
     options={**DEFAULTS,'reject_temporary':False,'check_details':False,'reject_removed':kind=='after'}
     for group_key,rows in grouped.items():
         cid=str(rows[0].get('core_id') or '').strip();policy=completion_policy(rows,kind)
@@ -111,6 +111,11 @@ def completion_report(store,kind=None):
             notes=route['notes']
             if cid and not active_slots:notes=['후도면에서 코어ID를 찾지 못함: 철거·절단 구간을 제외한 유효 경로가 필요합니다.'] if kind=='after' else ['연결할 코어 경로가 없습니다.']
             entry.update(complete=bool(route['complete'] and active_slots),reason=' / '.join(notes),reason_items=tuple(notes),causes=completion_causes(notes))
+            if kind=='before':
+                holds=list(dict.fromkeys(note for s in slots for note in audit['by_slot'].get(s,{}).get('holds',())))
+                if holds:
+                    notes=list(dict.fromkeys(list(entry['reason_items'])+holds))
+                    entry.update(complete=False,reason=' / '.join(notes),reason_items=tuple(notes),causes=entry['causes']|{'field'})
             if policy['exception_complete']:
                 entry.update(physical_complete=entry['complete'],complete=True,reason='예외 처리로 완료',reason_items=(),causes=frozenset())
             targets.append(entry)

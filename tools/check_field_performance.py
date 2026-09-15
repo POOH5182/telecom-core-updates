@@ -11,6 +11,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from legacy_field_fixture import existing_empty_slot_field
 from check_field_survey import code,wf
 
 
@@ -26,7 +27,7 @@ def drawing(folder,cables=60,capacity=144,used=48,connected=16):
           'normal' if j<=used else '','','on' if j<=connected else 'unknown') for i in range(cables) for j in range(1,capacity+1)])
     gis_pairs=[(f'n{i:04}',f'c{i-1:04}',j,f'c{i:04}',j) for i in range(1,cables) for j in range(1,used+1)]
     s.conn.executemany('INSERT INTO splices VALUES(?,?,?,?,?)',gis_pairs);s.conn.commit();s.close()
-    target=Path(folder)/'field.sqlite3';wf.field_slot_copy(source,target);s=code['Store'](target)
+    target=Path(folder)/'field.sqlite3';existing_empty_slot_field(wf,source,target);s=code['Store'](target)
     if connected:
         s.conn.executemany('INSERT INTO splices VALUES(?,?,?,?,?)',[p for p in gis_pairs if p[2]<=connected])
         value=wf.state(s);value['field_surveys']={}

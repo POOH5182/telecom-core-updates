@@ -189,7 +189,7 @@ class FieldGISControl(ttk.Frame):
         self.value.set(field_gis_selected(self.store,self.node_id))
         self.check.configure(state='disabled' if locked(self.store) or node_locked(self.store,self.node_id) else 'normal')
         mode=field_slot_mode(self.store)
-        self.note.configure(text='GIS 선번 적용됨' if self.value.get() else '미체크: GIS는 참고값 · 현장 선번 직접 입력 가능' if mode else '기존 도면: 미입력 GIS 연결 정리 필요')
+        self.note.configure(text='GIS 선번 적용됨' if self.value.get() else '기존 저장 선번으로 검사 · GIS 재적용 또는 현장 선번 입력' if mode else '기존 저장 선번으로 검사')
     def toggle(self):
         enabled=self.value.get()
         try:

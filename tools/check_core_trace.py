@@ -1,4 +1,5 @@
 """V75: physical field traces, slot-owned signals and OK versus completion."""
+from legacy_field_fixture import existing_empty_slot_field
 import os
 import sqlite3
 import sys
@@ -70,7 +71,7 @@ class CoreTraceTests(unittest.TestCase):
         wf.field_local_mark(self.s,self.nodes[1],keys,'NOT OK',self.s.data_revision(),getattr(self.s,'_view_generation',0),'직접 확인')
         self.assertEqual(wf.core_completion_brief(self.s,self.slot(1)),('미완료','함체 NOT OK'))
 
-    def test_ten_enclosures_partial_field_input_never_inherits_gis_splices(self):
+    def test_saved_empty_ten_enclosures_partial_input_never_reseeds_gis_splices(self):
         gis=code['Store'](self.home/'ten-gis.sqlite3')
         nodes=[gis.add_node(f'함체 {i+1}',i*240,0) for i in range(10)]
         cables=[gis.add_cable(nodes[i],nodes[i+1],f'C{i+1}','12C','기설') for i in range(9)]
@@ -78,7 +79,7 @@ class CoreTraceTests(unittest.TestCase):
         for i in range(1,9):gis.connect(nodes[i],(cables[i-1],1),(cables[i],1))
         gis.conn.execute("UPDATE cores SET signal='on' WHERE core_index=1");gis.conn.commit();gis.close()
         original=(self.home/'ten-gis.sqlite3').read_bytes()
-        wf.field_slot_copy(self.home/'ten-gis.sqlite3',self.home/'ten-field.sqlite3');s=code['Store'](self.home/'ten-field.sqlite3')
+        existing_empty_slot_field(wf,self.home/'ten-gis.sqlite3',self.home/'ten-field.sqlite3');s=code['Store'](self.home/'ten-field.sqlite3')
         try:
             before=wf.plan_snapshot(s.conn);trace=s.trace_core_paths('TEN-ID')
             self.assertEqual(len(trace['groups']),9);self.assertFalse(trace['complete'])

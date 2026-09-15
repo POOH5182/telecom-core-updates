@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from check_field_survey import code,wf
-from legacy_field_fixture import existing_field
+from legacy_field_fixture import existing_field, existing_empty_slot_field
 
 
 class ScenarioHarness:
@@ -43,7 +43,7 @@ class SlotFieldTests(unittest.TestCase):
         gis.conn.execute("UPDATE cores SET signal='on' WHERE core_index=1");gis.conn.commit()
         self.original=wf.field_capture_reference(gis.conn)['snapshot'];self.gis=self.home/'gis.sqlite3';gis.backup_to(self.gis);gis.close()
         self.gis_bytes=self.gis.read_bytes();self.path=self.home/'field.sqlite3'
-        wf.field_slot_copy(self.gis,self.path);self.s=code['Store'](self.path)
+        existing_empty_slot_field(wf,self.gis,self.path);self.s=code['Store'](self.path)
 
     def tearDown(self):self.s.close();self.temp.cleanup()
     def slot(self,cable,index=1):return self.cables[cable],index
@@ -57,7 +57,7 @@ class SlotFieldTests(unittest.TestCase):
     def snapshot(self):return wf.plan_snapshot(self.s.conn),wf.state(self.s),wf.field_reference(self.s)
     def splices(self):return sorted(tuple(r) for r in self.s.conn.execute('SELECT * FROM splices'))
 
-    def test_new_copy_clears_only_assignments_preserves_gis_slots_ports_locks(self):
+    def test_saved_empty_field_keeps_gis_reference_slots_ports_and_locks(self):
         self.assertTrue(wf.field_slot_mode(self.s));self.assertEqual(self.splices(),[])
         actual=wf.field_capture_reference(self.s.conn)['snapshot']
         for table in ('nodes','cables','cores','ports','core_annotations'):self.assertEqual(actual[table],self.original[table])
@@ -74,7 +74,7 @@ class SlotFieldTests(unittest.TestCase):
             with self.assertRaises(ValueError):other.connect(self.nodes[1],self.slot(0),self.slot(1))
         finally:other.close()
 
-    def test_recopy_from_active_field_clears_connections_and_keeps_latest_backup(self):
+    def test_recopy_from_active_field_restores_gis_connections_and_keeps_latest_backup(self):
         import shutil
         app=ScenarioHarness(self.s);shutil.copy2(self.gis,app.scenario_path('gis'))
         self.s.backup_to(app.scenario_path('before'))
@@ -82,7 +82,7 @@ class SlotFieldTests(unittest.TestCase):
         before=self.snapshot();gis=app.scenario_path('gis').read_bytes()
         with patch.object(code['messagebox'],'showinfo'):
             self.assertTrue(app.copy_gis_to_field(replace=True))
-        self.assertTrue(wf.field_slot_mode(self.s));self.assertEqual(self.splices(),[])
+        self.assertTrue(wf.field_slot_mode(self.s));self.assertEqual(len(self.splices()),2)
         self.assertEqual(wf.field_records(self.s),{})
         self.assertEqual(self.s.core(*self.slot(1,2))['core_id'],'')
         self.assertEqual(app.scenario_path('gis').read_bytes(),gis)
@@ -91,14 +91,14 @@ class SlotFieldTests(unittest.TestCase):
         try:self.assertEqual((wf.plan_snapshot(old.conn),wf.state(old),wf.field_reference(old)),before)
         finally:old.close()
         self.assertGreater(app.refresh_count,0)
-        self.assertIn('접속 연결 0건',app.status.set.call_args.args[0])
+        self.assertIn('기존 접속 선번 2건 적용',app.status.set.call_args.args[0])
         self.connect_all();self.assertTrue(app.copy_gis_to_field(replace=True))
-        self.assertEqual(self.splices(),[])
+        self.assertEqual(len(self.splices()),2)
         self.assertEqual(len(list(app.scenario_folder().glob('before_previous_*.sqlite3'))),2)
         saved=code['Store'](app.scenario_path('before'))
         try:
             self.assertTrue(wf.field_slot_mode(saved))
-            self.assertEqual(saved.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0],0)
+            self.assertEqual(saved.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0],2)
         finally:saved.close()
 
     def test_recopy_requires_saved_gis_and_never_uses_field_as_source(self):
@@ -271,7 +271,7 @@ def windows_ui():
                 left=s.add_cable(a,h,'L','6C','기설');right=s.add_cable(h,b,'R','6C','기설')
                 s.update_core(left,1,('ID-A','GIS 이름','normal','','on'));s.connect(h,(left,1),(right,1))
                 assert app.load_scenario('before');s=app.store
-                assert wf.field_slot_mode(s) and not s.conn.execute('SELECT 1 FROM splices').fetchone()
+                assert wf.field_slot_mode(s) and s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
                 gis=app.scenario_path('gis').read_bytes()
                 s.update_core(right,1,('ID-B','잘못 놓인 내역','normal','','on'))
                 s.update_core(right,2,('ID-A','GIS 이름','normal','','unknown'))
@@ -346,11 +346,11 @@ def windows_recopy_ui():
                 assert wf.plan_snapshot(s.conn)==old and not list(app.scenario_folder().glob('before_previous_*.sqlite3'))
                 button.invoke();app.update()
                 assert wf.field_slot_mode(s) and app.scenario_kind()=='before'
-                assert not s.conn.execute('SELECT 1 FROM splices').fetchone() and not wf.field_records(s)
+                assert s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1 and not wf.field_records(s)
                 assert s.core(left,1)['core_id']=='GIS-ID' and s.core(left,1)['signal']=='on'
                 assert not node.winfo_exists()
-                assert '현재 접속 연결 0건' in manager.info.get('1.0','end')
-                assert any('현장반영 초기화 완료' in item and '접속 연결 0건' in item for item in notices)
+                assert '현재 접속 연결 1건' in manager.info.get('1.0','end')
+                assert any('현장반영 초기화 완료' in item and '기존 접속 선번 1건 적용' in item for item in notices)
                 old_store=code['Store'](next(app.scenario_folder().glob('before_previous_*.sqlite3')))
                 try:
                     assert old_store.core(left,1)['detail']=='새로 복사 직전 수정'
@@ -362,25 +362,25 @@ def windows_recopy_ui():
                 reopened.left_var.set(next(label for label,cid in reopened.by_label.items() if cid==left))
                 reopened.right_var.set(next(label for label,cid in reopened.by_label.items() if cid==right))
                 reopened.reload_all();app.update()
-                assert reopened.left_tree.item('1','values')[5]==''
-                assert reopened.right_tree.item('1','values')[5]==''
-                s.connect(h,(left,1),(right,1));button.invoke();app.update()
-                assert not s.conn.execute('SELECT 1 FROM splices').fetchone()
+                assert reopened.left_tree.item('1','values')[5]=='1번'
+                assert reopened.right_tree.item('1','values')[5]=='1번'
+                s.disconnect(h,left,1);button.invoke();app.update()
+                assert s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
                 assert not reopened.winfo_exists()
                 assert app.scenario_path('gis').read_bytes()==gis
                 assert app.load_scenario('gis');assert s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
                 button.invoke();app.update()
-                assert app.scenario_kind()=='before' and not s.conn.execute('SELECT 1 FROM splices').fetchone()
+                assert app.scenario_kind()=='before' and s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
                 assert len(list(app.scenario_folder().glob('before_previous_*.sqlite3')))==3
                 gis_source=code['sqlite3'].connect(app.scenario_path('gis'))
                 try:assert wf.field_capture_reference(gis_source)['snapshot']==gis_reference
                 finally:gis_source.close()
                 manager.destroy();app.save_current_drawing(silent=True)
                 assert app.load_scenario('gis');assert app.load_scenario('before')
-                assert wf.field_slot_mode(s) and not s.conn.execute('SELECT 1 FROM splices').fetchone()
+                assert wf.field_slot_mode(s) and s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
                 assert not errors,errors
             finally:app.on_close()
-    print('PASS Windows V73 actual recopy button from existing legacy field and GIS, cancellation, latest backup, zero links in both panes, stale window closure, repeated copy and persistence')
+    print('PASS Windows V88 actual recopy button from existing legacy field and GIS, cancellation, latest backup, GIS links in both panes, stale window closure, repeated copy and persistence')
 
 
 if __name__=='__main__':

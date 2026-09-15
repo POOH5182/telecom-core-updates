@@ -54,7 +54,10 @@ def field_local_enrich(engine,rows):
         reason='GIS와 현장 선번·코어ID가 같습니다.'
         ok=bool(engine.reference) and observed and same and actual and ids_same
         if row['errors']:reason=' / '.join(row['errors'])
-        elif not observed:reason='현장 조사값이 없습니다. 기존 연결은 유지했으며 직접 확인 후 OK로 변경할 수 있습니다.'
+        elif not observed:
+            actual=not row['errors'] and field_topology_matches(engine,pair)
+            ok=actual and not field_slot_pair_mismatch([engine.slots.get(s,{}) for s in pair]) and not any('error' in statuses(engine.slots.get(s,{})) for s in pair)
+            reason='기존 저장 선번으로 코어ID·신호와 연결 상태를 검사했습니다.' if ok else '기존 선번의 코어연결·ID·신호를 확인하세요.'
         elif not same:reason='GIS와 현장 선번이 다르거나 GIS 배정이 없습니다. 비교 내용을 확인하고 필요한 연결·내역을 직접 수정하세요.'
         elif not actual:reason='현장 선번과 현재 접속 또는 양쪽 코어ID가 다릅니다. 비교 후 연결·내역을 직접 수정하세요.'
         elif not ids_same:reason='GIS와 현재 코어ID가 다릅니다. 현장에 맞는 내역을 확인한 뒤 OK로 변경하세요.'
@@ -66,7 +69,7 @@ def field_local_enrich(engine,rows):
         if row.get('input_core_id') and any(cid!=row['input_core_id'] for cid in current_ids):
             ok=False;reason='조사표 코어ID와 현재 내역이 다릅니다. 선번은 유지하고 내역을 확인하세요.'
         decision=engine.record.get('local_checks',{}).get(row['key'],{})
-        mode=('현장 신규 자동 OK' if new_temporary else 'GIS 자동 일치') if ok else '확인 필요'
+        mode=('현장 신규 자동 OK' if new_temporary else 'GIS 자동 일치' if observed else '기존 선번 자동 검사') if ok else '확인 필요'
         if decision.get('status')=='NOT OK':
             ok=False;reason=decision.get('note') or '사용자가 이 함체의 접속을 NOT OK로 지정했습니다.';mode='수동 NOT OK'
         elif decision.get('status')=='OK':
@@ -80,7 +83,9 @@ def field_local_enrich(engine,rows):
             reason='기존 GIS/현재 선번 유지 · 현장 '+wanted+' 미반영. GIS·현장·현재 연결을 비교하고 직접 수정한 뒤 OK로 확인하세요.'
             if decision.get('note'):reason+=' · '+decision['note']
         row.update(local_status='OK' if ok else 'NOT OK',local_reason=reason,local_mode=mode,
+                   completion_basis='현장 조사' if observed else '기존 선번',
                    local_fingerprint=fingerprint,local_match=actual and not blocked,local_pending=not_applied)
+        if not observed:row.update(status='확인완료' if ok else '불일치',reason=reason,matching=ok)
     return rows
 
 

@@ -20,7 +20,8 @@ def field_slot_copy(source,target):
     """Initialize a new derivative, before installing its inherited protections.
 
     No existing drawing is edited, unlocked, or migrated. Every original slot,
-    facility, annotation and lock is retained; GIS splices remain in the baseline.
+    facility, annotation, lock and existing GIS splice is retained. Survey data
+    starts empty; later survey application changes only its selected local pairs.
     """
     source,target=Path(source),Path(target)
     if source.resolve()==target.resolve():raise ValueError('GIS 원본과 현장반영 파일은 달라야 합니다.')
@@ -33,13 +34,14 @@ def field_slot_copy(source,target):
         for kind,name,sql in schema:
             if kind=='table':dst.execute(sql)
         for kind,name,sql in schema:
-            if kind!='table' or name in ('splices','survey_rows','history_events','history_groups'):continue
+            if kind!='table' or name in ('survey_rows','history_events','history_groups'):continue
             quoted='"'+name.replace('"','""')+'"'
             cursor=src.execute('SELECT * FROM '+quoted)
             rows=cursor.fetchall()
             if rows:dst.executemany('INSERT INTO '+quoted+' VALUES('+','.join('?' for _ in cursor.description)+')',rows)
         dst.execute("INSERT OR REPLACE INTO meta VALUES('active_scenario','before')")
         dst.execute("INSERT OR REPLACE INTO meta VALUES('field_identity_policy',?)",(FIELD_SLOT_POLICY,))
+        dst.execute("INSERT OR REPLACE INTO meta VALUES('field_initial_basis','existing_splices_v88')")
         dst.execute("INSERT OR REPLACE INTO workflow_state VALUES(?,?)",(FIELD_REFERENCE_KEY,json.dumps(reference,ensure_ascii=False)))
         row=dst.execute("SELECT value FROM workflow_state WHERE key='project'").fetchone()
         value=json.loads(row[0]) if row else {}
@@ -322,9 +324,10 @@ def field_slot_enrich(engine,rows):
         mismatch=bool(wanted and not wanted.startswith('임시-') and any(cid!=wanted for c in components for cid in c['real_ids']))
         ready=not row['errors'] and actual and coherent and not mismatch
         okay=ready
-        if ready:reason='코어ID·신호 일치 · '+('끝-끝 연결완료' if all(c['complete'] for c in components) else '전체 연결은 미완료 목록에서 확인하세요.')
+        observed=row['source']=='조사표'
+        if ready:reason=('현장 조사 선번' if observed else '기존 저장 선번')+' · 코어ID·신호 일치 · '+('끝-끝 연결완료' if all(c['complete'] for c in components) else '전체 연결은 미완료 목록에서 확인하세요.')
         fingerprint=digest([pair,[c['fingerprint'] for c in components],row.get('errors'),wanted])
-        if not actual:reason='현장 선번이 아직 연결되지 않았습니다. 현장 선번 적용을 누르세요.'
+        if not actual:reason='현장 선번이 아직 연결되지 않았습니다. 현장 선번 적용을 누르세요.' if observed else '기존 선번의 코어연결이 미완료입니다.'
         elif mismatch:reason='조사표 코어ID와 케이블별 내역이 다릅니다. 내역 이동·교환에서 확인하세요.'
         elif row['errors']:reason=' / '.join(row['errors'])
         decision=engine.record.get('local_checks',{}).get(row['key'],{})
@@ -334,7 +337,8 @@ def field_slot_enrich(engine,rows):
         accepted=bool(pair) and all(s in audit['exception_complete_slots'] for s in pair)
         if accepted:okay=True;reason='예외 처리로 완료'
         row.update(local_status='OK' if okay else 'NOT OK',local_reason=reason or '코어ID·신호 일치',
-                   local_mode='완료 처리' if accepted else 'ID·신호 자동 OK' if okay else '경로 확인 필요',local_fingerprint=fingerprint,
+                   local_mode='완료 처리' if accepted else ('ID·신호 자동 OK' if observed else '기존 선번 자동 검사') if okay else '경로 확인 필요',local_fingerprint=fingerprint,
+                   completion_basis='현장 조사' if observed else '기존 선번',
                    local_match=not row['errors'] and actual and coherent and not mismatch,local_pending=not actual and row['source']=='조사표',
                    status='확인완료' if okay else '불일치',matching=okay)
     return rows

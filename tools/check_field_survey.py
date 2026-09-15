@@ -69,7 +69,7 @@ class FieldTests(unittest.TestCase):
         self.assertEqual(len(self.store.history_rows()),groups+1)
         changed=self.snapshot();self.store.undo();self.assertEqual(self.snapshot(),old)
         self.store.redo();self.assertEqual(self.snapshot(),changed)
-        self.assertTrue(any((self.right,2) in r['slots'] and r['status']=='미확인' for r in self.engine().report()))
+        self.assertTrue(any((self.right,2) in r['slots'] and r['status']=='불일치' for r in self.engine().report()))
 
     def test_conflict_all_or_nothing_locks_and_stale_preview(self):
         self.store.update_core(self.third,1,('OTHER','다른 서비스','normal','','on'))

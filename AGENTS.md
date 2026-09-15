@@ -499,3 +499,21 @@ publication of requested app changes through the existing main release workflow.
   Recompute annotations/signals/undo/reopen. Run check_disconnected_completion.py
   with live UI criteria, the existing completion/OFF/exception gates and the full
   Windows release pipeline before publication.
+
+
+- V88 supersedes V72–87 empty-splice initialization and the blanket requirement
+  for survey evidence before checking existing field connections. New GIS-to-field
+  copies retain actual saved splices with identities, ports, annotations and locks,
+  while starting with empty survey/review history. Freeze the original GIS reference.
+- Existing field drawings use their current saved splices without seeding, replacing
+  or resetting them on open, checks or stage changes. Missing survey evidence alone
+  never makes an otherwise valid saved pair NOT OK. Preserve manual holds and real
+  identity/signal/topology/RN failures. All-unknown signals remain neutral.
+- Later supplied field evidence rechecks mandatory completion, including on legacy
+  drawings. Unapplied/mismatched observed pairs block affected paths; normal partial
+  application preserves unmentioned rows and other facilities. Preserve undo/reopen,
+  locked initialization, explicit recopy backup and V87 exclusion/exception policy.
+- Run check_existing_field_basis.py with actual Windows copy, no-survey stage gate,
+  dashboard, compare-only/save/apply, undo and reload, plus the existing full Windows
+  release pipeline. legacy_field_fixture.existing_empty_slot_field models already
+  saved V72–87 empty drawings; it must never become an application migration.

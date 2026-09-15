@@ -61,7 +61,7 @@ class LocksRNTests(unittest.TestCase):
         self.assertFalse(wf.field_required(s,s.node(self.a)))
         self.assertEqual(wf.field_summary(s,self.a)['total'],0)
         self.assertTrue(wf.field_required(s,s.node(self.rn)))
-        self.assertTrue(s.node_warning_summary()[self.rn]['field']['pending'])
+        self.assertTrue(s.node_warning_summary()[self.rn]['field']['issues'])
         self.assertNotIn('field',s.node_warning_summary().get(self.a,{}))
         self.assertEqual({r['node_id'] for r in wf.field_check_rows(s)},{self.rn})
         engine=wf.FieldSurvey(s,self.rn);engine.save('CABLE\tRN내부\n1\tP1')
