@@ -1,5 +1,6 @@
 """V88: saved splice baseline, optional survey and incremental re-evaluation."""
 import os
+import faulthandler
 from pathlib import Path
 import sys
 import tempfile
@@ -119,6 +120,7 @@ class ExistingBasisTests(unittest.TestCase):
 
 def windows_ui():
     if sys.platform!='win32':return
+    faulthandler.dump_traceback_later(75, exit=True)
     with tempfile.TemporaryDirectory() as temp:
         os.environ['TELECOM_APP_HOME']=temp;errors=[]
         with patch.object(code['messagebox'],'showerror',side_effect=lambda *a,**k:errors.append(str(a))), \
@@ -127,17 +129,21 @@ def windows_ui():
              patch.object(code['messagebox'],'askyesnocancel',return_value=True):
             app=code['App']();app.report_callback_exception=lambda *a:errors.append(str(a))
             try:
+                print('UI V88: initial copy',flush=True)
                 nodes,cables=route(app.store);assert app.load_scenario('before');s=app.store
                 app.deiconify();app.update()
                 assert not wf.field_records(s) and wf.completion_report(s)['rate']==100
                 assert '기존 저장 선번' in app.work_progress_note.cget('text')
+                print('UI V88: after-stage gate',flush=True)
                 assert app.field_ready_for_after();assert app.load_scenario('after')
                 assert app.load_scenario('before');assert wf.completion_report(s)['done']==2
                 original=wf.plan_snapshot(s.conn);gis=app.scenario_path('gis').read_bytes()
+                print('UI V88: open survey',flush=True)
                 node=code['open_detail_dialog'](app,s,'node',nodes[1]);node.field_survey_open();app.update()
                 dialog=next(w for w in node.winfo_children() if isinstance(w,wf.FieldSurveyDialog))
                 dialog.sheet.set_text('A\tB\n1\t2')
                 buttons=[w for frame in dialog.winfo_children() for w in frame.winfo_children() if isinstance(w,code['ttk'].Button)]
+                print('UI V88: compare-only save',flush=True)
                 next(w for w in buttons if w.cget('text')=='비교만 저장').invoke();app.update()
                 assert wf.plan_snapshot(s.conn)==original and wf.completion_report(s)['done']==0
                 assert app.work_progress_incomplete.cget('fg')=='#c62828'
@@ -146,18 +152,24 @@ def windows_ui():
                     result=real(*args,**kwargs)
                     if result.accept_button is not None:result.after(30,result.confirm)
                     return result
+                print('UI V88: survey apply',flush=True)
                 with patch.object(wf,'TableDialog',side_effect=reviewed):dialog.overlay_button.invoke();app.update()
                 assert s.splice_for(nodes[1],cables[0],1)['core2_index']==2
                 assert all(s.splice_for(nodes[2],cables[1],i) for i in (1,2))
                 assert wf.completion_report(s)['done']==0
+                print('UI V88: undo and recheck',flush=True)
                 dialog.destroy();node.destroy();s.undo();s.undo();app.refresh();app.update()
                 assert wf.completion_report(s)['done']==2 and app.field_ready_for_after()
                 assert app.work_progress_incomplete.cget('fg')!='#c62828'
+                print('UI V88: reload',flush=True)
                 app.save_current_drawing(silent=True);assert app.load_scenario('gis');assert app.load_scenario('before')
                 assert wf.plan_snapshot(s.conn)==original and not wf.field_records(s)
                 assert app.scenario_path('gis').read_bytes()==gis
                 assert not errors,errors
-            finally:app.on_close()
+            finally:
+                print('UI V88: cleanup',flush=True)
+                app.on_close()
+    faulthandler.cancel_dump_traceback_later()
     print('PASS Windows V88 no-survey GIS copy, dashboard, actual after-stage gate, later survey save/apply, undo and reload')
 
 
