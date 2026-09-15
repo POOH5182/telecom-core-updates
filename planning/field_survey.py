@@ -601,7 +601,7 @@ class FieldSurveyDialog(RememberedToplevel):
         if store.node(node_id)['type']=='rn':headers.append('RN내부')
         raw=record.get('text') or field_table_text([headers])
         self.sheet=FieldSurveySheet(self,FieldSurvey(store,node_id,reference=self.reference),raw);self.sheet.pack(fill='both',expand=True,padx=8)
-        guide='① 현장 선번·신호 입력 → ② 케이블별 코어내역 정리 → ③ ID·신호 일치 시 자동 OK → ④ 미완료 목록에서 끝-끝 연결 확인. 신호는 케이블 번호에 유지되며, 내역 확정·배치대기 정리는 선택 사항입니다.' if field_slot_mode(store) else '① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. GIS에 없던 양쪽 빈 신규 선번은 임시코어로 배정하고 자동 OK로 처리합니다.'
+        guide='① 현장 선번·신호 입력 → ② 케이블별 코어내역 정리 → ③ ID·신호 일치 시 자동 OK → ④ 미완료 목록에서 끝-끝 연결 확인. 전체 신호가 확인필요여도 중립으로 처리합니다. 신호는 케이블 번호에 유지되며, 내역 확정·배치대기 정리는 선택 사항입니다.' if field_slot_mode(store) else '① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. GIS에 없던 양쪽 빈 신규 선번은 임시코어로 배정하고 자동 OK로 처리합니다.'
         ttk.Label(self,text=guide,padding=(10,6),wraplength=1380).pack(fill='x')
         self.gis_control=FieldGISControl(self,store,node_id);self.gis_control.pack(fill='x',padx=10,pady=3)
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')

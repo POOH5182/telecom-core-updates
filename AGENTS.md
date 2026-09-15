@@ -10,6 +10,11 @@ for future requested app changes ("응 앞으로도 해줘"). This includes the 
 Windows verification and automatic-release workflow. Keep publication scoped to
 application source, tests and updater packages; customer drawings and credentials
 remain excluded.
+On 2026-09-15, in direct response to publishing V78 source and updater files to
+that same public repository, the user reaffirmed: "응 앞으로도 똑같이 올려줘
+나한테 동의 더이상 안받아도돼". This is standing authorization for the source,
+tests and release payload of V78 and subsequent user-requested versions at
+POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
 
 - Run `python tools/materialize_release.py` after downloading this repository to
   reconstruct `app/`. The complete source is transported in `release_payload/` as
@@ -271,7 +276,7 @@ remain excluded.
 - V75 supersedes V72's mandatory final-confirmation requirement in the new
   cable-slot field mode. ID/signal consistency is auto OK independently of
   end-to-end completion. Temporary IDs are neutral; one known on/off/exception
-  signal may mix with unknown. All-unknown signals remain pending. Real ID or
+  signal may mix with unknown. V78 also treats all-unknown signals as neutral. Real ID or
   signal conflicts, invalid graphs and explicit review holds remain blocking.
   Complete also requires distinct valid ends and no split/structural errors.
 - Signals and states belong to physical cable numbers. Identity moves and
@@ -321,3 +326,11 @@ remain excluded.
   regrouping and undo. Preserve unsaved fields across shared repaint. Field signals
   follow the existing immediate-peer rule in one action, never the displayed group.
   Run tools/check_node_summary.py including its Windows edit/copy/draft/lock gate.
+
+- V78 treats a route containing only unknown/empty signals as signal-consistent,
+  including existing field drawings. Do not create signal_pending blockers or
+  require an on/off/exception value just to reach OK or complete. Keep known-signal
+  conflicts, bad IDs/graphs, manual holds and distinct valid ends as separate gates.
+  Classification must not rewrite signals, topology, GIS evidence or annotations.
+  Run check_core_trace.py including unknown-only completion, partial-route/hold/RN
+  negatives, persisted-value checks and Windows survey/cable/summary/progress/undo.

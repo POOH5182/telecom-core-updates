@@ -156,7 +156,8 @@ def field_slot_audit(store):
         if len(real_ids)>1:fail('서로 다른 코어ID가 한 경로에 연결됨: '+' / '.join(real_ids),'identity')
         if len(signals)>1:fail('신호 불일치: '+' / '.join({'on':'ON','off':'OFF','error':'오류','exception':'예외'}.get(s,s) for s in signals),'signal')
         if 'error' in signals:fail('신호가 오류로 표시된 구간이 있습니다.','signal')
-        if not signals:fail('신호 확인 대기: 현재 접속 범위가 모두 확인필요입니다.','signal_pending')
+        # Unknown signals are neutral even when the entire route is unknown.
+        # Completion still requires valid ends, consistent IDs and no conflicts.
         occurrences=Counter(s[0] for s in slots if not s[0].startswith('PORT:'))
         if any(n>1 for n in occurrences.values()):fail('같은 케이블의 여러 코어가 한 경로에 중복 포함됨','branch')
         for slot in sorted(slots):
@@ -224,8 +225,8 @@ def field_slot_audit(store):
     for group in components:
         group['notes']=list(dict.fromkeys(group['notes']));group['holds']=list(dict.fromkeys(group['holds']))
         group['coherent']=not group['notes']
-        group['identity_signal_ok']=(len(group['real_ids'])<=1 and len(group['signals'])==1
-            and group['signals'][0] in ('on','off','exception')
+        group['identity_signal_ok']=(len(group['real_ids'])<=1 and len(group['signals'])<=1
+            and all(signal in ('on','off','exception') for signal in group['signals'])
             and not bool(group['causes']&{'identity','signal','marked','branch','invalid'}))
         group['auto_ok']=group['identity_signal_ok'] and not group['holds'] and not group['blocking']
         candidates=confirmations.get(tuple(group['slots']))

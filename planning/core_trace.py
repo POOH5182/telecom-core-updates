@@ -147,7 +147,7 @@ def field_incomplete_entries(store):
                                 row=(net.title(slot),str(row.get('core_id') or ''),comp['reason']),causes=frozenset(comp['causes'])))
         primary=next((m for m in members if any(s==m['slot'] for _,s in comp['free'])),members[0])
         labels={'unconnected':'미접속','endpoints':'끝-끝 미연결','identity':'ID 불일치','signal':'신호 불일치',
-                'signal_pending':'신호 확인 대기','split':'같은 ID 경로 분리','branch':'분기·순환','port':'내부포트 미접속',
+                'split':'같은 ID 경로 분리','branch':'분기·순환','port':'내부포트 미접속',
                 'invalid':'접속정보 오류','marked':'오류 표시'}
         causes=set(comp['causes'])
         if comp['auto_ok']:causes.add('ok_incomplete')

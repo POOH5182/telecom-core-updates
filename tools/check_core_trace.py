@@ -72,7 +72,7 @@ class CoreTraceTests(unittest.TestCase):
         self.assertIn('ok_incomplete',entry['causes']);self.assertEqual(wf.completion_report(self.s)['done'],0)
         self.apply(2,'B\tC\n1\t1');self.assertEqual(wf.field_incomplete_entries(self.s),[])
 
-    def test_signal_rules_allow_one_known_kind_with_unknown_but_not_mixed_or_all_unknown(self):
+    def test_signal_rules_allow_unknown_only_or_one_known_kind_but_not_conflicts(self):
         self.connect_all()
         for signal in ('on','off','exception'):
             for i in range(3):self.set(i,1,'CORE-A','같은 ID 이름 다름 '+str(i),signal if i!=1 else 'unknown')
@@ -80,7 +80,58 @@ class CoreTraceTests(unittest.TestCase):
         self.set(0,1,'CORE-A','','on');self.set(2,1,'CORE-A','','off')
         self.assertFalse(self.audit()['auto_ok']);self.assertIn('signal',self.audit()['causes'])
         for i in range(3):self.set(i,1,'CORE-A','','unknown')
-        self.assertFalse(self.audit()['auto_ok']);self.assertIn('signal_pending',self.audit()['causes'])
+        self.assertTrue(self.audit()['auto_ok']);self.assertTrue(self.audit()['complete'])
+        self.assertNotIn('signal_pending',self.audit()['causes'])
+        self.set(1,1,'CORE-A','','error')
+        self.assertFalse(self.audit()['auto_ok']);self.assertFalse(self.audit()['complete'])
+        self.assertIn('signal',self.audit()['causes'])
+
+    def test_all_unknown_completes_existing_route_without_changing_saved_values(self):
+        for i,signal in enumerate(('unknown','','확인필요')):self.set(i,1,'CORE-A','GIS 내역',signal)
+        self.connect_all();before=self.snapshot();revision=self.s.data_revision()
+        history=self.s.history_rows();gis=self.gis.read_bytes()
+        self.assertEqual(wf.completion_report(self.s)['rate'],100)
+        self.assertEqual(wf.field_incomplete_entries(self.s),[])
+        self.assertTrue(self.s.trace_core_paths('CORE-A')['complete'])
+        for i in (1,2):self.assertTrue(all(r['local_status']=='OK' for r in wf.FieldSurvey(self.s,self.nodes[i]).report()))
+        for value in self.s.cable_core_warning_summary().values():
+            self.assertEqual(value['incomplete_total'],0);self.assertEqual(value['incomplete_badge'],0)
+        self.assertEqual(self.snapshot(),before);self.assertEqual(self.s.data_revision(),revision)
+        self.assertEqual(self.s.history_rows(),history);self.assertEqual(self.gis.read_bytes(),gis)
+        self.s.close();self.s=code['Store'](self.path)
+        self.assertEqual(wf.completion_report(self.s)['rate'],100)
+        self.assertEqual(self.snapshot(),before)
+
+    def test_all_unknown_still_requires_real_connections_and_preserves_undo(self):
+        for i in range(3):self.set(i,1,'CORE-A','GIS 내역','unknown')
+        self.apply(1,'A\tB\n1\t1')
+        self.assertTrue(self.audit()['auto_ok']);self.assertFalse(self.audit()['complete'])
+        self.assertEqual(wf.completion_report(self.s)['done'],0)
+        self.assertIn('unconnected',self.audit()['causes'])
+        self.assertEqual(self.s.trace_core_paths('CORE-A',slot=self.slot(0))['highlight'],set(self.cables[:2]))
+        before=self.snapshot();self.apply(2,'B\tC\n1\t1')
+        self.assertEqual(wf.completion_report(self.s)['rate'],100)
+        self.s.undo();self.assertEqual(self.snapshot(),before)
+        self.assertEqual(wf.completion_report(self.s)['done'],0)
+        self.s.redo();self.assertEqual(wf.completion_report(self.s)['rate'],100)
+        self.set(1,1,'OTHER','GIS 내역','unknown')
+        self.assertFalse(self.audit()['auto_ok']);self.assertIn('identity',self.audit()['causes'])
+        self.assertEqual(wf.completion_report(self.s)['done'],0)
+
+    def test_all_unknown_keeps_manual_review_holds_and_rn_endpoints(self):
+        for i in range(3):self.set(i,1,'CORE-A','GIS 내역','unknown')
+        self.connect_all();nid=self.nodes[1]
+        keys={r['key'] for r in wf.FieldSurvey(self.s,nid).report()}
+        wf.field_local_mark(self.s,nid,keys,'NOT OK',self.s.data_revision(),getattr(self.s,'_view_generation',0),'직접 확인 필요')
+        self.assertFalse(self.audit()['auto_ok']);self.assertEqual(wf.completion_report(self.s)['done'],0)
+        wf.field_local_mark(self.s,nid,keys,'OK',self.s.data_revision(),getattr(self.s,'_view_generation',0))
+        self.assertEqual(wf.completion_report(self.s)['rate'],100)
+        with self.s.action('RN 끝단'):self.s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(self.nodes[3],))
+        self.s.ensure_ports(self.nodes[3],{'mp':1,'sp':1,'p':8})
+        self.assertEqual(wf.completion_report(self.s)['done'],0)
+        self.assertIn(self.nodes[3],{n for n,_ in self.audit()['free']})
+        self.s.connect(self.nodes[3],self.slot(2),('PORT:'+self.nodes[3],1))
+        self.assertEqual(wf.completion_report(self.s)['rate'],100)
 
     def test_signal_edit_updates_only_slot_or_immediate_local_peer_and_undo_is_atomic(self):
         self.connect_all();s=self.s
@@ -162,6 +213,32 @@ def windows_ui():
                 wf.field_overlay_commit(s,wf.field_overlay_preview(s,case.nodes[2],'B\tC\n1\t1'))
                 s.set_core_signal('CORE-A','off',slot=case.slot(1),node_id=case.nodes[2]);app.refresh();app.update()
                 assert wf.completion_report(s)['rate']==100.0 and not wf.field_incomplete_entries(s)
+                # V78: repaint existing drawings with unknown-only routes as complete.
+                for i in range(3):s.set_core_signal('CORE-A','unknown',slot=case.slot(i))
+                app.refresh();app.update();before=wf.plan_snapshot(s.conn)
+                assert '100.0%' in app.work_progress_rate.cget('text')
+                cable=code['CableDialog'](app,s,case.cables[1])
+                summary=code['NodeSummaryDialog'](node,s,case.nodes[1])
+                survey=wf.FieldSurveyDialog(app,s,case.nodes[1]);app.update()
+                pending=code['IncompleteCoresDialog'](app,s);app.update()
+                assert not pending.entries
+                assert '신호 확인 대기' not in pending.CAUSE_FILTERS
+                assert all(r['local_status']=='OK' for r in survey.rows)
+                assert '[미완료코어]' not in cable.tree.item('1','values')[0]
+                assert cable.tree.item('1','values')[1]=='확인필요'
+                summary_row=next(iid for iid,slots in summary.row_slots.items() if case.slot(0) in slots)
+                assert summary.tree.set(summary_row,'signal')=='확인필요'
+                assert all(w['incomplete_total']==0 for w in s.cable_core_warning_summary().values())
+                assert wf.plan_snapshot(s.conn)==before
+                s.disconnect(case.nodes[2],*case.slot(1));app.refresh();pending.reload();app.update()
+                assert wf.completion_report(s)['done']==0 and pending.entries
+                assert '[미완료코어]' in cable.tree.item('1','values')[0]
+                s.undo();app.refresh();pending.reload();app.update()
+                assert '100.0%' in app.work_progress_rate.cget('text') and not pending.entries
+                assert '[미완료코어]' not in cable.tree.item('1','values')[0]
+                assert all(s.core(*case.slot(i))['signal']=='unknown' for i in range(3))
+                assert wf.plan_snapshot(s.conn)==before
+                pending.destroy();survey.destroy();summary.destroy();cable.destroy()
                 s.update_core(*case.slot(1),('WRONG-ID','긴 코어내역 '*30,'normal','','off'));app.refresh()
                 trace=code['TraceDialog'](app,s);trace.q.set('CORE-A');trace.run();app.update()
                 wrong=[iid for iid in trace.tree.get_children() if trace.tree.item(iid,'values')[0]=='WRONG-ID']
@@ -169,7 +246,7 @@ def windows_ui():
                 assert '코어ID 불일치' in trace.summary.get();assert trace.diagram.find_all()
                 trace.close();node.destroy();assert not errors,errors
             finally:app.on_close()
-        print('PASS Windows V75 partial actual highlights, ID mismatch trace rows, local paired signals, compact incomplete ledger, full names and auto completion')
+        print('PASS Windows partial highlights, mismatch rows, paired signals, unknown-only completion across survey/cable/summary/dashboard, incomplete lists and undo repaint')
     finally:case.tearDown()
 
 
