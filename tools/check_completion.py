@@ -62,7 +62,7 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual(len(report['rows'][0]['slots']),2)
         s.disconnect(self.h,self.left,1);report=self.report()
         self.assertEqual((report['total'],report['done']),(1,0));self.assertEqual(len(s.incomplete_core_groups()),1)
-        self.assertIn(1,s.node_assignment_needs(self.h)[self.left])
+        self.assertEqual(s.node_assignment_needs(self.h),{}) # Temporary ON still requires a route, but not an enclosure allocation badge.
         self.connect(1);self.assertEqual(self.report()['rate'],100)
 
     def test_stage_denominators_and_excluded_incomplete_lists(self):

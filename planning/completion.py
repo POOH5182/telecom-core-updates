@@ -14,6 +14,11 @@ def core_signal_off(row):
     return bool(row) and str(dict(row).get('signal') or '').strip().lower()=='off'
 
 
+def hamche_temporary_exempt(node,row):
+    """Hide temporary slots from enclosure allocation, not physical diagnostics."""
+    return bool(node and node['type']=='hamche' and row and str(dict(row).get('core_id') or '').strip().startswith('임시-'))
+
+
 def completion_policy(rows,kind):
     rows=[dict(row) for row in rows];flags=set()
     for row in rows:

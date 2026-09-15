@@ -477,3 +477,10 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
   drawing. Cancellation/failed validation must not switch or replace the original.
   Run check_drawing_copy.py including Windows list button, cancellation, selection
   and independent open, plus the cloud and full Windows release gates.
+
+- V86 hamche_temporary_exempt filters temporary IDs only from hamche allocation
+  needs/counts/choice menus/waiting groups/summary states. Use it consistently in
+  field and legacy stages. Real ID edits and undo/reopen must restore normal
+  classification. Preserve raw topology, mandatory completion, cable diagnostics
+  and RN internal-port obligations. Run check_temporary_assignment.py including
+  Windows live badge/menu/summary/SVG/undo checks and the full release pipeline.

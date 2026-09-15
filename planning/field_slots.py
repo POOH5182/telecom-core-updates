@@ -251,6 +251,7 @@ def field_slot_audit(store):
     for comp in components:
         if comp['required']:
             for nid,slot in comp['free']:
+                if hamche_temporary_exempt(net.nodes.get(nid),all_rows.get(slot)):continue
                 if slot not in accepted and not core_signal_off(all_rows.get(slot)):needs_by_node[nid][slot[0]].add(slot[1])
     result=dict(net=net,components=components,by_slot=by_slot,by_id=dict(by_id),rows=all_rows,observed_slots=observed_slots,
                 by_cable=dict(by_cable),needs_by_node={nid:dict(value) for nid,value in needs_by_node.items()},
