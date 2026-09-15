@@ -96,6 +96,19 @@ class ExistingBasisTests(unittest.TestCase):
         wf.field_local_mark(self.s,nid,{row['key']},'NOT OK',self.s.data_revision(),self.s._view_generation,'직접 확인')
         self.progress(1);self.assertTrue(wf.field_check_rows(self.s))
         self.s.undo();self.progress()
+    def test_phase_metadata_treats_blank_and_unknown_as_neutral_without_rewriting(self):
+        before=self.snapshot();metadata=wf.read_metadata(self.s.conn)
+        self.assertTrue(all(not row['signal_conflict'] and row['signal']=='unknown' for row in metadata.values()))
+        self.assertEqual(self.snapshot(),before)
+        with self.s.action('실제 신호 있음'):
+            self.s.conn.execute("UPDATE cores SET signal='on' WHERE cable_id=? AND core_index=1",(self.cables[0],))
+        before=self.snapshot();metadata=wf.read_metadata(self.s.conn)
+        self.assertEqual((metadata['ID-1']['signal'],metadata['ID-1']['signal_conflict']),('on',False))
+        self.assertEqual(self.snapshot(),before)
+        with self.s.action('실제 신호 충돌'):
+            self.s.conn.execute("UPDATE cores SET signal='off' WHERE cable_id=? AND core_index=1",(self.cables[1],))
+        self.assertTrue(wf.read_metadata(self.s.conn)['ID-1']['signal_conflict'])
+        self.progress(1)
     def test_locked_initial_copy_keeps_original_splices_and_protections(self):
         self.s.set_node_locked(self.nodes[1],True);source=self.home/'locked.sqlite3';target=self.home/'copy.sqlite3'
         self.s.backup_to(source);original=source.read_bytes();wf.field_slot_copy(source,target)

@@ -517,3 +517,6 @@ publication of requested app changes through the existing main release workflow.
   dashboard, compare-only/save/apply, undo and reload, plus the existing full Windows
   release pipeline. legacy_field_fixture.existing_empty_slot_field models already
   saved V72–87 empty drawings; it must never become an application migration.
+- V88 read_metadata phase comparison also treats blank/unknown signals as neutral.
+  Keep actual conflicting known signals blocked, and never rewrite physical slot
+  signals merely while checking or switching identical snapshots.
