@@ -119,12 +119,23 @@ def main():
             assert str(dialog.tree.tag_configure('error','background'))=='#ead7ff',repr(dialog.tree.tag_configure('error','background'))
             assert str(dialog.tree.tag_configure('signal_on','foreground'))=='#d00000',repr(dialog.tree.tag_configure('signal_on','foreground'))
             dialog.id_var.set('SAMPLE-A');dialog.lot_var.set('')
+            # The bottom action is reachable by scrolling and by keyboard focus.
+            dialog.status_actions.reveal(dialog.swap_identity_button);app.update()
+            button=dialog.swap_identity_button;panel=dialog.status_actions.canvas
+            assert panel.winfo_rooty()<=button.winfo_rooty()<panel.winfo_rooty()+panel.winfo_height()
+            assert button.winfo_rooty()+button.winfo_height()<=panel.winfo_rooty()+panel.winfo_height()
+            dialog.status_actions.canvas.yview_moveto(0);app.update()
             screenshot(dialog,Path('dist')/'v89-cable-editor.png');dialog.destroy()
             print('DESIGN: enclosure table and selection',flush=True)
             node=code['NodeDialog'](app,s,nodes[1]);app.update()
             node.left_var.set(next(k for k,v in node.by_label.items() if v==cables[0]))
             node.right_var.set(next(k for k,v in node.by_label.items() if v==cables[1]));node.reload_all();app.update()
             assert node.save_button.cget('style')=='Primary.TButton'
+            for button in node.connection_actions.controls:
+                assert button.winfo_ismapped()
+                assert button.winfo_rootx()+button.winfo_width()<=node.winfo_rootx()+node.winfo_width(),button.cget('text')
+                assert button.winfo_rooty()+button.winfo_height()<=node.winfo_rooty()+node.winfo_height(),button.cget('text')
+            assert node.left_tree.winfo_height()>=120
             node.left_tree.selection_set('1');app.update()
             screenshot(node,Path('dist')/'v89-enclosure-editor.png');node.destroy()
             assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==baseline

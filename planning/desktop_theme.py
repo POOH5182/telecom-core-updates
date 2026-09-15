@@ -20,7 +20,6 @@ def install_desktop_theme(root):
     for name in ('TkDefaultFont','TkTextFont','TkMenuFont','TkHeadingFont'):
         tkfont.nametofont(name,root=root).configure(family=family,size=9)
     root.configure(background=colors['page'])
-    root.option_add('*Font',(family,9))
     for pattern,value in {
         '*Toplevel.background':colors['surface'], '*Frame.background':colors['surface'],
         '*Label.background':colors['surface'], '*Label.foreground':colors['ink'],
@@ -119,6 +118,39 @@ class FlowToolbar(ttk.Frame):
             try:self.after_cancel(self._layout_job)
             except tk.TclError:pass
             self._layout_job=None
+
+
+class ScrollableActions(ttk.Frame):
+    """A bounded native control panel; wheel/focus scrolling stays inside it."""
+    def __init__(self,parent):
+        super().__init__(parent)
+        self.columnconfigure(0,weight=1);self.rowconfigure(0,weight=1)
+        self.canvas=tk.Canvas(self,highlightthickness=0,background=DESKTOP_COLORS['surface'],width=235)
+        self.canvas.grid(row=0,column=0,sticky='nsew')
+        self.bar=ttk.Scrollbar(self,orient='vertical',command=self.canvas.yview)
+        self.bar.grid(row=0,column=1,sticky='ns');self.canvas.configure(yscrollcommand=self.bar.set)
+        self.content=ttk.Frame(self.canvas);self.item=self.canvas.create_window(0,0,anchor='nw',window=self.content)
+        self.content.bind('<Configure>',self.update_region)
+        self.canvas.bind('<Configure>',self.update_width)
+        self.canvas.bind('<MouseWheel>',self.wheel)
+        self.content.bind('<MouseWheel>',self.wheel)
+    def update_region(self,event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox(self.item))
+        for child in self.content.winfo_children():
+            if getattr(child,'_actions_scroll_bound',False):continue
+            child._actions_scroll_bound=True
+            child.bind('<MouseWheel>',self.wheel,add='+')
+            child.bind('<FocusIn>',lambda e:self.reveal(e.widget),add='+')
+    def update_width(self,event):self.canvas.itemconfigure(self.item,width=event.width)
+    def wheel(self,event):
+        if self.content.winfo_height()>self.canvas.winfo_height():
+            self.canvas.yview_scroll(-1 if event.delta>0 else 1,'units')
+        return 'break'
+    def reveal(self,widget):
+        top=self.canvas.canvasy(0);height=self.canvas.winfo_height();y=widget.winfo_y()
+        bottom=y+widget.winfo_height();total=max(1,self.content.winfo_height())
+        if y<top:self.canvas.yview_moveto(y/total)
+        elif bottom>top+height:self.canvas.yview_moveto((bottom-height)/total)
 
 
 def desktop_dialog_heading(parent,title,subtitle=''):
