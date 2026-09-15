@@ -289,7 +289,9 @@ def windows_ui():
                 assert wf.completion_report(s)['done']==0 and pending.entries
                 assert '[미완료코어]' in cable.tree.item('1','values')[0]
                 assert cable.completion_title.get()=='1 · 미완료'
-                assert cable.completion_reason.get()=='코어연결 미완료'
+                # Disconnecting a saved observation leaves both a physical gap
+                # and unapplied field evidence; neither reason may be hidden.
+                assert cable.completion_reason.get()=='코어연결 미완료 · 현장 선번 확인 필요',cable.completion_reason.get()
                 s.undo();app.refresh();pending.reload();app.update()
                 assert '100.0%' in app.work_progress_rate.cget('text') and not pending.entries
                 assert '[미완료코어]' not in cable.tree.item('1','values')[0]
