@@ -138,7 +138,7 @@ class AfterPlanner:
             notes = list(actual['result']['notes']) if actual else ['후도면에서 코어ID를 찾지 못함']
             policy=connections['by_id'].get(core_id)
             required=policy['required'] if policy is not None else True
-            # After-stage exceptions/broken cores with IDs still require a complete route.
+            # Manual exception disposition accepts completion; raw routes remain inspectable.
             if policy is not None:
                 notes=list(policy['reason_items']) if required else ['완료율 제외 · '+policy['excluded_reason']]
                 if required and actual:notes.extend(n for n in actual['result']['notes'] if '코어내역 불일치' in n)
@@ -165,6 +165,8 @@ class AfterPlanner:
             status = '확인 완료' if not blocking else ('예외 확인' if exception else '조치 필요')
             if not blocking and kind != '연결 필요': status = kind+' 확인'
             if not blocking and exception: status = '예외 확인 완료'
+            if policy and policy.get('exception_complete'):
+                exception=False;blocking=[];notes=[];status='완료';reviewed=True
             rows.append(dict(core_id=core_id, detail=(actual or prev or {}).get('detail', ''),
                              before=prev, after=actual, change=' / '.join(change) or '유지',
                              plan=plan, kind=kind, exception=exception, reviewed=reviewed,connection_required=required,connection_excluded=(policy or {}).get('excluded_reason',''),

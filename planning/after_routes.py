@@ -111,8 +111,10 @@ class AfterRoutePlanner:
             problem=self.problem(key,ctx);record=problem['record']
             status='확정 (OK)' if problem['saved_ok'] else '재확인' if record and record.get('signature')!=problem['signature'] else {'nok':'추천 거절 (NOK)','draft':'직접 지정 중'}.get(record.get('state'),'미설정')
             if problem['blocks']:status='연결정보 확인 필요'
+            accepted=problem['entry'].get('exception_complete',False)
+            if accepted:status='완료'
             rows.append(dict(key=key,core_id=problem['core_id'],detail=problem['entry']['detail'],status=status,
-                             segments=len(problem['components']),complete=problem['saved_ok'],problem=problem))
+                             segments=len(problem['components']),complete=problem['saved_ok'] or accepted,problem=problem))
         rows.sort(key=lambda r:(r['core_id'],r['key']))
         done=sum(r['complete'] for r in rows)
         return dict(rows=rows,total=len(rows),done=done,ready=done==len(rows),context=ctx)

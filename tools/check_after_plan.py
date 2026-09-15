@@ -107,13 +107,13 @@ class PlannerTest(unittest.TestCase):
 
     def test_exception_separate_from_signal_and_review_stales(self):
         update(self.store,self.big,5,{'core_id':'EX','detail':'예외','status1':'exception'})
-        row=self.row('EX');self.assertTrue(row['exception']);self.assertEqual(row['status'],'예외 확인')
+        row=self.row('EX');self.assertFalse(row['exception']);self.assertEqual(row['status'],'완료')
         self.service.review(['EX'],'미사용 인입 예외 확인',self.service.report()['token'])
-        self.assertFalse(self.row('EX')['complete']) # After-stage exception IDs still require their route.
+        self.assertTrue(self.row('EX')['complete']) # Explicit disposition accepts completion without rewiring.
         self.assertTrue(self.row('EX')['connection_required'])
-        self.assertTrue(any('미접속' in note for note in self.row('EX')['notes']))
+        self.assertEqual(self.row('EX')['notes'],[])
         update(self.store,self.big,5,{'detail':'변경된 예외 내역'})
-        self.assertFalse(self.row('EX')['complete'])
+        self.assertTrue(self.row('EX')['complete'])
         update(self.store,self.big,6,{'core_id':'SIG','signal':'exception'})
         self.assertFalse(self.row('SIG')['exception']);self.assertFalse(self.row('SIG')['complete'])
 

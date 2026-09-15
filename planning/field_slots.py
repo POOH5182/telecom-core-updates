@@ -122,6 +122,7 @@ def field_slot_overlay(store,node_id,raw,revision,generation,reference=None,keys
 
 
 def field_slot_required(row):
+    if is_exception(row):return True
     if core_signal_off(row):return False
     cid=str(row.get('core_id') or '').strip()
     return bool((cid and not cid.startswith('임시-')) or str(row.get('detail') or '').strip() or row.get('signal')=='on')
@@ -237,14 +238,23 @@ def field_slot_audit(store):
         group['reason']=' / '.join(group['notes']+group['holds']+group['approval_notes'])
         group['error']=bool(group['causes']&{'identity','signal','split','branch','invalid','marked'})
         group['fingerprint']=digest([group['slots'],group['records'],group['notes'],group['holds'],group['ends']])
+    accepted={s for s,r in all_rows.items() if is_exception(r)}
+    exception_ids={str(all_rows[s].get('core_id') or '').strip() for s in accepted}-{''}
+    accepted.update(s for s,r in all_rows.items() if str(r.get('core_id') or '').strip() in exception_ids)
+    for comp in components:
+        # Neutral temporary slots may belong to an accepted real core. A
+        # different, unaccepted real ID on the same path must stay incomplete.
+        comp['exception_complete']=bool(set(comp['slots'])&accepted) and set(comp['real_ids'])<=exception_ids
+        if comp['exception_complete']:accepted.update(comp['slots'])
     by_cable=defaultdict(list);needs_by_node=defaultdict(lambda:defaultdict(set))
     for slot,comp in by_slot.items():by_cable[slot[0]].append((slot,comp))
     for comp in components:
         if comp['required']:
             for nid,slot in comp['free']:
-                if not core_signal_off(all_rows.get(slot)):needs_by_node[nid][slot[0]].add(slot[1])
+                if slot not in accepted and not core_signal_off(all_rows.get(slot)):needs_by_node[nid][slot[0]].add(slot[1])
     result=dict(net=net,components=components,by_slot=by_slot,by_id=dict(by_id),rows=all_rows,observed_slots=observed_slots,
-                by_cable=dict(by_cable),needs_by_node={nid:dict(value) for nid,value in needs_by_node.items()})
+                by_cable=dict(by_cable),needs_by_node={nid:dict(value) for nid,value in needs_by_node.items()},
+                exception_complete_slots=frozenset(accepted),exception_ids=frozenset(exception_ids))
     store._field_slot_audit_stamp=stamp;store._field_slot_audit_value=result
     return result
 
@@ -256,7 +266,7 @@ def field_slot_completion(store):
     for comp in audit['components']:
         # An unassigned OFF placement must not hold up a live path with the same
         # ID. Keep its actual graph (and any real conflicts) available separately.
-        if comp['off_only']:groups[('off',comp['key'])]=[comp]
+        if comp['off_only'] and not (comp['exception_complete'] or set(comp['real_ids'])&audit['exception_ids']):groups[('off',comp['key'])]=[comp]
         elif comp['real_ids']:
             for cid in comp['real_ids']:groups.setdefault(('id',cid),[]).append(comp)
         else:groups[comp['key']]=[comp]
@@ -272,6 +282,12 @@ def field_slot_completion(store):
                    detail=' / '.join(dict.fromkeys(str(r.get('detail') or '') for r in records if r.get('detail'))),reason=reason,reason_items=tuple(notes),
                    causes=frozenset(cause for c in components for cause in c['causes'])|({'field'} if any(c['holds'] for c in components) else set()),
                    basis=basis,excluded_reason='' if required else reason,on=any(r.get('signal')=='on' for r in records),temporary=not any(c['real_ids'] for c in components),expected=False)
+        accepted=cid in audit['exception_ids'] if cid else all(c['exception_complete'] for c in components)
+        entry['exception_complete']=accepted
+        if accepted:
+            required=True
+            entry.update(required=True,complete=True,physical_complete=all(c['complete'] for c in components),
+                         reason='예외 처리로 완료',reason_items=(),causes=frozenset(),basis='예외 처리 완료',excluded_reason='')
         (targets if required else excluded).append(entry)
         if cid and (cid not in by_id or required):by_id[cid]=entry
         for slot in slots:
@@ -279,7 +295,7 @@ def field_slot_completion(store):
     done=sum(r['complete'] for r in targets);total=len(targets)
     result=dict(kind='before',total=total,done=done,rate=100.0*done/total if total else None,rows=targets,
                 excluded=len(excluded),excluded_rows=excluded,by_id=by_id,by_slot=by_slot,degree=dict(audit['net'].degree),
-                required_slots=frozenset(s for r in targets for s in r['slots']),
+                required_slots=frozenset(s for r in targets for s in r['slots'] if s not in audit['exception_complete_slots']),
                 excluded_counts=dict(Counter(r['excluded_reason'] for r in excluded)))
     audit['completion']=result;return result
 
@@ -311,8 +327,10 @@ def field_slot_enrich(engine,rows):
         flagged=engine.record.get('flags',{}).get(row['key'])
         if decision.get('status')=='NOT OK':okay=False;reason=decision.get('note') or '사용자가 이 함체 접속을 NOT OK로 지정했습니다.'
         elif flagged:okay=False;reason=str(flagged)
+        accepted=bool(pair) and all(s in audit['exception_complete_slots'] for s in pair)
+        if accepted:okay=True;reason='예외 처리로 완료'
         row.update(local_status='OK' if okay else 'NOT OK',local_reason=reason or '코어ID·신호 일치',
-                   local_mode='ID·신호 자동 OK' if okay else '경로 확인 필요',local_fingerprint=fingerprint,
+                   local_mode='완료 처리' if accepted else 'ID·신호 자동 OK' if okay else '경로 확인 필요',local_fingerprint=fingerprint,
                    local_match=not row['errors'] and actual and coherent and not mismatch,local_pending=not actual and row['source']=='조사표',
                    status='확인완료' if okay else '불일치',matching=okay)
     return rows
@@ -344,11 +362,12 @@ def field_slot_warning_summary(store):
                     causes=frozenset(comp['causes']),reason_items=tuple(comp['notes']+comp['holds']+comp['approval_notes']),row=(store._slot_title(*slot),str(row.get('core_id') or ''),comp['reason']))
     for comp in audit['components']:
         for slot in comp['slots']:
+            if slot in audit['exception_complete_slots']:continue
             if comp['required'] and not comp['complete']:incomplete.append(entry(slot,comp))
             if comp['error']:
                 errors.append(entry(slot,comp));marked.append(entry(slot,comp))
     for cid in audit['net'].cables:
-        slots=audit['by_cable'].get(cid,())
+        slots=[(s,c) for s,c in audit['by_cable'].get(cid,()) if s not in audit['exception_complete_slots']]
         missing={s[1] for s,c in slots if c['required'] and not c['complete']}
         free={s[1] for s,c in slots if c['required'] and not core_signal_off(audit['rows'].get(s)) and any(pos==s for _,pos in c['free'])}
         temp={s[1] for s,c in slots if str(audit['rows'].get(s,{}).get('core_id') or '').startswith('임시-')}
@@ -376,6 +395,7 @@ def field_slot_check_rows(store):
         if not comp['off_only'] or not (comp['error'] or comp['holds']):continue
         for cid in comp['real_ids'] or ['']:
             slot=next((s for s in comp['slots'] if store.core(*s)['core_id']==cid),comp['slots'][0])
+            if core_exception_complete(store,slot):continue
             result.append(dict(level='오류',category='현장 연결 오류',location=store._slot_title(*slot),target='',message=comp['reason'],
                                node_id='',cable_id=slot[0],core_index=slot[1],core_id=cid))
     # Malformed observations with no valid slots must not vanish from the gate.
@@ -432,6 +452,7 @@ def field_slot_tag(store,row,fallback):
     if not field_slot_mode(store):return fallback
     row=dict(row)
     slot=(row.get('cable_id',''),int(row.get('core_index',0)))
+    if core_exception_complete(store,slot):return 'used'
     comp=field_slot_audit(store)['by_slot'].get(slot)
     return 'error' if comp and comp['error'] else fallback
 

@@ -425,3 +425,36 @@ POOH5182/telecom-core-updates. Do not ask the user to reapprove this same scope.
   rendered colors/halo visibility for both overlap and ordinary cables, including
   repaint/zoom/selection and clear/stale cleanup. A boolean or width-only assertion
   is insufficient. Run the existing full Windows release pipeline before publishing.
+
+
+- V84 launch_windowless_copy in the application uses CREATE_NO_WINDOW for the
+  GUI child only when started by the installed launcher. The bootstrap returns
+  after the GUI owns telecom_app.lock and publishes the existing readiness token.
+  The unchanged launcher/BAT can then exit; never hide/kill a shared user console.
+  Direct/frozen/non-Windows starts retain their path. No installer replacement.
+- Pending-update readiness markers belong to the old launcher: never delete or
+  replace their token. Normal starts use a private marker removed by the parent.
+  Never return failure or trigger rollback while a started GUI process still
+  lives. Before spawn failure may fall back to foreground startup. Preserve logs,
+  startup error dialogs, GUI lifetime lock and failure-before-readiness rollback.
+- Explicit core identity swap previews two physical cable slots and exchanges only
+  core_id/detail, including real and temporary values. Do not move splices, signal,
+  state or propagate values to other slots. Suppress identity annotation transport,
+  preserve GIS evidence, back up, stale/lock guard and journal in one transaction.
+  Existing full renumbering API remains separate. The primary cable view and ID
+  tab expose the new action; preserve header/signal drafts and block pending ID
+  drafts without discarding them.
+- Run check_desktop_launch.py with real Windows CMD/GUI/old-launcher processes,
+  normal/pending/failure starts, duplicate blocking and cleanup; run
+  check_core_identity_swap.py with real 28/29 data, atomic undo, locks/stale/failure,
+  legacy metadata preservation and Windows button/draft/preview/cancel/undo gates.
+  Keep the full existing Windows release pipeline.
+
+- V84 manual exception status supersedes earlier exception exclusions: count as
+  completed in all stages, show 완료, and omit from exception/incomplete/allocation
+  buckets. Keep the stored label available for removal. Signal exception and local
+  assignment exemptions remain distinct. Undo/reopen must recalculate normally.
+- Preserve raw physical component completeness and faults separately from accepted
+  disposition; never invent splices/endpoints or a completed temporary route. A
+  different unaccepted real ID sharing the component must remain actionable.
+  Run check_exception_completion.py including Windows cable/enclosure/filter/undo.

@@ -42,11 +42,11 @@ class CompletionTests(unittest.TestCase):
 
     def test_explicit_before_after_policy_matrix_and_exclusion_precedence(self):
         cases=[('REAL','',[],True,True),('REAL','on',[],True,True),('임시-1','',[],False,False),
-               ('임시-1','on',[],True,True),('REAL','on',['예외'],False,True),('REAL','on',['끊김'],False,True),
+               ('임시-1','on',[],True,True),('REAL','on',['예외'],True,True),('REAL','on',['끊김'],False,True),
                ('REAL','on',['끊킴'],False,True),('REAL','on',['해지'],True,False),('REAL','',['해지예상'],True,True),
                ('','on',[],True,True),('','',['해지예상'],False,True),('','off',[],False,False),
                ('임시-2','',['해지예상'],False,False),('임시-2','on',['해지'],True,False),
-               ('REAL','',['예외코어','해지'],False,False)]
+               ('REAL','',['예외코어','해지'],True,True)]
         for cid,signal,labels,before,after in cases:
             row={'core_id':cid,'signal':signal,'annotation_labels':labels}
             for kind,expected in (('before',before),('gis',before),('after',after)):
@@ -71,13 +71,13 @@ class CompletionTests(unittest.TestCase):
         self.core(5,'CANCEL',status='cancel');self.connect(5)
         self.core(6,'EXPECTED',status='cancel_expected');self.connect(6)
         self.core(7,'임시-700','on');self.connect(7)
-        self.assertEqual((self.report()['total'],self.report()['done'],self.report()['excluded']),(4,4,3))
+        self.assertEqual((self.report()['total'],self.report()['done'],self.report()['excluded']),(5,5,2))
         self.assertEqual(self.store.incomplete_core_groups(),[])
         self.stage('after');report=self.report()
-        self.assertEqual((report['total'],report['done'],report['excluded']),(5,3,2))
-        self.assertEqual({r['core_id'] for r in self.store.incomplete_core_groups()},{'EX','BROKEN'})
+        self.assertEqual((report['total'],report['done'],report['excluded']),(5,4,2))
+        self.assertEqual({r['core_id'] for r in self.store.incomplete_core_groups()},{'BROKEN'})
         self.store.update_core(self.right,3,('EX','내역 3','exception','',''))
-        self.assertIn('EX',{r['core_id'] for r in self.store.waiting_connection_groups(self.h)})
+        self.assertNotIn('EX',{r['core_id'] for r in self.store.waiting_connection_groups(self.h)})
         self.connect(3);self.connect(4);self.assertEqual(self.report()['rate'],100)
         self.assertEqual(self.store.incomplete_core_groups(),[])
 
@@ -97,9 +97,9 @@ class CompletionTests(unittest.TestCase):
     def test_annotation_aliases_undo_reopen_and_read_only_calculation(self):
         s=self.store;self.core(1,'ONE');self.connect(1);old=self.snapshot()
         self.report();s.incomplete_core_entries();s.node_warning_summary();self.assertEqual(self.snapshot(),old)
-        wf.save_annotations(s,(self.left,1),['예외'],'연결율 제외');self.assertEqual(self.report()['total'],0)
-        s.undo();self.assertEqual(self.report()['total'],1);s.redo();self.assertEqual(self.report()['total'],0)
-        s.close();self.store=code['Store'](self.path);self.assertEqual(self.report()['total'],0)
+        wf.save_annotations(s,(self.left,1),['예외'],'완료 처리');self.assertEqual((self.report()['total'],self.report()['done']),(1,1))
+        s.undo();self.assertEqual(self.report()['total'],1);s.redo();self.assertEqual((self.report()['total'],self.report()['done']),(1,1))
+        s.close();self.store=code['Store'](self.path);self.assertEqual((self.report()['total'],self.report()['done']),(1,1))
         self.stage('after');self.assertEqual((self.report()['total'],self.report()['done']),(1,1))
 
     def test_after_uses_active_routes_and_does_not_complete_retired_only_core(self):

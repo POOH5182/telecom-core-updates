@@ -1,7 +1,7 @@
 """Stage-specific mandatory core policy and one denominator for connection progress.
 
 Read-only: neither annotations nor connection state is changed by classification.
-Annotation exclusions take precedence; a temporary ID is required only with signal.
+Manual exception disposition counts complete without changing physical topology.
 """
 
 
@@ -22,6 +22,9 @@ def completion_policy(rows,kind):
     ids={str(row.get('core_id') or '').strip() for row in rows}-{''}
     temporary=bool(ids) and all(cid.startswith('임시-') for cid in ids)
     expected=bool(flags&{'cancel_expected','해지예상','해지예상코어'})
+    accepted=bool(flags&{'exception','예외','예외코어'})
+    if accepted:
+        return dict(required=True,excluded_reason='',basis='예외 처리 완료',on=on,temporary=temporary,expected=expected,exception_complete=True)
     reason=''
     if kind=='after':
         if flags&{'cancel','해지','해지코어'}:reason='해지코어'
@@ -33,7 +36,7 @@ def completion_policy(rows,kind):
     required=not reason and (on or (bool(ids) and not temporary) or (kind=='after' and expected))
     if not required and not reason:reason='신호·코어ID 없는 번호'
     basis=' / '.join(label for yes,label in ((on,'신호 있음'),(bool(ids) and not temporary,'코어ID 있음'),(kind=='after' and expected,'해지예상')) if yes)
-    return {'required':bool(required),'excluded_reason':reason,'basis':basis,'on':on,'temporary':temporary,'expected':expected}
+    return {'required':bool(required),'excluded_reason':reason,'basis':basis,'on':on,'temporary':temporary,'expected':expected,'exception_complete':False}
 
 
 def completion_causes(notes):
@@ -93,6 +96,8 @@ def completion_report(store,kind=None):
             notes=route['notes']
             if cid and not active_slots:notes=['후도면에서 코어ID를 찾지 못함: 철거·절단 구간을 제외한 유효 경로가 필요합니다.'] if kind=='after' else ['연결할 코어 경로가 없습니다.']
             entry.update(complete=bool(route['complete'] and active_slots),reason=' / '.join(notes),reason_items=tuple(notes),causes=completion_causes(notes))
+            if policy['exception_complete']:
+                entry.update(physical_complete=entry['complete'],complete=True,reason='예외 처리로 완료',reason_items=(),causes=frozenset())
             targets.append(entry)
         for slot in slots:all_slots[slot]=entry
         if cid:by_id[cid]=entry
@@ -106,12 +111,13 @@ def completion_report(store,kind=None):
         entry=dict(key=('id',cid),core_id=cid,detail=' / '.join(dict.fromkeys(item.get('detail','') for item in items)),slots=[],active_slots=[],all_slots=[],
                    complete=False,reason=reason,reason_items=(reason,),causes=frozenset({'identity'}),pending_nodes=tuple(dict.fromkeys(item['node_id'] for item in items)),**policy)
         by_id[cid]=entry;(targets if policy['required'] else excluded).append(entry)
+        if policy['exception_complete']:entry.update(complete=True,physical_complete=False,reason='예외 처리로 완료',reason_items=(),causes=frozenset())
     targets.sort(key=lambda r:(r['core_id'],str(r['key'])));excluded.sort(key=lambda r:(r['excluded_reason'],r['core_id']))
     done=sum(r['complete'] for r in targets);total=len(targets)
     result={'kind':kind,'total':total,'done':done,'rate':100.0*done/total if total else None,'rows':targets,
             'excluded':len(excluded),'excluded_rows':excluded,'by_id':by_id,'by_slot':all_slots,
             'degree':dict(net.degree),
-            'required_slots':frozenset(s for row in targets for s in row['active_slots']),
+            'required_slots':frozenset(s for row in targets if not row['exception_complete'] for s in row['active_slots']),
             'excluded_counts':{reason:sum(row['excluded_reason']==reason for row in excluded) for reason in sorted({row['excluded_reason'] for row in excluded})}}
     store._completion_key=key;store._completion_value=result
     return result
@@ -129,6 +135,7 @@ def completion_rate_text(report):
 def core_completion_brief(store,slot):
     """Short saved-state reasons for the selected physical core, without tracing."""
     slot=tuple(slot)
+    if core_exception_complete(store,slot):return '완료','예외 처리'
     off=core_signal_off(store.core(*slot))
     if field_slot_mode(store):
         entry=field_slot_audit(store)['by_slot'].get(slot)
@@ -172,11 +179,19 @@ def completed_temporary_slots(store):
     return getattr(store,'_completed_temporary_slots',frozenset())
 
 
+def core_exception_complete(store,slot):
+    """Accepted disposition is separate from the saved physical route."""
+    slot=tuple(slot)
+    if field_slot_mode(store):return slot in field_slot_audit(store)['exception_complete_slots']
+    return bool(completion_report(store)['by_slot'].get(slot,{}).get('exception_complete'))
+
+
 def core_status_text(store,row):
     """Derived status belongs to a physical path, never to stored ID annotations."""
     text=annotation_text(store,row)
     if not row:return text
     row=dict(row);slot=(row.get('cable_id'),row.get('core_index'))
+    if core_exception_complete(store,slot):return '[완료]'
     if slot in completed_temporary_slots(store):text='[연결완료임시코어]'+(' '+text if text else '')
     return text
 

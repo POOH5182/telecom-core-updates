@@ -170,10 +170,12 @@ def field_incomplete_entries(store):
         if not comp['required'] or comp['complete']:continue
         members=[]
         for slot in comp['slots']:
+            if slot in audit['exception_complete_slots']:continue
             row=audit['rows'].get(slot,{})
             cable=net.cables.get(slot[0]);nodes=(cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)
             members.append(dict(slot=slot,nodes=nodes,core_id=str(row.get('core_id') or ''),detail=str(row.get('detail') or ''),
                                 row=(net.title(slot),str(row.get('core_id') or ''),comp['reason']),causes=frozenset(comp['causes'])))
+        if not members:continue
         primary=next((m for m in members if any(s==m['slot'] for _,s in comp['free'])),members[0])
         labels={'unconnected':'미접속','endpoints':'끝-끝 미연결','identity':'ID 불일치','signal':'신호 불일치',
                 'split':'같은 ID 경로 분리','branch':'분기·순환','port':'내부포트 미접속',
@@ -182,7 +184,7 @@ def field_incomplete_entries(store):
         if comp['auto_ok']:causes.add('ok_incomplete')
         if comp['holds']:causes.add('field')
         result.append(dict(primary,key=comp['key'],members=members,reason_items=tuple(comp['notes']+comp['holds']),
-                           causes=frozenset(causes),id_summary=' / '.join(comp['real_ids']) or primary['core_id'],
+                           causes=frozenset(causes),id_summary=' / '.join(cid for cid in comp['real_ids'] if cid not in audit['exception_ids']) or primary['core_id'],
                            state='OK · 미완료' if comp['auto_ok'] else 'NOT OK',count=len(comp['slots']),
                            short_reason=' · '.join(labels[k] for k in labels if k in causes)+(' · 현장 확인 보류' if comp['holds'] else ''),
                            signal=' / '.join({'on':'ON','off':'OFF','exception':'예외','error':'오류'}.get(s,s) for s in comp['signals']) or '확인필요'))

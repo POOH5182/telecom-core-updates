@@ -47,6 +47,7 @@ def core_connection_highlight(store,slots):
             if faults:text+='\n'+' · '.join(faults);label_colors[cable]='#c62828'
             bands[cable].append(dict(number=number,color=color,text=text))
         for nid,slot in comp['free']:
+            if slot in audit['exception_complete_slots']:continue
             row=audit['rows'].get(slot,{})
             # Corrupt ports/splices must be reviewed, not offered as free ends.
             occupied=any(n==nid for n,_ in net.links.get(slot,())) or bool(net.bad.get(slot))
