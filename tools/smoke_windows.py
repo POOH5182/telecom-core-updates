@@ -377,8 +377,9 @@ def check_route_checks(code, app):
 
     def check_highlight(window, view):
         assert app.highlight_owner is window
-        assert app.highlight_core_labels == expected, app.highlight_core_labels
-        assert app.highlight_cable_colors == {cid: '#ff7a00' for cid in expected}
+        conflict_labels={cid:'같은 ID · 경로 분리\n'+number.removesuffix('번')+' · CHECK-ID' for cid,number in expected.items()}
+        assert app.highlight_core_labels == conflict_labels, app.highlight_core_labels
+        assert app.highlight_cable_colors == {cid: '#c026d3' for cid in expected}
         assert len(view['groups']) == 2, view
         texts = [window.diagram.itemcget(i, 'text') for i in window.diagram.find_all()
                  if window.diagram.type(i) == 'text']
