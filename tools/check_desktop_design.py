@@ -115,8 +115,9 @@ def main():
             dialog.id_var.set('수정 중인 케이블 이름');dialog.lot_var.set('입력 중인 LOT')
             app.refresh();app.update()
             assert dialog.id_var.get()=='수정 중인 케이블 이름' and dialog.lot_var.get()=='입력 중인 LOT'
-            assert dialog.tree.tag_configure('error','background')=='#ead7ff'
-            assert dialog.tree.tag_configure('signal_on','foreground')=='#d00000'
+            screenshot(dialog,Path('dist')/'v89-cable-editor.png')
+            assert str(dialog.tree.tag_configure('error','background'))=='#ead7ff',repr(dialog.tree.tag_configure('error','background'))
+            assert str(dialog.tree.tag_configure('signal_on','foreground'))=='#d00000',repr(dialog.tree.tag_configure('signal_on','foreground'))
             dialog.id_var.set('SAMPLE-A');dialog.lot_var.set('')
             screenshot(dialog,Path('dist')/'v89-cable-editor.png');dialog.destroy()
             print('DESIGN: enclosure table and selection',flush=True)
