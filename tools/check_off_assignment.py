@@ -57,6 +57,13 @@ class OffFieldTests(unittest.TestCase):
         self.assertEqual(wf.completion_report(self.s)['done'],0)
         self.assertIn(3,self.s.node_assignment_needs(self.nodes[1])[self.cables[1]])
 
+    def test_off_free_end_of_required_component_has_no_enclosure_assignment_badge(self):
+        self.all_off();self.set(0,1,'CORE-A','GIS 내역','unknown');self.apply(1,'A\tB\n1\t1')
+        self.assertEqual(self.s.node_assignment_needs(self.nodes[2]),{})
+        self.assertEqual(self.s.node_warning_summary().get(self.nodes[2],{}).get('count',0),0)
+        self.assertEqual(self.s.cable_core_warning_summary()[self.cables[1]]['unassigned'],0)
+        self.assertFalse(wf.field_slot_audit(self.s)['by_slot'][self.slot(0)]['complete'])
+
     def test_connected_off_keeps_identity_signal_faults_and_trace_labels(self):
         self.all_off();self.set(1,1,'DIFFERENT','다른 ID','off');self.connect_all()
         audit=wf.field_slot_audit(self.s)['by_slot'][self.slot(0)]

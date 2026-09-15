@@ -254,6 +254,8 @@ def windows_ui():
                 assert app.highlight_cables==set(case.cables[:2])
                 node.change_core_signal(case.slot(0),'CORE-A','off');app.update()
                 assert [s.core(*case.slot(i))['signal'] for i in range(3)]==['off','off','on']
+                assert len(wf.field_incomplete_entries(s))==1 # Unallocated OFF component is excluded.
+                node.change_core_signal(case.slot(0),'CORE-A','unknown');app.update()
                 pending=code['IncompleteCoresDialog'](app,s);app.update();assert pending.field_incomplete
                 assert len(pending.entries)==2 and all(r['state']=='OK · 미완료' for r in pending.entries)
                 choice=next(str(i) for i,e in enumerate(pending.entries) if any(m['slot']==case.slot(0) for m in e['members']))

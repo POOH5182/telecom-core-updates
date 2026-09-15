@@ -119,8 +119,8 @@ def windows_ui():
                 assert (existing_field(app) or app.load_scenario('before'))
                 gis=app.scenario_path('gis').read_bytes()
                 assert app.scenario_kind()=='before'
-                app.store.update_core(left,1,('FIELD-1','현장 확인','normal','','off'))
-                app.store.update_core(right,1,('FIELD-1','현장 확인','normal','','off'))
+                app.store.update_core(left,1,('FIELD-1','현장 확인','normal','','unknown'))
+                app.store.update_core(right,1,('FIELD-1','현장 확인','normal','','unknown'))
                 app.save_current_drawing(silent=True)
                 assert app.scenario_path('gis').read_bytes()==gis
                 assert app.load_scenario('gis');assert app.store.core(left,1)['core_id'].startswith('임시-')
