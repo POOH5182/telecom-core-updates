@@ -574,3 +574,21 @@ publication of requested app changes through the existing main release workflow.
   missing endpoints must not prematurely save an invalid draft. Run the expanded
   check_after_routes.py Windows search/both-islands/button/no-route/narrow-layout
   gates, auto-allocation/after-plan regression checks, and the full release gate.
+
+- V92 manual allocation lives in planning/manual_allocation.py, bundled after
+  auto_allocation. CableDialog opens it for one selected after-stage physical
+  core. Map/grid clicks build only a draft; existing component numbers remain
+  fixed. Used, reserved and locked slots cannot be overwritten. Inspecting an
+  occupied slot shows its actual connected components without changing it.
+- Reviewed application assigns exact selected blank numbers and necessary local
+  splices, preserving RN ports, other identities and baseline drawings. Retain
+  stale/sealed proposal checks, backup, final physical validation, atomic undo
+  and route decision persistence. Popup Ctrl+Z/Y uses saved drawing history and
+  invalidates the draft. Keep source-editor input and highlight ownership safe.
+- After local assignment/waiting badges derive from completion_report's active
+  topology and endpoint degree, never historical retired splice counts. Complete
+  paths must not show assignment warnings; other incomplete components remain
+  incomplete. Retired partners cannot count as live connections. Preserve explicit
+  endpoint policy, RN internal ports and all before/field behavior. Run
+  check_manual_allocation.py and check_after_assignment.py including Windows
+  real pointer, reviewed apply, key undo, map repaint and narrow-window gates.

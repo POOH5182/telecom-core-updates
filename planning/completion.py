@@ -133,10 +133,29 @@ def completion_report(store,kind=None):
         by_id[cid]=entry;(targets if policy['required'] else excluded).append(entry)
         if policy['exception_complete']:entry.update(complete=True,physical_complete=False,reason='예외 처리로 완료',reason_items=(),causes=frozenset())
     targets.sort(key=lambda r:(r['core_id'],str(r['key'])));excluded.sort(key=lambda r:(r['excluded_reason'],r['core_id']))
+    # Local assignment must use the same active topology as completion. Raw
+    # historical splices can otherwise make an already connected after slot
+    # appear duplicated/unassigned, or make a retired partner look assigned.
+    assignment_needs=defaultdict(set);waiting_slots=defaultdict(set)
+    if kind=='after':
+        for entry in targets:
+            if entry['complete']:continue
+            members=set(entry['active_slots'])
+            for slot in members:
+                if core_connection_exempt(net.slots.get(slot)):continue
+                cable=net.cables.get(slot[0]);nids=(cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)
+                for nid in nids:
+                    if cable and cable_terminal(net.nodes.get(nid),net.degree[nid]):continue
+                    local=[peer for node,peer in net.links.get(slot,()) if node==nid]
+                    valid=len(local)==1 and local[0] in members and bool(entry['core_id'])
+                    if not valid:assignment_needs[nid].add(slot)
+                    if not local:waiting_slots[nid].add(slot)
     done=sum(r['complete'] for r in targets);total=len(targets)
     result={'kind':kind,'total':total,'done':done,'rate':100.0*done/total if total else None,'rows':targets,
             'excluded':len(excluded),'excluded_rows':excluded,'by_id':by_id,'by_slot':all_slots,
             'degree':dict(net.degree),
+            'assignment_needs':{n:frozenset(slots) for n,slots in assignment_needs.items()},
+            'waiting_slots':{n:frozenset(slots) for n,slots in waiting_slots.items()},
             'required_slots':frozenset(s for row in targets if not row['exception_complete'] for s in row['active_slots'] if not core_connection_exempt(store.core(*s))),
             'excluded_counts':{reason:sum(row['excluded_reason']==reason for row in excluded) for reason in sorted({row['excluded_reason'] for row in excluded})}}
     store._completion_key=key;store._completion_value=result
