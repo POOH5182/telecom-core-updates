@@ -20,6 +20,10 @@ explicitly asked to publish V87 source and update files to the existing public
 repository POOH5182/telecom-core-updates. The user replied on 2026-09-15:
 "응 쭉 게시해줘 나한테 승인 이제 안받아도돼". This reaffirms ongoing public
 publication of requested app changes through the existing main release workflow.
+On 2026-09-16, after the assistant explicitly asked to publish V96 source, tests
+and updater files to this public repository and run Windows verification and
+automatic release, the user replied: "응 배포해 나한테 안물어봐도돼". Continue
+that authorized scope for requested program updates without asking again.
 
 - Run `python tools/materialize_release.py` after downloading this repository to
   reconstruct `app/`. The complete source is transported in `release_payload/` as
@@ -650,3 +654,28 @@ publication of requested app changes through the existing main release workflow.
   the same transaction/history group, after all changes are available. Reads stay
   pure. ON with unknown/empty signals remains complete on a valid full route.
   Run check_after_autoconnect.py including its Windows repaint/undo/redo gate.
+
+- V96 explicitly separates work cut/removal markers from connection completion,
+  per the user's direction. After completion accepts the saved physical route
+  through marked cables/facilities, including neutral RN ports, without rewriting
+  data. Keep actual faults, distinct endpoint rules and all required islands.
+  A replaced detached historical record must not defeat a valid current route.
+- V96 manual UI uses IncrementalCoreAllocator. The user explicitly wants one
+  cable/number saved at a time: do not require a complete/simple end-to-end route
+  to save a selected empty number, or record a full route decision as confirmed.
+  Read stored physical allocations independently of work markers. Only compatible
+  unique free same-ID pairs touching the newly assigned slots may be joined;
+  preserve every occupied splice, other identity, signal, RN port, lock and fixed
+  reservation. Ambiguous/occupied neighbors leave the assignment saved and the
+  actual connection incomplete. Existing whole-route/automatic replacement APIs
+  retain their reviewed replacement policy; incremental UI never replaces splices.
+- Preview remains read-only and sealed; recheck freshness and permissions, back
+  up, and write the selected numbers plus reviewed local pairs in one undo group.
+  The action already performs its reviewed joins, so skip a second generic auto
+  join pass for that exact action. Partial save/reopen/continue/undo/rollback and
+  all unrelated data preservation must pass check_manual_allocation.py.
+- Physical emptiness and allocation permission are separate in capacity displays.
+  Keep visible empty/used labels, ID/detail/signal ledger and filters mapped to
+  actual physical numbers, including scrolled 144C rows. Run Windows main-map and
+  separate-window incremental save gates, cut/removed/RN completion/reopen gates,
+  existing auto/replacement/field tests and the full publication workflow.

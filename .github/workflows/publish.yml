@@ -47,9 +47,9 @@ jobs:
         run: python tools/check_auto_allocation.py
       - name: 도면·전체 선번 직접 선택·코어분배·검토 적용·실행취소 검증
         run: python tools/check_manual_allocation.py
-      - name: 주 도면 코어배정·케이블 클릭·144 선번·사용 경로·편집창 복귀 검증
+      - name: 주 도면 케이블별 저장·빈 번호 필터·144 선번·내역 목록·편집창 복귀 검증
         run: python tools/check_map_allocation.py
-      - name: 후도면 말단 연결·철거 접속 제외·미배정 표시·화면 갱신 검증
+      - name: 후도면 실제 접속 완료·절단 철거 표시 분리·RN·미배정 표시 검증
         run: python tools/check_after_assignment.py
       - name: 데스크톱 디자인·작은 화면 배치·상태색·입력 보존 검증
         run: python tools/check_desktop_design.py

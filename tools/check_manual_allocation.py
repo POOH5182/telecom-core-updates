@@ -50,6 +50,20 @@ class ManualTests(unittest.TestCase):
                 with self.assertRaises(ValueError):self.service.preview(chosen)
         with self.assertRaisesRegex(ValueError,'이어지지'):self.service.preview(self.service.existing)
 
+    def test_empty_capacity_is_visible_independently_of_assignment_permission(self):
+        source=self.service.capacity_row(self.ids['left'],2)
+        self.assertTrue(source['empty']);self.assertFalse(source['available']);self.assertIn('빈 코어',source['state'])
+        update(self.s,self.ids['direct'],2,dict(core_id='USED',detail='사용 중인 번호'))
+        wf.AfterPlanner(self.app).set_fixed(slots=[(self.ids['direct'],6)],reason='예약')
+        self.service.load()
+        used=self.service.capacity_row(self.ids['direct'],2)
+        self.assertFalse(used['empty']);self.assertEqual(used['state'],'사용 중')
+        reserved=self.service.capacity_row(self.ids['direct'],6)
+        self.assertTrue(reserved['empty']);self.assertFalse(reserved['available']);self.assertIn('예약',reserved['state'])
+        self.s.set_node_locked(self.ids['b'],True);self.service.load()
+        locked=self.service.capacity_row(self.ids['direct'],7)
+        self.assertTrue(locked['empty']);self.assertFalse(locked['available']);self.assertIn('잠금',locked['state'])
+
     def test_alternate_manual_route_and_exact_numbers(self):
         chosen={**self.service.existing,self.ids['detour1']:8,self.ids['detour2']:11}
         p=self.service.preview(chosen);self.service.apply(p)
@@ -110,6 +124,85 @@ class ManualTests(unittest.TestCase):
             finally:s.close()
 
 
+def clear_old_connector(app,ids):
+    # Incremental allocation preserves every existing splice. This fixture is
+    # an actual disconnected drawing, not a proposed retired-route replacement.
+    with app.store.action('Synthetic disconnected route'):
+        app.store.conn.execute('DELETE FROM splices WHERE cable1_id=? OR cable2_id=?',(ids['cut'],ids['cut']))
+        app.store.conn.execute("UPDATE cores SET core_id='',detail='',signal='unknown' WHERE cable_id=?",(ids['cut'],))
+
+
+class IncrementalTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.app=LocalApp(self.temp.name);self.s=self.app.store
+        self.nodes=[self.s.add_node('합성 '+str(n),n*180,150) for n in range(5)]
+        self.cables=[self.s.add_cable(a,b,'SEG-'+str(n),'144C' if n<2 else '36C','신설' if n in (1,2) else '기설') for n,(a,b) in enumerate(zip(self.nodes,self.nodes[1:]))]
+        self.left,self.first,self.second,self.right=self.cables
+        update(self.s,self.left,99,dict(core_id='SYNTHETIC',detail='시험 회선',signal='on'))
+        update(self.s,self.right,3,dict(core_id='SYNTHETIC',detail='시험 회선',signal='unknown'))
+        with self.s.action('작업 표시'):self.s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.right,))
+        self.s.backup_to(self.app.scenario_path('before'));self.before=self.app.scenario_path('before').read_bytes()
+        self.service=wf.IncrementalCoreAllocator(self.app,(self.left,99))
+    def tearDown(self):self.s.close();self.temp.cleanup()
+    def assign(self,cable,number):
+        self.service.load();p=self.service.preview({cable:number});self.assertFalse(p['removed'])
+        self.service.apply(p);return p
+
+    def test_one_cable_at_a_time_saves_incomplete_then_connects_marked_outer_leg(self):
+        initial=wf.plan_snapshot(self.s.conn);history=self.s.history_rows()
+        p=self.service.preview({self.first:73})
+        self.assertEqual((wf.plan_snapshot(self.s.conn),self.s.history_rows()),(initial,history))
+        self.assertEqual(len(p['added']),1);self.service.apply(p)
+        self.assertEqual(self.s.core(self.first,73)['core_id'],'SYNTHETIC')
+        self.assertFalse(wf.completion_report(self.s)['by_id']['SYNTHETIC']['complete'])
+        partial=wf.plan_snapshot(self.s.conn);self.assertEqual(self.s.core(self.second,7)['core_id'],'')
+        self.assertEqual(self.s.core(self.right,3)['signal'],'unknown')
+        # Reopening midway must retain the allocation and permit the next cable.
+        path=self.s.path;self.s.close();self.app.store=self.s=code['Store'](path)
+        self.service=wf.IncrementalCoreAllocator(self.app,(self.left,99))
+        p=self.assign(self.second,7);self.assertEqual(len(p['added']),2)
+        self.assertTrue(wf.completion_report(self.s)['by_id']['SYNTHETIC']['complete'])
+        self.assertEqual(self.app.scenario_path('before').read_bytes(),self.before)
+        self.s.undo();self.assertEqual(wf.plan_snapshot(self.s.conn),partial)
+        self.s.undo();self.assertEqual(wf.plan_snapshot(self.s.conn),initial)
+        self.s.redo();self.s.redo();self.assertEqual(wf.completion_report(self.s)['rate'],100)
+        self.assertFalse(wf.plan_settings(self.s).get('route_step',{}).get('decisions'))
+
+    def test_disconnected_cable_can_be_assigned_before_middle_connector(self):
+        p=self.assign(self.second,7);self.assertEqual(len(p['added']),1)
+        self.assertFalse(wf.completion_report(self.s)['by_id']['SYNTHETIC']['complete'])
+        self.assign(self.first,73);self.assertTrue(wf.completion_report(self.s)['by_id']['SYNTHETIC']['complete'])
+
+    def test_occupied_reserved_locked_stale_and_tampered_selection_are_rejected(self):
+        update(self.s,self.first,2,dict(core_id='OTHER'))
+        wf.AfterPlanner(self.app).set_fixed(slots=[(self.first,4)],reason='예약');self.service.load()
+        for n in (2,4):
+            with self.assertRaises(ValueError):self.service.preview({self.first:n})
+        p=self.service.preview({self.first:73});changed=copy.deepcopy(p);changed['new'][self.first,73]=('OTHER','','','','on')
+        with self.assertRaises(ValueError):self.service.apply(changed)
+        self.s.set_node_locked(self.nodes[1],True)
+        with self.assertRaises(ValueError):self.service.apply(p)
+        self.service.load()
+        with self.assertRaisesRegex(ValueError,'잠금'):self.service.preview({self.first:73})
+
+    def test_existing_splices_and_ambiguous_neighbors_are_preserved_while_assignment_saves(self):
+        other=self.s.add_cable(self.nodes[1],self.nodes[2],'OTHER-LEG','12C','기설')
+        update(self.s,other,1,dict(core_id='SYNTHETIC',signal='on'))
+        self.service.load();p=self.assign(self.first,73)
+        self.assertFalse([p for p in p['added'] if p[0]==self.nodes[1]])
+        self.assertEqual(self.s.core(self.first,73)['core_id'],'SYNTHETIC')
+        self.assertFalse(wf.completion_report(self.s)['by_id']['SYNTHETIC']['complete'])
+        self.s.connect(self.nodes[1],(self.left,99),(other,1));original=list(self.s.conn.execute('SELECT * FROM splices'))
+        self.assign(self.second,7)
+        self.assertTrue(all(tuple(r) in [tuple(x) for x in self.s.conn.execute('SELECT * FROM splices')] for r in original))
+
+    def test_failure_rolls_back_partial_metadata_history_and_connections(self):
+        original=wf.plan_snapshot(self.s.conn);history=self.s.history_rows();p=self.service.preview({self.first:73})
+        with patch.object(wf,'after_auto_apply',side_effect=ValueError('injected partial failure')):
+            with self.assertRaisesRegex(ValueError,'injected'):self.service.apply(p)
+        self.assertEqual((wf.plan_snapshot(self.s.conn),self.s.history_rows()),(original,history))
+
+
 def windows_ui():
     if sys.platform!='win32':return
     with tempfile.TemporaryDirectory() as temp:
@@ -122,7 +215,7 @@ def windows_ui():
             try:
                 # Same actual after-stage entry used by the automatic allocator.
                 app.store.conn.execute("INSERT INTO meta(key,value) VALUES('active_scenario','after') ON CONFLICT(key) DO UPDATE SET value='after'")
-                app.store.conn.commit();i=drawing(app);app.refresh();app.update()
+                app.store.conn.commit();i=drawing(app);clear_old_connector(app,i);app.refresh();app.update()
                 editor=code['open_detail_dialog'](app,app.store,'cable',i['left']);editor.focus_core(1);app.update()
                 original=wf.plan_snapshot(app.store.conn);editor.manual_allocation_button.invoke();app.update()
                 dialog=app._manual_allocation_window;assert isinstance(dialog,wf.ManualCoreAllocationDialog)
@@ -168,7 +261,7 @@ def windows_ui():
 
 
 if __name__=='__main__':
-    result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(ManualTests))
+    result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (ManualTests,IncrementalTests)))
     if not result.wasSuccessful():raise SystemExit(1)
     windows_ui()
     print('PASS manual one-core allocation, exact numbers, conflict/lock preservation, preview, backups, rollback and undo')

@@ -9,8 +9,10 @@ class ManualCoreAllocator(AfterAllocator):
     def __init__(self,app,source):
         super().__init__(app);self.source=tuple(source);self.load()
 
+    def make_route_service(self):return AfterRoutePlanner(self.app)
+
     def load(self):
-        self.current();self.route_service=AfterRoutePlanner(self.app);self.ctx=self.route_service.context()
+        self.current();self.route_service=self.make_route_service();self.ctx=self.route_service.context()
         self.net=self.ctx['net'];row=self.net.slots.get(self.source)
         if not row or not str(row.get('core_id') or '').strip():raise ValueError('배분할 코어ID가 있는 번호를 선택하세요.')
         self.core_id=str(row['core_id']).strip();self.key=json.dumps(['id',self.core_id],ensure_ascii=False,separators=(',',':'))
@@ -53,6 +55,15 @@ class ManualCoreAllocator(AfterAllocator):
         if slot in self.occupied:return False,'기존 접속 사용 중'
         if plan_used(row):return False,'기존 코어ID·내역·신호·상태 사용 중'
         return True,'빈 번호 · 클릭하여 선택'
+
+    def capacity_row(self,cable,index):
+        row=self.rows[cable,index];allowed,reason=self.availability(cable,index)
+        empty=not plan_used(row) and (cable,index) not in self.occupied
+        existing=self.existing.get(cable)==index
+        state='기존 연결' if existing else '빈 코어' if empty else '사용 중'
+        if empty and not allowed:
+            state+=' · 잠금' if '잠금' in reason else ' · 예약' if (cable,index) in self.fixed else ' · 선택 불가'
+        return dict(row,available=allowed,empty=empty,state=state,reason=reason)
 
     def ordered_route(self,selected):
         cables=set(selected);adj=defaultdict(list)
@@ -154,10 +165,69 @@ class ManualCoreAllocator(AfterAllocator):
         return backup
 
 
+class StoredAllocationRoutePlanner(AfterRoutePlanner):
+    """Display existing physical allocations, independently of work markers."""
+    def context(self):
+        ctx=super().context();net=Network(self.store.conn,resolve_rn_ports=True)
+        net.degree=defaultdict(int,completion_report(self.store,'after')['degree'])
+        ctx.update(net=net,graph=net.fingerprint,stamp=digest([ctx['stamp'],net.fingerprint]))
+        return ctx
+
+
+class IncrementalCoreAllocator(ManualCoreAllocator):
+    """Assign selected empty numbers without requiring a complete route.
+
+    Only compatible, unique, free local pairs touching newly assigned slots
+    are joined. Existing connections and route decisions are never replaced.
+    """
+    def make_route_service(self):return StoredAllocationRoutePlanner(self.app)
+
+    def preview(self,selected):
+        self.fresh();chosen={str(c):int(n) for c,n in selected.items()};new={}
+        source=self.net.slots[self.source]
+        values=tuple(self.core_id if f=='core_id' else str(source.get(f) or '') for f in PLAN_FIELDS)
+        for cable,index in chosen.items():
+            if self.existing.get(cable)==index:continue
+            allowed,reason=self.availability(cable,index)
+            if not allowed:raise ValueError(plan_number_label(self.net,(cable,index))+': '+reason)
+            new[cable,index]=values
+        if not new:raise ValueError('배정할 케이블의 빈 번호를 선택하세요.')
+        net=Network(self.store.conn,resolve_rn_ports=True)
+        for slot,metadata in new.items():
+            net.slots[slot]=dict(self.rows[slot],**dict(zip(PLAN_FIELDS,metadata)))
+            net.by_id[self.core_id].add(slot)
+        added={allocation_pair(n,a,b) for n,a,b in after_auto_pairs(self.store,net=net,touched_slots=set(new))}
+        p=dict(source=self.source,core_id=self.core_id,token=self.stamp,selected=chosen,
+               route=dict(cables=[c for c,n in new],nodes=[],endpoints=[],source='케이블별 코어배정'),
+               new=new,splices=self.pairs|added,added=added,removed=set())
+        p['seal']=self.seal(p);return p
+
+    def apply(self,proposal):
+        self.fresh()
+        if self.seal(proposal)!=proposal.get('seal'):raise ValueError('배정안이 변경되었습니다. 다시 확인하세요.')
+        p=self.preview(proposal['selected'])
+        if p['seal']!=proposal['seal']:raise ValueError('배정안이 변경되었습니다. 다시 확인하세요.')
+        backup=self.store.path.parent/'backups'/('before_core_assignment_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.sqlite3')
+        self.store.backup_to(backup)
+        expected={slot:tuple(row[f] for f in PLAN_FIELDS) for slot,row in self.rows.items()};expected.update(p['new'])
+        with self.store.action('케이블별 코어배정'):
+            for slot,metadata in p['new'].items():
+                self.store.conn.execute('UPDATE cores SET core_id=?,detail=?,status1=?,status2=?,signal=? WHERE cable_id=? AND core_index=?',metadata+slot)
+            after_auto_apply(self.store,sorted(p['added']))
+            actual=plan_snapshot(self.store.conn)
+            if {(r['cable_id'],r['core_index']):tuple(r[f] for f in PLAN_FIELDS) for r in actual['cores']}!=expected:
+                raise ValueError('코어내역 검사가 실패하여 배정을 취소했습니다.')
+            for table in ('nodes','cables','ports','core_annotations','survey_rows'):
+                if actual[table]!=self.snapshot[table]:raise ValueError('기존 정보 보존 검사가 실패하여 배정을 취소했습니다.')
+            pairs={allocation_pair(r['node_id'],(r['cable1_id'],r['core1_index']),(r['cable2_id'],r['core2_index'])) for r in actual['splices']}
+            if pairs!=p['splices']:raise ValueError('접속 검사가 실패하여 배정을 취소했습니다.')
+        return backup
+
+
 class ManualAllocationReview(RememberedToplevel):
     def __init__(self,parent,text):
         super().__init__(parent);self.result=False;self.title('수동 코어분배 · 적용 전 확인');self.geometry('880x640');self.transient(parent);self.grab_set()
-        ttk.Label(self,text='선택한 코어의 선번과 함체 접속을 아래 내용대로 적용합니다.',padding=12).pack(fill='x')
+        ttk.Label(self,text='선택한 번호에 코어를 배정합니다. 전체 연결이 미완료여도 저장할 수 있습니다.',padding=12).pack(fill='x')
         footer=ttk.Frame(self,padding=12);footer.pack(side='bottom',fill='x')
         ttk.Button(footer,text='배정·접속 적용',command=self.confirm).pack(side='right')
         ttk.Button(footer,text='돌아가기',command=self.destroy).pack(side='right',padx=8)
@@ -355,7 +425,7 @@ class ManualAllocationActions:
     def toggle_scope(self):self.scope='경로 주변' if self.scope=='전체' else '전체';self.draw_map()
 
     def review_text(self,p):
-        net=self.service.net;lines=['코어ID: '+p['core_id'],'','선택한 전체 경로']
+        net=self.service.net;lines=['코어ID: '+p['core_id'],'','이번에 배정할 케이블·번호']
         for cid in p['route']['cables']:lines.append(self.cable_title(cid)+' → '+str(p['selected'][cid])+'번'+(' (기존 유지)' if cid in self.service.existing else ' (새 배정)'))
         for title,pairs in (('추가할 함체 접속',p['added']),('철거·절단 케이블의 기존 접속 해체',p['removed'])):
             lines.extend(['',title])
@@ -363,13 +433,14 @@ class ManualAllocationActions:
             lines.extend(full.nodes[n]['name']+': '+plan_number_label(full,a)+' ↔ '+plan_number_label(full,b) for n,a,b in sorted(pairs))
             if not pairs:lines.append('없음')
         lines.extend(['','기존 코어의 선번·내역과 전도면은 유지됩니다. 적용 직전 백업하며 Ctrl+Z로 전체 배정을 취소할 수 있습니다.'])
+        if isinstance(self.service,IncrementalCoreAllocator):lines.extend(['','선택한 빈 번호의 배정만 저장합니다. 전체 경로가 아직 연결되지 않아도 적용할 수 있습니다.','같은 ID의 상대 코어가 하나로 정해지고 양쪽이 비어 있으면 함께 접속합니다. 연결 완료율은 실제 전체 접속에 따라 별도로 계산합니다.'])
         return '\n'.join(lines)
 
     def apply(self):
-        if any(c not in self.selected for c in self.columns):raise ValueError('번호를 선택하지 않은 케이블이 있습니다. 번호를 선택하거나 제목의 ×로 제외하세요.')
+        if not isinstance(self.service,IncrementalCoreAllocator) and any(c not in self.selected for c in self.columns):raise ValueError('번호를 선택하지 않은 케이블이 있습니다. 번호를 선택하거나 제목의 ×로 제외하세요.')
         proposal=self.service.preview(self.selected);review=ManualAllocationReview(self,self.review_text(proposal));self.wait_window(review)
         if not review.result:return
-        self.service.apply(proposal);self.app.refresh();self.reload();self.message.set('선택한 코어의 선번·함체 접속을 적용했습니다. Ctrl+Z로 취소하거나 다른 코어를 선택하세요.')
+        self.service.apply(proposal);self.app.refresh();self.reload();self.message.set('선택 번호 배정 저장 완료 · 다음 케이블을 눌러 이어서 배정하세요. Ctrl+Z로 취소할 수 있습니다.')
 
     def return_to_core(self):
         editor=self.editor;self.destroy()
@@ -394,7 +465,7 @@ class ManualCoreAllocationDialog(ManualAllocationActions,RememberedToplevel):
     CELL_W=220;CELL_H=54;GUTTER=48
 
     def __init__(self,app,source,editor=None):
-        service=ManualCoreAllocator(app,source)
+        service=IncrementalCoreAllocator(app,source)
         super().__init__(app);self.app=app;self.store=app.store;self.service=service;self.editor=editor
         self._closed=False;self._watch=None;self.stale=False;self.scope='전체';self.inspect_cables=set();self.inspected=None
         self.selected=dict(service.existing);self.columns=list(self.selected);self.active_cable=source[0]
@@ -436,15 +507,15 @@ class ManualCoreAllocationDialog(ManualAllocationActions,RememberedToplevel):
 
 class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
     """Keep the main map interactive while one core's explicit draft is open."""
-    GRID_H=28
+    GRID_H=48
 
     def __init__(self,app,source,editor):
-        service=ManualCoreAllocator(app,source)
+        service=IncrementalCoreAllocator(app,source)
         super().__init__(app,padding=(10,4))
         self.app=app;self.store=app.store;self.service=service;self.editor=editor
         self._closed=False;self._watch=None;self.stale=False;self.scope='전체';self.inspect_cables=set();self.inspected=None
         self.selected=dict(service.existing);self.columns=list(self.selected);self.active_cable=source[0]
-        self._size_binding=None;self._resize_job=None;self._grid_columns=12
+        self._size_binding=None;self._resize_job=None;self._grid_columns=12;self._visible_numbers=[]
         self.dashboard_visible=bool(app.dashboard_frame.place_info())
         app.cancel_left_pan();app.drag_anchor=None;app.pending_drag=None;app.selected.clear()
         app.mode='select';app.cable_start=None
@@ -453,24 +524,41 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         app.dashboard_frame.place_forget()
         toolbar=FlowToolbar(self);toolbar.pack(fill='x')
         toolbar.add(ttk.Label(toolbar,text='코어배정 중 · '+service.core_id,font=('Malgun Gothic',10,'bold')))
-        self.apply_button=toolbar.add(ttk.Button(toolbar,text='배정안 확인·적용',command=lambda:self.run(self.apply),style='Primary.TButton'))
+        self.apply_button=toolbar.add(ttk.Button(toolbar,text='선택 번호 배정·저장',command=lambda:self.run(self.apply),style='Primary.TButton'))
         toolbar.add(ttk.Button(toolbar,text='전체도면 맞춤',command=app.fit_view))
         toolbar.add(ttk.Button(toolbar,text='배정안 초기화',command=lambda:self.run(self.reload)))
         toolbar.add(ttk.Button(toolbar,text='코어 선택으로 돌아가기',command=self.close_requested))
-        self.message=tk.StringVar(value='도면 케이블 클릭 → 아래 빈 번호 클릭 → 배정안 확인·적용. 다른 사용 번호를 누르면 접속 경로를 확인합니다.')
+        self.message=tk.StringVar(value='케이블 클릭 → 빈 번호 선택 → 배정·저장. 전체 연결 전에도 케이블 하나씩 저장할 수 있습니다.')
         self.message_label=ttk.Label(self,textvariable=self.message,foreground='#1769aa',padding=(2,2))
         self.message_label.pack(fill='x')
         body=ttk.Panedwindow(self,orient='horizontal');body.pack(fill='both',expand=True)
         left=ttk.Frame(body);right=ttk.Frame(body,width=300);body.add(left,weight=3);body.add(right,weight=1)
-        self.cable_status=tk.StringVar();ttk.Label(left,textvariable=self.cable_status,font=('Malgun Gothic',9,'bold'),wraplength=650).grid(row=0,column=0,columnspan=2,sticky='ew')
-        self.sheet=tk.Canvas(left,bg='white',highlightthickness=0,width=600,height=190)
-        self.sheet.grid(row=1,column=0,sticky='nsew');left.rowconfigure(1,weight=1);left.columnconfigure(0,weight=1)
-        self.sy=ttk.Scrollbar(left,orient='vertical',command=self.sheet.yview);self.sy.grid(row=1,column=1,sticky='ns')
+        self.cable_status=tk.StringVar();ttk.Label(left,textvariable=self.cable_status,font=('Malgun Gothic',9,'bold'),wraplength=650).grid(row=0,column=0,sticky='ew')
+        self.capacity_filter=tk.StringVar(value='전체 번호')
+        self.filter_combo=ttk.Combobox(left,textvariable=self.capacity_filter,values=('전체 번호','빈 코어만','배정 가능만'),state='readonly',width=12)
+        self.filter_combo.grid(row=0,column=1,sticky='e');self.filter_combo.bind('<<ComboboxSelected>>',self.filter_capacity)
+        self.capacity_tabs=ttk.Notebook(left);self.capacity_tabs.grid(row=1,column=0,columnspan=2,sticky='nsew')
+        left.rowconfigure(1,weight=1);left.columnconfigure(0,weight=1)
+        grid=ttk.Frame(self.capacity_tabs);ledger=ttk.Frame(self.capacity_tabs)
+        self.capacity_tabs.add(grid,text='번호로 선택');self.capacity_tabs.add(ledger,text='코어ID·내역 목록')
+        self.sheet=tk.Canvas(grid,bg='white',highlightthickness=0,width=600,height=190)
+        self.sheet.grid(row=0,column=0,sticky='nsew');grid.rowconfigure(0,weight=1);grid.columnconfigure(0,weight=1)
+        self.sy=ttk.Scrollbar(grid,orient='vertical',command=self.sheet.yview);self.sy.grid(row=0,column=1,sticky='ns')
         self.sheet.configure(yscrollcommand=self.sy.set)
         self.sheet.bind('<Button-1>',self.sheet_click);self.sheet.bind('<Configure>',lambda e:self.render_sheet())
         self.sheet.bind('<MouseWheel>',lambda e:self.sheet.yview_scroll(-3 if e.delta>0 else 3,'units'))
         self.sheet.bind('<Motion>',self.hover_slot)
-        self.hover=tk.StringVar(value='흰색: 빈 번호 · 파랑: 기존 연결 · 주황: 배정안 · 회색: 사용·잠금·예약')
+        self.capacity_table=ttk.Treeview(ledger,columns=('number','state','id','detail','signal'),show='headings',selectmode='browse',height=4)
+        for name,title,width in (('number','선번',45),('state','사용 / 배정 상태',130),('id','코어ID',130),('detail','코어내역',200),('signal','신호',75)):
+            self.capacity_table.heading(name,text=title);self.capacity_table.column(name,width=width,minwidth=width,stretch=name=='detail')
+        self.capacity_table.grid(row=0,column=0,sticky='nsew');ledger.rowconfigure(0,weight=1);ledger.columnconfigure(0,weight=1)
+        ly=ttk.Scrollbar(ledger,orient='vertical',command=self.capacity_table.yview);ly.grid(row=0,column=1,sticky='ns')
+        lx=ttk.Scrollbar(ledger,orient='horizontal',command=self.capacity_table.xview);lx.grid(row=1,column=0,sticky='ew')
+        self.capacity_table.configure(yscrollcommand=ly.set,xscrollcommand=lx.set)
+        for tag,color in (('empty','#dcfce7'),('used','#f1f5f9'),('existing','#dbeafe'),('draft','#ffedd5')):self.capacity_table.tag_configure(tag,background=color)
+        self.capacity_table.bind('<ButtonRelease-1>',self.table_click)
+        self.capacity_table.bind('<Return>',self.table_click)
+        self.hover=tk.StringVar(value='초록 빈 코어 · 파랑 기존 연결 · 주황 배정안 · 회색 사용 중. 빈 칸을 누르면 배정안을 선택합니다.')
         ttk.Label(left,textvariable=self.hover,wraplength=650).grid(row=2,column=0,columnspan=2,sticky='ew')
         ttk.Label(right,text='기존 구간 · 배정안 · 양쪽 접속',padding=2).pack(fill='x')
         self.details=field_readonly_text(right,6)
@@ -486,7 +574,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
 
     def panel_height(self):
         available=self.app.canvas_frame.winfo_height()+(self.winfo_height() if self.winfo_ismapped() else 0)
-        return max(210,min(340,int(available*.43)))
+        return max(210,min(460,available-180,int(available*.62)))
 
     def resize_panel(self,event):
         if event.widget is self.app and not self._closed:
@@ -504,6 +592,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         if cid not in self.service.net.cables:raise ValueError('철거·절단 케이블은 배분할 수 없습니다.')
         if cid not in self.columns:self.columns.append(cid)
         self.active_cable=cid;self.inspected=None;self.inspect_cables=set()
+        self.capacity_filter.set('전체 번호')
         self.message.set(self.cable_title(cid)+' · 빈 번호 클릭: 배정안 선택 / 사용 번호 클릭: 실제 접속 확인')
         self.sheet.yview_moveto(0);self.render()
 
@@ -512,25 +601,47 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         self.sheet.delete('all');s=self.service;cid=self.active_cable
         if cid not in s.net.cables:return
         count=int(s.net.cables[cid]['size']);width=max(260,self.sheet.winfo_width())
-        self._grid_columns=max(8,min(24,width//32));cell=width/self._grid_columns
-        height=math.ceil(count/self._grid_columns)*self.GRID_H
+        self._grid_columns=max(2,min(12,width//94));cell=width/self._grid_columns
+        rows=[s.capacity_row(cid,index) for index in range(1,count+1)]
+        shown=[row for row in rows if self.capacity_filter.get()=='전체 번호' or (row['empty'] if self.capacity_filter.get()=='빈 코어만' else row['available'])]
+        self._visible_numbers=[r['core_index'] for r in shown]
+        height=math.ceil(len(shown)/self._grid_columns)*self.GRID_H
         self.sheet.configure(scrollregion=(0,0,width,height))
-        empty=allowed_count=0
-        for index in range(1,count+1):
-            row=s.rows[cid,index];allowed,reason=s.availability(cid,index)
-            empty+=not plan_used(row) and (cid,index) not in s.occupied;allowed_count+=allowed
+        old_scroll=self.capacity_table.yview();old_selected=self.capacity_table.selection()
+        self.capacity_table.delete(*self.capacity_table.get_children())
+        for position,row in enumerate(shown):
+            index=row['core_index'];allowed=row['available'];reason=row['reason']
             chosen=self.selected.get(cid)==index;existing=s.existing.get(cid)==index
-            fill='#dbeafe' if existing else '#ffedd5' if chosen else 'white' if allowed else '#e5e7eb'
-            x=((index-1)%self._grid_columns)*cell;y=((index-1)//self._grid_columns)*self.GRID_H
+            tag='existing' if existing else 'draft' if chosen else 'empty' if row['empty'] else 'used'
+            fill={'existing':'#dbeafe','draft':'#ffedd5','empty':'#dcfce7','used':'#f1f5f9'}[tag]
+            label='배정안' if chosen and not existing else row['state']
+            subtitle=str(row['core_id'] or ('클릭하여 배정' if allowed else reason)).replace('\n',' ')
+            x=(position%self._grid_columns)*cell;y=(position//self._grid_columns)*self.GRID_H
             self.sheet.create_rectangle(x+1,y+1,x+cell-1,y+self.GRID_H-1,fill=fill,outline='#f97316' if chosen and not existing else '#94a3b8',width=2 if chosen else 1,tags=('number:'+str(index),))
-            self.sheet.create_text(x+cell/2,y+self.GRID_H/2,text=str(index),fill='#1e3a8a' if existing else '#172033',tags=('number:'+str(index),))
-        self.cable_status.set(self.cable_title(cid)+f' · 전체 {count} / 빈 {empty} / 선택 가능 {allowed_count}')
+            self.sheet.create_text(x+5,y+12,anchor='w',text=f'{index}번 {label.split(" · ")[0]}',font=('Malgun Gothic',9,'bold'),fill='#166534' if row['empty'] and not chosen else '#172033',tags=('number:'+str(index),'state:'+str(index)))
+            limit=max(7,int((cell-12)/8));short=subtitle if len(subtitle)<=limit else subtitle[:limit-1]+'…'
+            self.sheet.create_text(x+5,y+34,anchor='w',text=short,font=('Malgun Gothic',8),fill='#475569',tags=('number:'+str(index),))
+            signal={'on':'ON','off':'OFF','unknown':'확인필요','':'확인필요'}.get(row['signal'],row['signal'])
+            self.capacity_table.insert('','end',iid=str(index),values=(index,label,row['core_id'],row['detail'],signal),tags=(tag,))
+        if old_selected and self.capacity_table.exists(old_selected[0]):self.capacity_table.selection_set(old_selected[0])
+        if old_scroll:self.capacity_table.yview_moveto(old_scroll[0])
+        if not shown:self.sheet.create_text(12,20,anchor='w',text='표시할 번호가 없습니다. 전체 번호에서 기존 선번·잠금·예약을 확인하세요.',fill='#475569')
+        empty=sum(row['empty'] for row in rows);allowed_count=sum(row['available'] for row in rows)
+        self.cable_status.set(self.cable_title(cid)+f'\n전체 {count} / 빈 {empty} / 사용 {count-empty} / 배정 가능 {allowed_count}')
+
+    def filter_capacity(self,event=None):
+        self.sheet.yview_moveto(0);self.capacity_table.yview_moveto(0);self.render_sheet()
+
+    def table_click(self,event):
+        item=self.capacity_table.identify_row(event.y) if getattr(event,'keysym',None)!='Return' else next(iter(self.capacity_table.selection()),'')
+        if item:self.run(lambda:self.choose_slot(self.active_cable,int(item)))
+        return 'break'
 
     def pointer_number(self,event):
         x=self.sheet.canvasx(event.x);y=self.sheet.canvasy(event.y);width=max(260,self.sheet.winfo_width())
         if x<0 or x>=width or y<0:return None
-        index=int(y//self.GRID_H)*self._grid_columns+int(x/(width/self._grid_columns))+1
-        if index<=int(self.service.net.cables[self.active_cable]['size']):return index
+        position=int(y//self.GRID_H)*self._grid_columns+int(x/(width/self._grid_columns))
+        if position<len(self._visible_numbers):return self._visible_numbers[position]
 
     def sheet_click(self,event):
         index=self.pointer_number(event)
@@ -559,7 +670,9 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         review=ManualAllocationReview(self.app,self.review_text(proposal));self.wait_window(review)
         if not review.result:return
         self.service.apply(proposal);self.app.refresh();self.reload()
-        self.message.set('선번과 함체 접속 적용 완료 · Ctrl+Z로 취소 가능 · 코어 선택으로 돌아가 다음 코어를 배정하세요.')
+        report=completion_report(self.store,'after');entry=report['by_id'].get(self.service.core_id,{})
+        status='전체 연결 완료' if entry.get('complete') else '전체 연결 미완료'
+        self.message.set('선택 번호 배정 저장 완료 · '+status+' · 다음 케이블을 클릭해 이어서 배정하세요. Ctrl+Z로 취소 가능합니다.')
 
     def close_requested(self):
         if self.selected!=self.service.existing and not messagebox.askyesno('배정안 취소','아직 적용하지 않은 선번 선택을 취소하고 코어 선택으로 돌아갈까요?',parent=self.app):return False

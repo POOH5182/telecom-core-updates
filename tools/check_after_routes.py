@@ -45,7 +45,8 @@ class RouteTests(unittest.TestCase):
         self.assertEqual((self.physical(),self.before(),self.s.history_rows(),wf.plan_settings(self.s)),(original,before,history,state))
         self.service.save(p,route,'ok');self.assertTrue(self.service.summary()['ready'])
         self.assertEqual((self.physical(),self.before()),(original,before))
-        self.assertFalse(wf.completion_report(self.s,'after')['by_id']['CORE-1']['complete'])
+        # A work cut marker does not disconnect the retained actual splices.
+        self.assertTrue(wf.completion_report(self.s,'after')['by_id']['CORE-1']['complete'])
         self.assertEqual(self.s.core(self.ids['direct'],1)['core_id'],'')
 
     def test_nok_manual_detour_draft_reopen_undo_and_cloud(self):

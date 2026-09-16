@@ -3,9 +3,10 @@
 AFTER_AUTO_POLICY='after_same_id_v95'
 
 
-def after_auto_pairs(store,node_ids=None):
+def after_auto_pairs(store,node_ids=None,net=None,touched_slots=None):
     if completion_kind(store)!='after' or locked(store):return []
-    net=Network(store.conn,active_only=True);groups=defaultdict(lambda:defaultdict(list));occupied=set()
+    if net is None:net=Network(store.conn,active_only=True)
+    groups=defaultdict(lambda:defaultdict(list));occupied=set()
     for sp in net.splices:
         for side in (1,2):occupied.add((sp['node_id'],(sp[f'cable{side}_id'],int(sp[f'core{side}_index']))))
     for slot,row in net.slots.items():
@@ -37,6 +38,7 @@ def after_auto_pairs(store,node_ids=None):
         if node.get('type') not in ('hamche','rn') or terminal_marked(node) or node_locked(store,nid):continue
         excluded=set(json.loads(node.get('extra_json') or '{}').get('autoSameNumberExcluded') or ())
         for cid,slots in sorted(identities.items()):
+            if touched_slots is not None and not touched_slots.intersection(slots):continue
             if len(slots)!=2:continue
             labels=json.loads(net.annotations.get(cid,{}).get('labels','[]'))
             if any(STATUS_CODES.get(label,label) in ('cancel','broken','error','exception') for label in labels):continue
@@ -83,6 +85,7 @@ def after_auto_activate(store):
 
 def after_auto_changed(store):
     """Run after the outer edit, inside its transaction and undo group."""
+    if getattr(store,'_history_label','')=='케이블별 코어배정':return # Exact local pairs were already reviewed and applied.
     if completion_kind(store)!='after' or not store.conn.execute('SELECT 1 FROM meta WHERE key=?',(AFTER_AUTO_POLICY,)).fetchone():return
     nodes=set()
     fields={'cores':('core_id','detail','status1','status2','signal'),

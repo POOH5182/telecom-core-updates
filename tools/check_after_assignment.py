@@ -46,9 +46,13 @@ class AfterAssignmentTests(unittest.TestCase):
         self.assertEqual(s.node_assignment_needs(e),{pending:{2}})
         self.assertTrue(s.incomplete_core_groups()) # An unfinished island still prevents whole-ID completion.
 
-    def test_retired_partner_is_not_a_valid_assignment_and_transit_end_is_preserved(self):
+    def test_work_marker_keeps_saved_connection_and_real_disconnect_preserves_transit_end(self):
         self.connect()
         with self.s.action('오른쪽 철거'):self.s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.right,))
+        self.assertTrue(wf.completion_report(self.s)['by_id']['CORE']['complete'])
+        self.assertEqual((self.badge(self.left),self.badge(self.right)),(0,0))
+        self.assertEqual(self.s.node_assignment_needs(self.h),{})
+        self.s.disconnect(self.h,self.left,1)
         self.assertEqual(self.badge(self.left),1);self.assertEqual(self.badge(self.right),0)
         self.assertEqual(self.s.node_assignment_needs(self.h),{self.left:{1}})
         self.assertEqual(self.s.node_warning_summary()[self.h]['count'],1)
@@ -61,6 +65,52 @@ class AfterAssignmentTests(unittest.TestCase):
         s.undo();self.assertEqual(self.badge(self.left),0);s.redo();self.assertEqual(self.badge(self.left),1)
         s.undo();path=s.path;s.close();self.s=code['Store'](path)
         self.assertEqual(self.badge(self.left),0);self.assertFalse(self.s.node_assignment_needs(self.h))
+
+    def test_long_renumbered_route_cut_cable_removed_terminal_and_unknown_signal(self):
+        s=self.s
+        nodes=[self.h]+[s.add_node('신설 함체 '+str(n),450+n*180,300) for n in range(1,4)]+[self.b]
+        with s.action('합성 경로 재구성'):
+            s.conn.execute('DELETE FROM cores WHERE cable_id=?',(self.right,))
+            s.conn.execute('DELETE FROM cables WHERE id=?',(self.right,))
+            s.conn.execute("UPDATE cores SET core_id='',signal='unknown' WHERE cable_id=? AND core_index=1",(self.left,))
+            s.conn.execute("UPDATE cores SET core_id='CORE',signal='on',detail='시험 회선' WHERE cable_id=? AND core_index=2",(self.left,))
+        slots=[(self.left,2)]
+        for index,(a,b) in enumerate(zip(nodes,nodes[1:])):
+            cable=s.add_cable(a,b,'SYNTH-'+str(index),'72C' if index==3 else '144C','기설' if index==3 else '신설')
+            update(s,cable,63,dict(core_id='CORE',detail='시험 회선',signal='unknown'))
+            s.connect(a,slots[-1],(cable,63));slots.append((cable,63))
+        with s.action('작업 표시와 번호별 신호'):
+            s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(slots[-1][0],))
+            s.conn.execute("UPDATE nodes SET status='철거' WHERE id=?",(self.b,))
+            for cable,number in slots[1:]:s.conn.execute("UPDATE cores SET signal='unknown' WHERE cable_id=? AND core_index=?",(cable,number))
+        snapshot=wf.plan_snapshot(s.conn);history=s.history_rows()
+        report=wf.completion_report(s)
+        self.assertEqual((report['done'],report['total'],report['rate']),(1,1,100.0))
+        self.assertEqual(set(report['by_id']['CORE']['active_slots']),set(slots))
+        for slot in slots:self.assertEqual(wf.core_completion_brief(s,slot),('연결완료',''))
+        self.assertIn('실제 접속 완료',wf.core_completion_locations(s,slots[0]))
+        self.assertFalse(s.incomplete_core_groups());self.assertFalse(report['assignment_needs'])
+        self.assertEqual((wf.plan_snapshot(s.conn),s.history_rows()),(snapshot,history))
+        s.disconnect(nodes[-2],*slots[-1]);self.assertEqual(wf.completion_report(s)['done'],0)
+        s.undo();self.assertEqual(wf.completion_report(s)['done'],1)
+        s.redo();self.assertEqual(wf.completion_report(s)['done'],0);s.undo()
+        path=s.path;s.close();self.s=code['Store'](path)
+        self.assertEqual(wf.completion_report(self.s)['rate'],100.0)
+
+    def test_entire_work_marked_path_and_neutral_rn_port_count_once(self):
+        s=self.s;self.connect()
+        with s.action('RN 변환'):s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(self.a,))
+        s.ensure_ports(self.a,{'mp':1,'sp':0,'p':1});port=('PORT:'+self.a,1)
+        s.connect(self.a,(self.left,1),port)
+        with s.action('전체 작업 표시'):
+            s.conn.execute("UPDATE cables SET status='절단'")
+            s.conn.execute("UPDATE nodes SET status='철거' WHERE id IN (?,?)",(self.a,self.b))
+        for identity in ('','임시-시험'):
+            with s.action('중립 ON 포트'):s.conn.execute("UPDATE ports SET core_id=?,signal='on' WHERE node_id=? AND port_index=1",(identity,self.a))
+            report=wf.completion_report(s)
+            self.assertEqual((report['done'],report['total']),(1,1),report['rows'])
+            self.assertIs(report['by_slot'][port],report['by_id']['CORE'])
+        s.disconnect(self.a,*port);self.assertFalse(wf.completion_report(s)['by_id']['CORE']['complete'])
 
     def test_explicit_terminal_and_rn_port_keep_distinct_completion_rules(self):
         s=self.s;self.connect();tail=s.add_node('곁가지',1050,300);s.add_cable(self.b,tail,'BRANCH','12C','기설')
@@ -105,7 +155,7 @@ class AfterAssignmentTests(unittest.TestCase):
         path=s.path;s.close();self.s=code['Store'](path)
         self.assertTrue(wf.completion_report(self.s)['by_id']['CORE']['complete'])
 
-    def test_after_rn_conflict_retired_or_duplicate_splice_stays_incomplete(self):
+    def test_after_rn_work_marker_is_separate_from_conflicts_and_duplicate_splices(self):
         s=self.s;self.connect()
         with s.action('RN 변환'):s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(self.a,))
         s.ensure_ports(self.a,{'mp':1,'sp':0,'p':1});port=('PORT:'+self.a,1)
@@ -117,7 +167,9 @@ class AfterAssignmentTests(unittest.TestCase):
                 s.undo()
         with s.action('빈 포트'):s.conn.execute("UPDATE ports SET core_id='' WHERE node_id=? AND port_index=1",(self.a,))
         with s.action('철거'):s.conn.execute("UPDATE cables SET status='철거' WHERE id=?",(self.left,))
-        self.assertFalse(wf.completion_report(s)['by_id']['CORE']['complete']);s.undo()
+        report=wf.completion_report(s)
+        self.assertTrue(report['by_id']['CORE']['complete']);self.assertEqual(report['total'],1)
+        self.assertIs(report['by_slot'][port],report['by_id']['CORE']);s.undo()
         with s.action('잘못된 중복 접속'):
             s.conn.execute('INSERT INTO splices(node_id,cable1_id,core1_index,cable2_id,core2_index) VALUES(?,?,?,?,?)',(self.a,port[0],port[1],self.left,1))
         self.assertFalse(wf.completion_report(s)['by_id']['CORE']['complete']);s.undo()
@@ -150,6 +202,15 @@ def windows_ui():
                 app.refresh();app.update();assert '미배정코어' not in texts() and '미완료코어' not in texts(),texts()
                 dialog=code['CableDialog'](app,s,left);dialog.tree.selection_set('1');app.update()
                 assert dialog.completion_reason.get()=='연결완료',dialog.completion_reason.get()
+                with s.action('완료 경로 작업 표시'):
+                    s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(right,))
+                    s.conn.execute("UPDATE nodes SET status='철거' WHERE id=?",(b,))
+                app.refresh();app.update()
+                assert wf.completion_report(s)['rate']==100 and dialog.completion_reason.get()=='연결완료'
+                assert '미완료코어' not in texts() and '미배정코어' not in texts(),texts()
+                with patch.object(code['messagebox'],'showinfo') as detail:
+                    dialog.completion_details_button.invoke();app.update()
+                    assert detail.called and '실제 접속 완료' in detail.call_args.args[1]
                 dialog.destroy()
                 assert not errors,errors
             finally:app.on_close()

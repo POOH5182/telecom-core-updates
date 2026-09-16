@@ -64,6 +64,24 @@ def completion_causes(notes):
     return frozenset(result)
 
 
+def stored_completion_route(net,core_id,seeds,options):
+    """Follow saved splices through work-marked cables/facilities as well.
+
+    Detached retired records from a replaced route are historical capacity,
+    not a new obligation. Every current required island remains a seed.
+    """
+    whole=net.by_id.get(core_id,set());members=set();stack=list(set(seeds)&whole or whole)
+    while stack:
+        slot=stack.pop()
+        if slot in members:continue
+        members.add(slot);stack.extend(peer for _,peer in net.links.get(slot,()) if peer in whole and peer not in members)
+    try:
+        net.by_id[core_id]=members
+        route=net.inspect(core_id,{**options,'reject_removed':False})
+    finally:net.by_id[core_id]=whole
+    return dict(slots=sorted(members),**route)
+
+
 def completion_report(store,kind=None):
     if field_slot_mode(store,kind):return field_slot_completion(store)
     kind=kind or completion_kind(store);key=(kind,store.data_revision(),store.conn.total_changes)
@@ -72,23 +90,27 @@ def completion_report(store,kind=None):
     # Keep known transit enclosures after retired segments are removed from paths.
     # A changed endpoint can be explicitly marked terminal by the user.
     net.degree=defaultdict(int);neighbors=defaultdict(set)
-    for source in store.cables():
+    source_cables=list(store.cables())
+    for source in source_cables:
         cable=dict(source)
         if str(cable.get('spec') or '').strip()=='드랍':continue
         a,b=cable['n1id'],cable['n2id'];neighbors[a].add(b);neighbors[b].add(a)
         if cable['id'] in net.cables:
             for nid in (a,b):net.degree[nid]+=1
     for nid,others in neighbors.items():net.degree[nid]=max(net.degree[nid],len(others))
+    stored_net=Network(store.conn,resolve_rn_ports=True) if kind=='after' and len(source_cables)!=len(net.cables) else None
+    if stored_net is not None:stored_net.degree=net.degree.copy()
+    port_identities={**(stored_net.rn_port_identities if stored_net else {}),**net.rn_port_identities}
     grouped={}
     for row in store.all_core_rows():
         slot=(row['cable_id'],int(row['core_index']))
-        if slot in net.rn_port_identities:row=dict(row,core_id=net.rn_port_identities[slot])
+        if slot in port_identities:row=dict(row,core_id=port_identities[slot])
         cid=str(row.get('core_id') or '').strip();slot=(row['cable_id'],int(row['core_index']))
         group_key=('id',cid) if cid else ('slot',slot)
         # Unused capacity must not flood the excluded list.
         if not cid and not completion_policy([row],kind)['required']:continue
         grouped.setdefault(group_key,[]).append(row)
-    targets=[];excluded=[];all_slots={};by_id={}
+    targets=[];excluded=[];all_slots={};by_id={};route_by_slot={}
     audit=field_slot_audit(store);exempt_components=audit['exempt_component_slots']
     options={**DEFAULTS,'reject_temporary':False,'check_details':False,'reject_removed':kind=='after'}
     for group_key,rows in grouped.items():
@@ -110,9 +132,22 @@ def completion_report(store,kind=None):
             excluded.append(entry)
         else:
             route=net.inspect(cid,options) if cid else {'complete':False,'notes':['코어ID 없음: 신호·해지예상 코어의 ID를 배정하고 경로를 연결하세요.']}
+            if kind=='after' and cid and not route['complete']:
+                if stored_net is None:
+                    stored_net=Network(store.conn,resolve_rn_ports=True);stored_net.degree=net.degree.copy()
+                saved=stored_completion_route(stored_net,cid,active_slots,options)
+                route=saved
+                if saved['complete']:
+                    route=saved;active_slots=saved['slots'];entry['slots']=entry['active_slots']=active_slots
+                    entry['connection_basis']='저장된 실제 접속 · 절단·철거 작업표시와 별도'
+                    # Neutral RN ports belong to the physically connected core,
+                    # including ports reached through a work-marked cable.
+                    for slot in active_slots:all_slots[slot]=entry
             notes=route['notes']
-            if cid and not active_slots:notes=['후도면에서 코어ID를 찾지 못함: 철거·절단 구간을 제외한 유효 경로가 필요합니다.'] if kind=='after' else ['연결할 코어 경로가 없습니다.']
+            if cid and not active_slots and not notes:notes=['연결할 코어 경로가 없습니다.']
             entry.update(complete=bool(route['complete'] and active_slots),reason=' / '.join(notes),reason_items=tuple(notes),causes=completion_causes(notes))
+            if kind=='after':
+                for slot in active_slots:route_by_slot[slot]=route
             if kind=='before':
                 holds=list(dict.fromkeys(note for s in slots for note in audit['by_slot'].get(s,{}).get('holds',())))
                 if holds:
@@ -156,7 +191,8 @@ def completion_report(store,kind=None):
     result={'kind':kind,'total':total,'done':done,'rate':100.0*done/total if total else None,'rows':targets,
             'excluded':len(excluded),'excluded_rows':excluded,'by_id':by_id,'by_slot':all_slots,
             'degree':dict(net.degree),
-            'rn_port_identities':dict(net.rn_port_identities),
+            'route_by_slot':route_by_slot,
+            'rn_port_identities':{**(stored_net.rn_port_identities if stored_net else {}),**net.rn_port_identities},
             'assignment_needs':{n:frozenset(slots) for n,slots in assignment_needs.items()},
             'waiting_slots':{n:frozenset(slots) for n,slots in waiting_slots.items()},
             'required_slots':frozenset(s for row in targets if not row['exception_complete'] for s in row['active_slots'] if not core_connection_exempt(store.core(*s))),
@@ -184,7 +220,7 @@ def core_completion_brief(store,slot):
         if not entry:return ('집계 제외',exempt) if exempt else ('미사용 코어','')
         temporary=not entry['real_ids']
     else:
-        entry=completion_report(store)['by_slot'].get(slot)
+        report=completion_report(store);entry=report['by_slot'].get(slot)
         if not entry:return ('집계 제외',exempt) if exempt else ('미사용 코어','')
         temporary=entry['temporary']
         if exempt:
@@ -207,6 +243,20 @@ def core_completion_brief(store,slot):
     if any(s.startswith('함체 NOT OK:') for s in holds):reasons.append('함체 NOT OK')
     if any(not s.startswith('함체 NOT OK:') for s in holds) or 'field' in causes:reasons.append('현장 선번 확인 필요')
     return '연결 오류' if not entry['required'] and (entry.get('error') or entry.get('holds')) else '미완료',' · '.join(reasons) or '연결 상태 확인 필요'
+
+
+def core_completion_locations(store,slot):
+    """Exact saved-state reason and endpoints for the selected physical route."""
+    slot=tuple(slot);report=completion_report(store);entry=report['by_slot'].get(slot,{})
+    route=report.get('route_by_slot',{}).get(slot)
+    if route:
+        notes=route['notes']
+        if route['complete']:
+            text=' ↔ '.join(route.get('end_names',()))+' · 실제 접속 완료'
+            if entry.get('connection_basis'):text+='\n'+entry['connection_basis']
+            return text
+    else:notes=entry.get('reason_items',())
+    return '\n'.join(notes) or entry.get('reason','') or '선택한 번호에 확인할 연결 오류가 없습니다.'
 
 
 def completed_temporary_slots(store):

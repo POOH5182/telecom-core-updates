@@ -102,12 +102,13 @@ class CompletionTests(unittest.TestCase):
         s.close();self.store=code['Store'](self.path);self.assertEqual((self.report()['total'],self.report()['done']),(1,1))
         self.stage('after');self.assertEqual((self.report()['total'],self.report()['done']),(1,1))
 
-    def test_after_uses_active_routes_and_does_not_complete_retired_only_core(self):
+    def test_after_work_markers_preserve_connections_and_new_route_can_replace_old(self):
         self.core(1,'LIVE');self.connect(1);self.stage('after');self.assertEqual(self.report()['rate'],100)
         self.store.conn.execute("UPDATE cables SET status='철거' WHERE id=?",(self.right,));self.store.conn.commit()
-        report=self.report();self.assertEqual(report['total'],1);self.assertEqual(report['done'],0)
+        report=self.report();self.assertEqual(report['total'],1);self.assertEqual(report['done'],1)
         # A new valid route of the same ID replaces the retired section.
         cable=self.store.add_cable(self.h,self.b,'NEW','12C','신설');self.store.disconnect(self.h,self.left,1)
+        self.assertEqual(self.report()['done'],0)
         self.store.connect(self.h,(self.left,1),(cable,1));self.assertEqual(self.report()['rate'],100)
 
     def test_excluded_temporary_does_not_block_before_handoff_but_bad_input_does(self):

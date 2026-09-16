@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from check_after_plan import code,wf,update
 from check_after_routes import drawing
+from check_manual_allocation import clear_old_connector
 
 
 def windows_ui():
@@ -22,7 +23,7 @@ def windows_ui():
         try:
             app.geometry('1450x950+0+0');s=app.store
             s.conn.execute("INSERT INTO meta VALUES('active_scenario','after') ON CONFLICT(key) DO UPDATE SET value='after'");s.conn.commit()
-            i=drawing(app)
+            i=drawing(app);clear_old_connector(app,i)
             # A 144-core cable makes compact capacity visible; a used number is inspect-only.
             with s.action('Synthetic 144C'):
                 s.conn.execute("UPDATE cables SET size=144,spec='144C' WHERE id=?",(i['direct'],))
@@ -65,6 +66,8 @@ def windows_ui():
 
             def click_number(number):
                 box=panel.sheet.bbox('number:'+str(number));assert box
+                region=list(map(float,panel.sheet.cget('scrollregion').split()))
+                panel.sheet.yview_moveto(max(0,box[1])/max(1,region[3]));app.update()
                 x=(box[0]+box[2])/2;y=(box[1]+box[3])/2
                 panel.sheet.event_generate('<Button-1>',x=int(x-panel.sheet.canvasx(0)),y=int(y-panel.sheet.canvasy(0)));app.update()
 
@@ -72,10 +75,28 @@ def windows_ui():
             assert panel.active_cable==i['direct'] and i['direct'] not in panel.selected
             assert '전체 144' in panel.cable_status.get()
             assert all(panel.sheet.find_withtag('number:'+str(n)) for n in range(1,145))
+            assert '빈 코어' in panel.sheet.itemcget(panel.sheet.find_withtag('state:144')[0],'text')
+            assert '사용 중' in panel.sheet.itemcget(panel.sheet.find_withtag('state:2')[0],'text')
+            assert panel.capacity_table.item('2','values')[2:4]==('OCCUPIED','다른 회선')
             click_number(2)
             assert i['direct'] not in panel.selected and i['detour1'] in panel.inspect_cables
             assert '다른 회선' in panel.details.get('1.0','end')
             assert wf.plan_snapshot(s.conn)==original and s.history_rows()==history
+            # Filtering must preserve physical numbers, even on the last row.
+            panel.capacity_filter.set('빈 코어만');panel.filter_combo.event_generate('<<ComboboxSelected>>');app.update()
+            assert not panel.sheet.find_withtag('number:2') and not panel.capacity_table.exists('2')
+            click_number(144);assert panel.selected[i['direct']]==144
+            click_number(144);assert i['direct'] not in panel.selected
+            panel.capacity_filter.set('전체 번호');panel.filter_capacity();app.update()
+            panel.capacity_tabs.select(1);app.update();panel.capacity_table.see('2');app.update()
+            x,y,w,h=panel.capacity_table.bbox('2')
+            panel.capacity_table.event_generate('<Button-1>',x=x+20,y=y+h//2)
+            panel.capacity_table.event_generate('<ButtonRelease-1>',x=x+20,y=y+h//2);app.update()
+            assert i['direct'] not in panel.selected and i['detour1'] in panel.inspect_cables
+            panel.capacity_table.selection_set('7');panel.capacity_table.focus_force()
+            panel.capacity_table.event_generate('<Return>');app.update();assert panel.selected[i['direct']]==7
+            panel.capacity_table.event_generate('<Return>');app.update();assert i['direct'] not in panel.selected
+            panel.capacity_tabs.select(0);app.update()
             click_number(7)
             assert panel.selected[i['direct']]==7
             assert '7번' in app.highlight_core_labels[i['direct']]
@@ -98,6 +119,19 @@ def windows_ui():
             assert wf.plan_snapshot(s.conn)==original and panel.stale
             assert str(panel.apply_button['state'])=='disabled'
             panel.reload();app.update();click_cable(i['direct'])
+            # Save just the first cable of a two-cable gap, then continue in the
+            # same panel. Incomplete end-to-end topology must not block saving.
+            click_cable(i['detour1']);click_number(8)
+            app.after(100,lambda:answer(True));panel.apply_button.invoke();app.update()
+            assert s.core(i['detour1'],8)['core_id']=='CORE-1'
+            assert not wf.completion_report(s)['by_id']['CORE-1']['complete']
+            assert '배정 저장 완료' in panel.message.get() and '미완료' in panel.message.get()
+            click_cable(i['detour2']);click_number(11)
+            app.after(100,lambda:answer(True));panel.apply_button.invoke();app.update()
+            assert s.core(i['detour2'],11)['core_id']=='CORE-1'
+            assert wf.completion_report(s)['by_id']['CORE-1']['complete']
+            app.undo();app.undo();app.update();panel.reload();app.update();click_cable(i['direct'])
+            assert wf.plan_snapshot(s.conn)==original
             # Compact windows retain the map, capacity grid and all actions.
             app.geometry('1000x700');app.update();panel.apply_button.master.reflow();app.update()
             assert app.canvas.winfo_height()>150 and panel.sheet.winfo_height()>65
