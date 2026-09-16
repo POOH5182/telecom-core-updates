@@ -85,6 +85,34 @@ def merge_connected_temporary_ids(store,a,b):
     return ' · 임시코어'+target[3:]+'으로 통합 ('+str(changed)+'곳)' if changed else ''
 
 
+def reconnect_selected(store,node_id,a,b,temporary=False):
+    """Explicit enclosure selection replaces only touching local splices."""
+    a,b=tuple(a),tuple(b)
+    if a[0]==b[0]:raise ValueError('서로 다른 케이블 또는 RN 내부 포트를 선택하세요.')
+    for slot in (a,b):
+        cable=store.cable(slot[0]) if not slot[0].startswith('PORT:') else None
+        belongs=slot[0]=='PORT:'+node_id if slot[0].startswith('PORT:') else bool(cable and node_id in (cable['n1id'],cable['n2id']))
+        if not store.core(*slot) or not belongs:raise ValueError('선택한 함체의 케이블·코어번호가 아닙니다.')
+    if locked(store) or node_locked(store,node_id):raise ValueError('잠긴 함체의 접속은 변경할 수 없습니다.')
+    chosen={a,b};removed=[];displaced=set()
+    for row in store.conn.execute('SELECT * FROM splices WHERE node_id=?',(node_id,)):
+        pair={(row['cable1_id'],row['core1_index']),(row['cable2_id'],row['core2_index'])}
+        if pair!=chosen and pair&chosen:removed.append(dict(row));displaced.update(pair-chosen)
+    for owner,index in chosen|displaced:
+        if (owner.startswith('PORT:') and node_locked(store,owner[5:])) or (not owner.startswith('PORT:') and cable_locked(store,owner)):
+            raise ValueError('접속을 변경할 케이블 또는 기존 연결 상대가 잠겨 있습니다.')
+    if not removed:return store.connect(node_id,a,b,temporary)
+    store.backup_to(store.path.parent/'backup'/('before_reconnect_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.sqlite3'))
+    with store.action('선택 코어 접속 변경'):
+        for row in removed:
+            store.conn.execute('DELETE FROM splices WHERE node_id=? AND cable1_id=? AND core1_index=? AND cable2_id=? AND core2_index=?',
+                tuple(row[k] for k in ('node_id','cable1_id','core1_index','cable2_id','core2_index')))
+        if displaced:store.set_auto_splice_exclusions(node_id,displaced,True)
+        message=store.connect(node_id,a,b,temporary)
+    old=' / '.join(store._slot_title(row['cable1_id'],row['core1_index'])+' ↔ '+store._slot_title(row['cable2_id'],row['core2_index']) for row in removed)
+    return message+' · 이 함체의 이전 접속 해제: '+old
+
+
 def field_slot_connect(store,node_id,a,b):
     a,b=tuple(a),tuple(b)
     if a==b or a[0]==b[0]:raise ValueError('서로 다른 케이블 또는 RN 내부 포트를 선택하세요.')

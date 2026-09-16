@@ -322,7 +322,11 @@ def core_completion_locations(store,slot):
             if entry.get('connection_basis'):text+='\n'+entry['connection_basis']
             return text
     else:notes=entry.get('reason_items',())
-    return '\n'.join(notes) or entry.get('reason','') or '선택한 번호에 확인할 연결 오류가 없습니다.'
+    notes=list(notes)
+    cid=str((store.core(*slot) or {}).get('core_id') or '').strip()
+    if completion_kind(store)=='after':
+        notes.extend(item['reason'] for item in after_auto_diagnostics(store) if cid and item['core_id']==cid)
+    return '\n'.join(dict.fromkeys(notes)) or entry.get('reason','') or '선택한 번호에 확인할 연결 오류가 없습니다.'
 
 
 def completed_temporary_slots(store):

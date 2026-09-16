@@ -58,7 +58,10 @@ def core_connection_highlight(store,slots):
                 core_id=str(row.get('core_id') or ''),off=core_signal_off(row),occupied=occupied,
                 ids=set(comp['real_ids']),signals=set(comp['signals']),fault=bool(faults or comp['holds']),
                 text=f'구간 {number} · {owner} / {position} · '+(str(row.get('core_id') or '') or 'ID 없음')))
-    boundaries=[]
+    boundaries=[];blocked=defaultdict(list)
+    if completion_kind(store)=='after':
+        for item in after_auto_diagnostics(store):
+            if item['core_id'] in identities:blocked[item['node_id']].append(item['reason'])
     for nid,ends in sorted(free.items(),key=lambda v:(net.nodes.get(v[0],{}).get('name',''),v[0])):
         node=net.nodes.get(nid)
         if not node:continue
@@ -83,6 +86,8 @@ def core_connection_highlight(store,slots):
         boundaries.append(dict(node_id=nid,name=node.get('name') or nid,title=title,kind=kind,ends=ends,
             candidates=tuple(candidates),color='#a16207' if kind in ('pair','ambiguous','open') else '#c62828',
             text=(node.get('name') or nid)+' · '+title+'\n'+'\n'.join(e['text']+(' · OFF 배정 제외' if e['off'] else '') for e in ends)))
+        reasons=list(dict.fromkeys([reason for e in ends for reason in net.bad.get(e['slot'],())]+blocked[nid]))
+        if reasons:boundaries[-1]['text']+='\n'+'\n'.join(reasons)
     # Count distinct cable slots, not selections, port rows or geometric crossings.
     # One route may also traverse the same cable on different physical cores.
     overlaps={c for c,slots in cable_slots.items() if len(slots)>1}

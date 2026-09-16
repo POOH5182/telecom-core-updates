@@ -726,3 +726,16 @@ that authorized scope for requested program updates without asking again.
   a distant leg remains incomplete. Run expanded check_after_autoconnect.py and
   check_off_assignment.py with Windows duplicate badges/OFF display/history,
   existing after assignment/manual allocation/completion gates and full release.
+
+- V99 explicit NodeDialog selection calls reconnect_selected: remove only old
+  splices at that facility touching the two chosen slots, keep far-end splices
+  and displaced metadata, exclude displaced local slots from automatic refill,
+  and apply in one backed-up undo group. Ordinary Store.connect and incremental
+  allocation continue refusing occupied slots. Preserve locks and ID conflicts.
+- Network keeps physically present blank referenced slots and reports exact
+  node/cable/number invalid-reference reasons. After activation repairs only
+  impossible references (missing targets/wrong physical location), never valid
+  occupied pairs or arbitrary branches. Back up once, retain the undo-surviving
+  policy marker and manual exclusions. Read-only diagnostics explain blocked
+  joins. Run check_connection_repair.py including Windows selected-peer/undo
+  coverage, existing field/after allocation gates and the full release workflow.
