@@ -194,7 +194,7 @@ def after_auto_activate(store):
 
 def after_auto_changed(store):
     """Run after the outer edit, inside its transaction and undo group."""
-    if getattr(store,'_history_label','') in ('케이블별 코어배정','선택 코어 접속 변경'):return # Apply only the chosen local pairs.
+    if getattr(store,'_history_label','') in ('케이블별 코어배정','선택 코어 접속 변경','케이블 코어내역 교환','후도면 코어 옮기기'):return # Apply only the chosen local pairs.
     if completion_kind(store)!='after' or not store.conn.execute('SELECT 1 FROM meta WHERE key=?',(AFTER_AUTO_POLICY,)).fetchone():return
     nodes=set()
     fields={'cores':('core_id','detail','status1','status2','signal'),

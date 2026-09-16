@@ -739,3 +739,16 @@ that authorized scope for requested program updates without asking again.
   policy marker and manual exclusions. Read-only diagnostics explain blocked
   joins. Run check_connection_repair.py including Windows selected-peer/undo
   coverage, existing field/after allocation gates and the full release workflow.
+
+- V100 adds a separate after-only core move action; the user chose this to avoid
+  confusing it with identity-only exchange. Move all five core fields and every
+  splice touching the chosen source number to empty capacity on the same cable.
+  Empty the source, preserve remote slots/ports, and remap occupant-specific
+  disconnect/assignment exclusions. Keep fixed reservations and field evidence.
+- Refuse used/connected/locked/reserved destinations, protect pending ID/signal
+  drafts, show both endpoint changes, revalidate the full preview, back up and
+  commit in one history group. A partial route must remain partial. Suppress the
+  generic after auto-join pass for explicit core moves and identity-only swaps.
+  Keep the existing identity-only operation in every stage. Run the expanded
+  check_core_identity_swap.py including Windows both-tab move, enclosure peers,
+  route highlight, cancel/drafts and undo/redo gates plus the full release suite.
