@@ -1,5 +1,6 @@
 """Unique physical after joins, preserved ON/unknown signals and atomic undo."""
 import os
+import faulthandler
 import sys
 import tempfile
 import unittest
@@ -89,14 +90,20 @@ class AutoConnectTests(unittest.TestCase):
 
 def windows_ui():
     if sys.platform!='win32':return
-    with tempfile.TemporaryDirectory() as t,patch.dict(os.environ,TELECOM_APP_HOME=t),patch.object(code['messagebox'],'showinfo'):
-        app=code['App']()
+    faulthandler.dump_traceback_later(65,exit=True)
+    with tempfile.TemporaryDirectory() as t,patch.dict(os.environ,TELECOM_APP_HOME=t), \
+         patch.object(code['messagebox'],'showinfo'),patch.object(code['messagebox'],'showerror') as errors, \
+         patch.object(code['messagebox'],'showwarning') as warnings,patch.object(code['messagebox'],'askyesno',return_value=True):
+        app=code['App']();callbacks=[];app.report_callback_exception=lambda *args:callbacks.append(args)
         try:
+            print('AUTO UI: activate',flush=True)
             app.set_scenario_kind('after');s=app.store
             a=s.add_node('말단1',100,150);h=s.add_node('함체',400,150);b=s.add_node('말단2',700,150)
             l=s.add_cable(a,h,'LEFT','12C','기설');r=s.add_cable(h,b,'RIGHT','12C','기설')
             update(s,l,1,dict(core_id='CORE',detail='동일내역',signal='on'))
+            print('AUTO UI: editor',flush=True)
             editor=code['open_detail_dialog'](app,s,'cable',l);editor.focus_core(1);app.update()
+            print('AUTO UI: join',flush=True)
             update(s,r,7,dict(core_id='CORE',detail='동일내역',signal='unknown'));app.refresh();app.update()
             assert s.splice_for(h,l,1) and not s.incomplete_core_groups()
             assert wf.core_completion_brief(s,(l,1))==('연결완료','')
@@ -104,7 +111,8 @@ def windows_ui():
             assert s.core(r,7)['signal']=='unknown'
             s.undo();app.refresh();app.update();assert not s.splice_for(h,l,1)
             s.redo();app.refresh();app.update();assert s.drawing_connection_progress()['done']==1
-        finally:app.on_close()
+            assert not callbacks,callbacks;assert not errors.called,errors.call_args_list;assert not warnings.called,warnings.call_args_list
+        finally:app.on_close();faulthandler.cancel_dump_traceback_later()
     print('PASS after automatic same-ID join, ON/unknown completion, UI refresh and undo/redo')
 
 
