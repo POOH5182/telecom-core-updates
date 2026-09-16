@@ -144,6 +144,60 @@ class RouteTests(unittest.TestCase):
         update(self.s,i['left'],8,dict(core_id='CORE-1'))
         result=self.service.recommend(self.problem());self.assertFalse(result['ok']);self.assertIn('여러 코어',result['reason'])
 
+    def make_ambiguous_terminals(self):
+        # The saved before drawing is already split and every outer enclosure
+        # has unrelated cables: Network.inspect cannot infer a terminal pair.
+        for key in ('a','d'):
+            extra=self.s.add_node('다른 회선 '+key,-200 if key=='a' else 950,400)
+            self.s.add_cable(self.ids[key],extra,'UNRELATED-'+key,'12C','기설')
+        self.s.backup_to(self.app.scenario_path('before'))
+
+    def test_split_before_infers_outer_ends_from_both_components(self):
+        self.make_ambiguous_terminals();p=self.problem();original=self.physical();before=self.before()
+        self.assertEqual(len(p['components']),2);self.assertFalse(p['default_ends'])
+        route=self.service.recommend(p);self.assertTrue(route['ok'],route);self.assertTrue(route['inferred_ends'])
+        self.assertEqual(set(route['endpoints']),{self.ids['a'],self.ids['d']})
+        self.assertEqual(set(route['cables']),{self.ids[k] for k in ('left','direct','right')})
+        self.assertEqual(route['added'],1);self.service.save(p,route,'ok')
+        self.assertTrue(self.problem()['saved_ok']);self.assertEqual((self.physical(),self.before()),(original,before))
+
+    def test_equal_minimum_endpoint_pairs_require_selection_and_limit_is_shared(self):
+        self.make_ambiguous_terminals()
+        self.s.add_cable(self.ids['a'],self.ids['c'],'OTHER-JOIN','12C','신설')
+        p=self.problem();r=self.service.recommend(p)
+        self.assertFalse(r['ok']);self.assertGreaterEqual(len(r['endpoint_choices']),2)
+        self.assertIn('여러 쌍',r['reason']);self.assertTrue(self.service.recommend(p,limit=1)['limited'])
+        route=self.service.recommend(p,[self.ids['a'],self.ids['d']]);self.assertTrue(route['ok'],route)
+        self.assertEqual(set(route['cables']),{self.ids[k] for k in ('left','direct','right')})
+
+    def test_no_connector_keeps_all_components_and_explains_failure(self):
+        self.make_ambiguous_terminals()
+        with self.s.action('대안 없음'):
+            for key in ('direct','detour1'):self.s.conn.execute("UPDATE cables SET status='철거' WHERE id=?",(self.ids[key],))
+        p=self.problem();r=self.service.recommend(p)
+        self.assertEqual(len(p['components']),2);self.assertFalse(r['ok']);self.assertIn('없습니다',r['reason'])
+
+    def test_actual_component_with_neutral_id_is_visible_and_not_silently_shortened(self):
+        i=self.ids;y=self.s.add_node('실제 연결 연장',-160,150);extension=self.s.add_cable(y,i['a'],'EXT','12C','기설')
+        self.s.connect(i['a'],(extension,1),(i['left'],1))
+        with self.s.action('현장 슬롯별 ID'):
+            self.s.conn.execute("UPDATE cores SET core_id='임시-중간' WHERE cable_id=? AND core_index=1",(extension,))
+        original=self.physical();p=self.problem()
+        self.assertEqual(len(p['components']),2)
+        part=next(c for c in p['components'] if i['left'] in c['cables'])
+        self.assertIn(extension,part['cables']);self.assertIn((extension,1),part['slots'])
+        self.assertFalse(self.service.recommend(p)['ok']);self.assertIn('임시-중간',' / '.join(p['blocks']))
+        self.assertEqual(self.physical(),original)
+
+    def test_invalid_loop_remains_visible_beside_other_component(self):
+        i=self.ids;loop=self.s.add_cable(i['a'],i['b'],'RETURN','12C','기설')
+        with self.s.action('기존 절단 접속 해제'):
+            self.s.conn.execute('DELETE FROM splices WHERE node_id=?',(i['b'],))
+        self.s.connect(i['a'],(loop,1),(i['left'],1));self.s.connect(i['b'],(loop,1),(i['left'],1))
+        p=self.problem();self.assertEqual(len(p['components']),2)
+        self.assertTrue(any(not c['valid'] and loop in c['cables'] for c in p['components']))
+        self.assertFalse(self.service.recommend(p)['ok'])
+
 
 def windows_ui():
     if sys.platform!='win32':return
@@ -193,6 +247,33 @@ def windows_ui():
                 reopened=wf.AfterPlanDialog(app);app.update();panel=reopened.route_panel
                 row_id=next(k for k,r in panel.visible.items() if r['core_id']=='CORE-1');panel.cores.selection_set(row_id);app.update()
                 assert panel.mode=='확정' and panel.problem['saved_ok'];assert set(panel.draft['cables'])=={i[k] for k in order}
+                # Reproduce a split baseline with no inferable terminal pair.
+                # Searching must show both islands and the real recommendation
+                # button must give explicit feedback even when no route exists.
+                for key in ('a','d'):
+                    node=s.add_node('다른 회선 '+key,-200 if key=='a' else 950,400)
+                    s.add_cable(i[key],node,'UNRELATED-'+key,'12C','기설')
+                s.backup_to(app.scenario_path('before'))
+                data=wf.plan_settings(s);data['route_step']['decisions'].clear();wf.plan_save(s,data,'시험 경로 초기화')
+                reopened.refresh();panel.query.set('CORE-1');panel.render_list();app.update()
+                assert not panel.problem['default_ends'] and panel.draft['ok'] and panel.draft['inferred_ends']
+                assert len(panel.problem['components'])==2
+                text=panel.path_text.get('1.0','end');assert '구간 1:' in text and '구간 2:' in text
+                for key in ('left','right'):assert panel.map.find_withtag('route_cable:'+i[key])
+                colors=panel.component_colors();assert colors[i['left']]!=colors[i['right']]
+                original=wf.plan_snapshot(s.conn);panel.suggest_button.invoke();app.update()
+                assert panel.draft['ok'] and wf.plan_snapshot(s.conn)==original
+                reopened.geometry('1050x720');app.update();panel.suggest_button.master.reflow();app.update()
+                assert panel.suggest_button.winfo_viewable()
+                assert panel.suggest_button.winfo_rootx()+panel.suggest_button.winfo_width()<=reopened.winfo_rootx()+reopened.winfo_width()
+                with s.action('추천 대안 철거'):
+                    for key in ('direct','detour1'):s.conn.execute("UPDATE cables SET status='철거' WHERE id=?",(i[key],))
+                reopened.refresh();app.update();original=wf.plan_snapshot(s.conn);warnings=[]
+                with patch.object(wf.messagebox,'showwarning',side_effect=lambda *a,**k:warnings.append(a)):
+                    panel.suggest_button.invoke();app.update()
+                assert warnings and '없습니다' in warnings[0][1]
+                assert not panel.draft['ok'] and str(panel.ok_button['state'])=='disabled'
+                assert len(panel.problem['components'])==2 and wf.plan_snapshot(s.conn)==original
                 assert not errors,errors # Leave the workbench open to exercise whole-app shutdown.
             finally:app.on_close()
     print('PASS Windows step 1 core list, minimum recommendation, sorting, NOK, ordered map-click detour, draft/back/OK, CSV, reopen and no allocation')

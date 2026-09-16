@@ -11,6 +11,7 @@ import math
 ROUTE_BLUE='#1565c0'
 ROUTE_ORANGE='#e66b00'
 ROUTE_GREEN='#188038'
+ROUTE_PART_COLORS=(ROUTE_BLUE,'#7c3aed','#087f8c','#a64b00','#b83280')
 
 
 def after_route_key(entry):
@@ -55,21 +56,26 @@ class AfterRoutePlanner:
             group=set();stack=[min(remaining)]
             while stack:
                 slot=stack.pop()
-                if slot not in remaining:continue
-                remaining.remove(slot);group.add(slot);stack.extend(other for _,other in net.links[slot] if other in remaining)
+                if slot in group:continue
+                remaining.discard(slot);group.add(slot)
+                stack.extend(other for _,other in net.links[slot] if other not in group)
             adjacency=defaultdict(list);cables=[];points=[]
             for slot in sorted(group):
                 if net.bad[slot]:blocks.append(net.title(slot)+': 잘못된 실제 접속을 먼저 정리하세요.')
-                if any(other not in slots for _,other in net.links[slot]):blocks.append(net.title(slot)+': 다른 코어ID와 접속되어 있습니다.')
+                if slot not in slots:blocks.append(net.title(slot)+': 접속된 코어ID가 다릅니다 ('+str(net.slots[slot].get('core_id') or '빈 ID')+'). 실제 구간은 모두 표시하니 ID를 확인하세요.')
                 if any(n>1 for n in Counter(nid for nid,_ in net.links[slot]).values()):blocks.append(net.title(slot)+': 중복·분기 접속')
                 if slot[0].startswith('PORT:'):points.append(slot[0][5:]);continue
                 cable=net.cables[slot[0]]
                 if slot[0] in used_cables:blocks.append('같은 케이블의 여러 코어에 같은 ID가 있습니다: '+(cable['cable_id'] or slot[0]))
                 used_cables.add(slot[0]);cables.append(slot[0]);a,b=cable['n1id'],cable['n2id']
                 adjacency[a].append((b,slot[0]));adjacency[b].append((a,slot[0]))
+            # Even malformed components remain visible; diagnostics must never
+            # silently remove the second half of the user's physical route.
+            part=dict(nodes=sorted(set(adjacency)|set(points)),cables=cables,slots=sorted(group),valid=False)
+            components.append(part)
             if not cables:
                 if len(set(points))!=1:blocks.append('내부 포트 경로를 확인하세요.');continue
-                components.append(dict(nodes=[points[0]],cables=[],slots=sorted(group)));continue
+                part.update(nodes=[points[0]],valid=True);continue
             ends=sorted(n for n,edges in adjacency.items() if len(edges)==1)
             if len(ends)!=2 or any(len(v)>2 for v in adjacency.values()):
                 blocks.append('기존 코어 경로에 순환·분기 또는 반복 시설이 있습니다.');continue
@@ -81,7 +87,7 @@ class AfterRoutePlanner:
                 if node in nodes:break
                 nodes.append(node);ordered.append(cable);previous=cable
             if len(ordered)!=len(cables):blocks.append('기존 구간을 하나의 연속 경로로 읽을 수 없습니다.');continue
-            components.append(dict(nodes=nodes,cables=ordered,slots=sorted(group)))
+            part.update(nodes=nodes,cables=ordered,valid=True)
         record=ctx['data'].get('route_step',{}).get('decisions',{}).get(key,{})
         def endpoints(network):
             if not network or not cid:return []
@@ -98,6 +104,10 @@ class AfterRoutePlanner:
             if any(net.nodes[n]['type']=='hamche' and not cable_terminal(net.nodes[n],degree.get(n,0)) for n in default_ends):default_ends=[]
         valid_nodes={n for n,row in net.nodes.items() if row['status'] not in ('철거','remove')}
         if len(default_ends)!=2 or any(n not in valid_nodes for n in default_ends):default_ends=[]
+        if len(components)>1 and any(default_ends and set(default_ends)<=set(c['nodes']) for c in components):
+            # Two ends from just one island cannot enclose the other islands
+            # without a cycle. Infer across all islands instead of getting stuck.
+            default_ends=[];end_source='분리된 기존 구간의 양 끝'
         signature=digest([ctx['graph'],cid,entry.get('basis'),default_ends,
                           [(c['nodes'],c['cables'],c['slots']) for c in components],sorted(blocks)])
         saved_ok=record.get('state')=='ok' and record.get('signature')==signature
@@ -158,6 +168,37 @@ class AfterRoutePlanner:
 
     def recommend(self,problem,endpoints=None,limit=30000):
         if problem['blocks']:return dict(ok=False,reason=' / '.join(problem['blocks']))
+        if endpoints is None and not problem['default_ends']:
+            return self.recommend_between_components(problem,limit)
+        return self.recommend_with_ends(problem,endpoints,limit)
+
+    def recommend_between_components(self,problem,limit):
+        """Prove the minimum over component boundary pairs, or require a choice.
+
+        Reverse directions are equivalent. Equal-cost different outer endpoints
+        are ambiguous, and a bounded search can never certify a minimum.
+        """
+        if len(problem['components'])<2:
+            return dict(ok=False,reason='출발 시설과 도착 시설을 각각 지정하세요. 기존 구간이 2개 이상이면 구간 사이 경로를 자동으로 찾습니다.')
+        candidates=sorted({n for part in problem['components'] for n in (part['nodes'][0],part['nodes'][-1])})
+        best=[];best_cost=None;examined=0
+        for a,b in itertools.combinations(candidates,2):
+            if examined>=limit:
+                return dict(ok=False,limited=True,reason='구간 사이 후보가 많아 최소경로 계산 한도에 도달했습니다. 출발·도착 시설을 선택하고 다시 추천하세요.')
+            route=self.recommend_with_ends(problem,[a,b],limit-examined)
+            examined+=max(1,route.get('examined',0))
+            if route.get('limited'):return route
+            if not route['ok']:continue
+            if best_cost is None or route['added']<best_cost:best=[route];best_cost=route['added']
+            elif route['added']==best_cost:best.append(route)
+        if not best:
+            return dict(ok=False,reason='분리된 기존 구간을 모두 잇는 케이블 경로가 없습니다. 끊긴 함체 사이에 사용할 케이블이 있는지, 철거·절단 상태인지 확인하세요.')
+        if len(best)>1:
+            return dict(ok=False,endpoint_choices=[r['endpoints'] for r in best],reason='같은 최소 구간 수로 연결할 수 있는 양 끝이 여러 쌍입니다. 기존 구간 목록에서 출발·도착 시설을 선택하고 다시 추천하세요.')
+        best[0]['inferred_ends']=True;best[0]['examined']=examined
+        return best[0]
+
+    def recommend_with_ends(self,problem,endpoints=None,limit=30000):
         try:ends=self.ends(problem,endpoints)
         except ValueError as error:return dict(ok=False,reason=str(error))
         adj,points,internal=self.edges(problem)
@@ -175,7 +216,7 @@ class AfterRoutePlanner:
                     self.validate(problem,proposal,complete=True);return proposal
                 continue
             if examined>=limit or len(queue)>limit:
-                return dict(ok=False,reason='경로 후보가 많아 최소경로 계산 한도에 도달했습니다. 직접 케이블 경로를 지정하세요.',limited=True)
+                return dict(ok=False,reason='경로 후보가 많아 최소경로 계산 한도에 도달했습니다. 직접 케이블 경로를 지정하세요.',limited=True,examined=examined)
             for edge in adj[node]:
                 tail=edge['nodes'][1:]
                 if seen.intersection(tail) or mask&edge['mask']:continue
@@ -185,7 +226,7 @@ class AfterRoutePlanner:
                 for n in tail:newmask|=points[n]
                 newnodes=nodes+tuple(tail);newcables=cables+tuple(edge['cables'])
                 heapq.heappush(queue,(cost+edge['cost'],len(newcables),next(serials),tail[-1],newmask,newnodes,newcables,seen|frozenset(tail)))
-        return dict(ok=False,reason='기존 구간을 모두 살리면서 양 끝을 잇는 케이블 경로가 없습니다. 철거·절단 상태와 필요한 케이블을 확인하세요.')
+        return dict(ok=False,reason='기존 구간을 모두 살리면서 양 끝을 잇는 케이블 경로가 없습니다. 철거·절단 상태와 필요한 케이블을 확인하세요.',examined=examined)
 
     def validate(self,problem,proposal,complete=True):
         if problem['blocks']:raise ValueError(' / '.join(problem['blocks']))
@@ -246,11 +287,11 @@ class AfterRoutePanel(ttk.Frame):
         self.cores.tag_configure('ok',foreground=ROUTE_GREEN);self.cores.tag_configure('pending',foreground='#a16207');self.cores.tag_configure('bad',foreground='#c62828')
         ttk.Button(left,text='다음 미확정 코어',command=self.next_core).pack(fill='x',pady=5)
         self.title=tk.StringVar();ttk.Label(right,textvariable=self.title,font=('Malgun Gothic',10,'bold')).pack(fill='x',pady=3)
-        ends=ttk.Frame(right);ends.pack(fill='x');self.start=tk.StringVar();self.end=tk.StringVar()
-        ttk.Label(ends,text='출발').pack(side='left');self.start_combo=ttk.Combobox(ends,textvariable=self.start,state='readonly',width=28);self.start_combo.pack(side='left',padx=3)
-        ttk.Label(ends,text='↔ 도착').pack(side='left');self.end_combo=ttk.Combobox(ends,textvariable=self.end,state='readonly',width=28);self.end_combo.pack(side='left',padx=3)
+        ends=FlowToolbar(right);ends.pack(fill='x');self.start=tk.StringVar();self.end=tk.StringVar()
+        ends.add(ttk.Label(ends,text='출발'));self.start_combo=ends.add(ttk.Combobox(ends,textvariable=self.start,state='readonly',width=28))
+        ends.add(ttk.Label(ends,text='↔ 도착'));self.end_combo=ends.add(ttk.Combobox(ends,textvariable=self.end,state='readonly',width=28))
         for combo in (self.start_combo,self.end_combo):combo.bind('<<ComboboxSelected>>',lambda e:self.run(self.change_ends))
-        ttk.Button(ends,text='최소경로 추천',command=lambda:self.run(self.suggest)).pack(side='left',padx=3)
+        self.suggest_button=ends.add(ttk.Button(ends,text='최소경로 추천',command=lambda:self.run(self.suggest)))
         ttk.Label(right,textvariable=self.info,wraplength=840,foreground='#415a77',padding=(0,4)).pack(fill='x')
         actions=ttk.Frame(right);actions.pack(fill='x')
         self.ok_button=ttk.Button(actions,text='OK · 확정 후 다음',command=lambda:self.run(self.accept));self.ok_button.pack(side='left',padx=2)
@@ -258,7 +299,7 @@ class AfterRoutePanel(ttk.Frame):
         ttk.Button(actions,text='마지막 구간 취소',command=lambda:self.run(self.back)).pack(side='left',padx=2)
         ttk.Button(actions,text='직접 경로 처음부터',command=lambda:self.run(self.reset)).pack(side='left',padx=2)
         ttk.Button(actions,text='주변 / 전체 도면',command=self.toggle_map).pack(side='right')
-        ttk.Label(right,text='기존 코어 구간: 파랑 · 추천/직접 지정: 주황 · OK 경로: 초록 · 철거·절단: 회색 점선. 직접 지정 중에는 지도 또는 아래 목록의 케이블을 클릭하세요.',wraplength=840,padding=(0,4)).pack(fill='x')
+        ttk.Label(right,text='기존 연결: 구간별 번호·색상 · 추가 연결 추천: 주황 · OK 경로: 초록 · 철거·절단: 회색 점선. 모든 기존 구간을 포함해 추천합니다.',wraplength=840,padding=(0,4)).pack(fill='x')
         holder=ttk.Frame(right);holder.pack(fill='both',expand=True)
         self.map=tk.Canvas(holder,bg='#fafbfc',height=245,highlightthickness=0);self.map.grid(row=0,column=0,sticky='nsew')
         sy=ttk.Scrollbar(holder,orient='vertical',command=self.map.yview);sy.grid(row=0,column=1,sticky='ns')
@@ -266,7 +307,7 @@ class AfterRoutePanel(ttk.Frame):
         self.map.configure(yscrollcommand=sy.set,xscrollcommand=sx.set);holder.rowconfigure(0,weight=1);holder.columnconfigure(0,weight=1)
         self.map.bind('<Configure>',lambda e:self.draw_map());self.map.bind('<MouseWheel>',self.zoom)
         self.map.bind('<ButtonPress-2>',lambda e:self.map.scan_mark(e.x,e.y));self.map.bind('<B2-Motion>',lambda e:self.map.scan_dragto(e.x,e.y,gain=1))
-        self.path_text=field_readonly_text(right,3)
+        self.path_text=field_readonly_text(right,5)
         self.position=tk.StringVar();ttk.Label(right,textvariable=self.position,padding=(0,3)).pack(fill='x')
         self.options=self.tree(right,('다음 케이블 / 기존 연결 구간','도착 시설','추가 구간'),(470,240,80),height=4)
         self.options.bind('<Double-Button-1>',lambda e:self.run(self.add_selected));self.options.bind('<Return>',lambda e:self.run(self.add_selected))
@@ -318,8 +359,13 @@ class AfterRoutePanel(ttk.Frame):
         row=self.visible.get(selection[0])
         if not row or (not force and self.selected_key==row['key'] and self.problem is row['problem']):return
         self.selected_key=row['key'];self.problem=row['problem'];problem=self.problem;record=problem['record'];net=problem['context']['net']
-        self.title.set((row['core_id'] or '(코어ID 입력 필요)')+' · '+row['detail']+' · '+row['status'])
-        self.node_map={f"{n['name']} [{n['id']}]":n['id'] for n in sorted(net.nodes.values(),key=lambda n:(n['name'],n['id'])) if n['status'] not in ('철거','remove')}
+        self.title.set((row['core_id'] or '(코어ID 입력 필요)')+' · '+row['detail']+f" · 기존 연결 {len(problem['components'])}개 구간 · "+row['status'])
+        boundaries=defaultdict(list)
+        for i,part in enumerate(problem['components'],1):
+            if part['valid']:
+                for n in dict.fromkeys((part['nodes'][0],part['nodes'][-1])):boundaries[n].append(str(i))
+        self.node_map={('구간 '+','.join(boundaries[n['id']])+' 끝 · ' if n['id'] in boundaries else '')+f"{n['name']} [{n['id']}]":n['id']
+                       for n in sorted(net.nodes.values(),key=lambda n:(n['id'] not in boundaries,n['name'],n['id'])) if n['status'] not in ('철거','remove')}
         self.node_labels={v:k for k,v in self.node_map.items()}
         for combo in (self.start_combo,self.end_combo):combo.configure(values=tuple(self.node_map))
         ends=record.get('endpoints') or problem['default_ends'];self.start.set(self.node_labels.get(ends[0],'') if ends else '');self.end.set(self.node_labels.get(ends[1],'') if len(ends)>1 else '')
@@ -336,23 +382,31 @@ class AfterRoutePanel(ttk.Frame):
 
     def calculate_suggestion(self):
         self.mode='추천'
-        try:ends=self.endpoints()
-        except ValueError as error:self.draft={};self.info.set(str(error));return
+        if not self.start.get() and not self.end.get():ends=None
+        else:
+            try:ends=self.endpoints()
+            except ValueError as error:self.draft=dict(ok=False,reason=str(error));self.info.set(str(error));return
         result=self.service.recommend(self.problem,ends);self.draft=result
         if result['ok']:
-            self.info.set(f"최소경로: 추가 케이블 {result['added']}구간 · 전체 {len(result['cables'])}구간 · 기존 {len(self.problem['components'])}개 구간 포함. "+('새 케이블 경유 없이 함체 내 연결을 계획합니다.' if not result['added'] else '추천 경로를 확인하고 OK 또는 NOK를 선택하세요.'))
-        else:self.info.set(result['reason'])
+            self.start.set(self.node_labels[result['endpoints'][0]]);self.end.set(self.node_labels[result['endpoints'][1]])
+            self.info.set(f"최소경로: 추가 케이블 {result['added']}구간 · 전체 {len(result['cables'])}구간 · 기존 {len(self.problem['components'])}개 구간 모두 포함. "+('새 케이블 경유 없이 함체 내 연결을 계획합니다.' if not result['added'] else '주황색 연결 경로를 확인하고 OK 또는 NOK를 선택하세요.'))
+        else:self.info.set('추천 불가: '+result['reason'])
 
     def suggest(self):
-        if not self.problem:return
+        if not self.problem:self.info.set('검색한 코어를 왼쪽 목록에서 선택하세요.');return
         self.require_current();self.calculate_suggestion();self.render_path()
+        if not self.draft.get('ok'):
+            messagebox.showwarning('최소경로 추천',self.draft.get('reason','출발·도착 시설을 확인하세요.'),parent=self.workbench)
 
     def require_current(self):
         if self.service.context()['stamp']!=self.problem['stamp']:raise ValueError('도면이나 계획이 바뀌었습니다. 목록을 새로고침하세요.')
 
     def change_ends(self):
         if not self.problem:return
-        self.require_current();ends=self.endpoints();self.mode='직접 지정'
+        self.require_current()
+        if not self.start.get() or not self.end.get():
+            self.draft={};self.info.set('나머지 출발·도착 시설도 선택한 뒤 최소경로 추천을 누르세요.');self.render_path();return
+        ends=self.endpoints();self.mode='직접 지정'
         self.draft=dict(nodes=ends[:1],cables=[],endpoints=ends,source='직접 지정');self.persist('draft')
 
     def persist(self,status):
@@ -388,7 +442,14 @@ class AfterRoutePanel(ttk.Frame):
     def render_path(self):
         if not self.problem:return
         net=self.problem['context']['net'];nodes=self.draft.get('nodes',[]);cables=self.draft.get('cables',[])
-        lines=[]
+        lines=[f"기존 연결 {len(self.problem['components'])}개 구간 (현재 후도면의 실제 접속 기준)"]
+        for i,part in enumerate(self.problem['components'],1):
+            names=' ↔ '.join(net.nodes[n]['name'] for n in part['nodes'])
+            ledger=' / '.join(plan_number_label(net,s) for s in part['slots'])
+            lines.append(f"구간 {i}: {names} · {ledger}"+(' · 경로 오류 확인 필요' if not part['valid'] else ''))
+        retired=net.retired_by_id.get(self.problem['core_id'],[])
+        if retired:lines.append('철거·절단으로 추천에서 제외: '+', '.join(retired))
+        lines.append('추천 / 직접 지정 경로' if cables else '추천 대기: '+self.draft.get('reason','출발·도착 시설을 지정하세요.'))
         for i,cid in enumerate(cables):
             cable=net.cables.get(cid,{})
             if i+1>=len(nodes):break
@@ -410,9 +471,12 @@ class AfterRoutePanel(ttk.Frame):
                 iid=str(i);self.option_map[iid]=edge;self.options.insert('','end',iid=iid,values=(label,net.nodes[edge['nodes'][-1]]['name'],edge['cost']))
         else:self.position.set('직접 경로를 고르려면 NOK를 누르세요.' if self.mode=='추천' else '확정한 경로입니다. NOK 또는 직접 경로 처음부터 버튼으로 변경할 수 있습니다.')
         self.draw_map()
-        colors={c:ROUTE_BLUE for c in self.problem['existing']}
-        colors.update({c:ROUTE_GREEN if self.problem['saved_ok'] and self.mode=='확정' else ROUTE_ORANGE for c in cables if c in net.cables})
+        colors=self.component_colors()
+        colors.update({c:ROUTE_GREEN if self.problem['saved_ok'] and self.mode=='확정' else colors.get(c,ROUTE_ORANGE) for c in cables if c in net.cables})
         self.app.start_highlight_blink(colors,owner=self.workbench)
+
+    def component_colors(self):
+        return {c:ROUTE_PART_COLORS[i%len(ROUTE_PART_COLORS)] for i,part in enumerate(self.problem['components']) for c in part['cables']}
 
     def add_selected(self):
         selected=self.options.selection()
@@ -439,11 +503,17 @@ class AfterRoutePanel(ttk.Frame):
         self.map.delete('all')
         if not self.problem:return
         net=self.problem['context']['net'];selected=set(self.draft.get('cables',[]));existing=self.problem['existing']
+        colors=self.component_colors();labels=defaultdict(list)
+        for i,part in enumerate(self.problem['components'],1):
+            for cable in set(part['cables']):
+                nums=','.join(str(s[1]) for s in part['slots'] if s[0]==cable)
+                labels[cable].append(f'구간 {i} · {nums}번')
         all_cables={r['id']:dict(r) for r in self.service.store.cables()};shown=set(all_cables)
         if self.map_scope!='전체':
             shown=selected|existing|{c for edge in getattr(self,'option_map',{}).values() for c in edge['cables']}
         nodes={n for cid in shown if cid in all_cables for n in (all_cables[cid]['n1id'],all_cables[cid]['n2id'])}
         nodes.update(n for n in self.draft.get('endpoints',self.problem['default_ends']) if n in net.nodes)
+        nodes.update(n for part in self.problem['components'] for n in part['nodes'])
         nodes.intersection_update(net.nodes)
         if not nodes:self.map.create_text(220,80,text='출발·도착 시설을 지정하세요.',fill='#64748b');return
         xs=[net.nodes[n]['x'] for n in nodes];ys=[net.nodes[n]['y'] for n in nodes];w=max(350,self.map.winfo_width());h=max(220,self.map.winfo_height())
@@ -457,10 +527,10 @@ class AfterRoutePanel(ttk.Frame):
             ax,ay=pos[a];bx,by=pos[b];distance=max(1,math.hypot(bx-ax,by-ay))
             for offset,cid in enumerate(sorted(group)):
                 cable=all_cables[cid];bend=(offset-(len(group)-1)/2)*36;mx=(ax+bx)/2-(by-ay)/distance*bend;my=(ay+by)/2+(bx-ax)/distance*bend
-                active=cid in net.cables;color=(ROUTE_GREEN if self.problem['saved_ok'] and self.mode=='확정' else ROUTE_ORANGE) if cid in selected else ROUTE_BLUE if cid in existing else '#aab4c3'
+                active=cid in net.cables;color=ROUTE_GREEN if cid in selected and self.problem['saved_ok'] and self.mode=='확정' else colors.get(cid,ROUTE_ORANGE if cid in selected else '#aab4c3')
                 tag='route_cable:'+cid;self.map.create_line(ax,ay,mx,my,bx,by,smooth=True,fill=color,width=5 if cid in selected|existing else 2,dash=() if active else (5,4),tags=(tag,))
                 if cid in selected|existing or len(shown)<=35:
-                    self.map.create_text(mx,my-11,text=(cable['cable_id'] or cid)+' / '+cable['spec'],fill=color,font=('Malgun Gothic',9),tags=(tag,))
+                    self.map.create_text(mx,my-11,text=(' / '.join(labels[cid])+'\n' if labels[cid] else '')+(cable['cable_id'] or cid)+' / '+cable['spec'],fill=color,font=('Malgun Gothic',9),tags=(tag,))
                 self.map.tag_bind(tag,'<Button-1>',lambda e,c=cid:self.map_click(c))
         for nid,(x,y) in pos.items():
             self.map.create_oval(x-5,y-5,x+5,y+5,fill='white',outline='#334155',width=2)

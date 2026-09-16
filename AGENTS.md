@@ -557,3 +557,20 @@ publication of requested app changes through the existing main release workflow.
 - Run check_auto_allocation.py including real Windows tab/buttons, narrow layout,
   apply/undo, and after-plan/after-route/completion/full release gates. The
   design-preview branch also runs this gate without publication.
+
+
+- V91 after-route components follow actual active splice links from every exact-ID
+  seed. Keep malformed/mismatched components in both the count and map/ledger;
+  block their recommendation with specific evidence rather than hiding them.
+  Existing component numbers/colors and physical core numbers stay visible while
+  added connector cables are orange. Retired slots remain excluded with a notice.
+- With no trustworthy default endpoints and two or more components, search all
+  component boundary endpoint pairs under one shared bound. Require every
+  component, minimize added cables, deduplicate reverse endpoints, and refuse to
+  call bounded/ambiguous results a minimum. Equal-cost different endpoint pairs
+  require explicit choice. Never allocate or change physical state in step 1.
+- Recommendation button failures display a reason. Endpoint controls wrap at
+  narrow widths and prioritize component boundaries; selecting the first of two
+  missing endpoints must not prematurely save an invalid draft. Run the expanded
+  check_after_routes.py Windows search/both-islands/button/no-route/narrow-layout
+  gates, auto-allocation/after-plan regression checks, and the full release gate.
