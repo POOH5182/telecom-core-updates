@@ -64,6 +64,27 @@ def field_slot_write(store,slot,values):
     finally:store._slot_identity_edit=previous
 
 
+def merge_connected_temporary_ids(store,a,b):
+    """Unify only temporary IDs in the physical component of a chosen join.
+
+    The first (left/source) selected temporary ID wins. Real identities and
+    per-slot names/signals/statuses remain intact, even through a real-ID leg.
+    Called inside the connection transaction so locks and undo cover the merge.
+    """
+    ids=[str((store.core(*s) or {}).get('core_id') or '').strip() for s in (a,b)]
+    if not all(cid.startswith('임시-') for cid in ids):return ''
+    target=ids[0];changed=0;old_ids=set()
+    for slot in sorted(store.component(a)|store.component(b)):
+        row=store.core(*slot)
+        if not row:continue
+        old=str(row['core_id'] or '').strip()
+        if not old.startswith('임시-') or old==target:continue
+        store._write_core_identity(*slot,target,str(row['detail'] or ''),True)
+        old_ids.add(old);changed+=1
+    for old in sorted(old_ids):phase_promote_identity(store,old,target)
+    return ' · 임시코어'+target[3:]+'으로 통합 ('+str(changed)+'곳)' if changed else ''
+
+
 def field_slot_connect(store,node_id,a,b):
     a,b=tuple(a),tuple(b)
     if a==b or a[0]==b[0]:raise ValueError('서로 다른 케이블 또는 RN 내부 포트를 선택하세요.')
@@ -73,17 +94,18 @@ def field_slot_connect(store,node_id,a,b):
         if not store.core(*slot) or not belongs:raise ValueError('선택한 함체의 케이블·코어번호가 아닙니다.')
     pairs={field_pair(((r['cable1_id'],r['core1_index']),(r['cable2_id'],r['core2_index']))) for r in store.conn.execute('SELECT * FROM splices WHERE node_id=?',(node_id,))}
     pair=field_pair((a,b))
-    if pair in pairs:return '이미 같은 연결이 있어 무시했습니다.'
+    if pair in pairs:return '이미 같은 연결이 있습니다.'+merge_connected_temporary_ids(store,a,b)
     if any(set(pair).intersection(p) for p in pairs):raise ValueError('이미 다른 코어와 접속되어 있습니다. 현장 조사표에서 변경할 선번을 입력하고 변경 범위를 확인하세요.')
     store.conn.execute('INSERT INTO splices VALUES(?,?,?,?,?)',(node_id,*pair[0],*pair[1]))
     store.set_auto_splice_exclusions(node_id,pair,False)
-    temporary=None
+    temporary=next((str(store.core(*s)['core_id']).strip() for s in (a,b) if str(store.core(*s)['core_id'] or '').strip().startswith('임시-')),None)
     for slot in pair:
         old=store.core(*slot)
         if not str(old['core_id'] or '').strip():
             if temporary is None:temporary=store.next_temp_core_id()
             field_slot_write(store,slot,(temporary,*[str(old[k] or '') for k in FIELD_SLOT_FIELDS[1:]]))
-    return f'{a[1]}번 ↔ {b[1]}번 현장 연결 완료 · 케이블별 기존 내역 유지'
+    merged=merge_connected_temporary_ids(store,a,b)
+    return f'{a[1]}번 ↔ {b[1]}번 현장 연결 완료 · 케이블별 기존 내역 유지'+merged
 
 
 def field_slot_overlay(store,node_id,raw,revision,generation,reference=None,keys=None):

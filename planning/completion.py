@@ -210,6 +210,44 @@ def completion_rate_text(report):
     return '대상 없음' if report['rate'] is None else f"{report['rate']:.1f}% ({report['done']}/{report['total']})"
 
 
+CORE_SIGNAL_NAMES={'on':'ON','off':'OFF','unknown':'확인필요','exception':'예외','error':'오류'}
+
+
+def core_signal_code(value):
+    value=str(value or '').strip().lower()
+    return {'':'unknown','확인필요':'unknown','예외':'exception','오류':'error'}.get(value,value)
+
+
+def core_id_signal_summary(store,slot):
+    """Read stored signals for this exact ID across the current drawing.
+
+    Disconnected positions and work-marked cables still belong to the same ID.
+    Anonymous positions stay local; no signal or connection is rewritten.
+    """
+    selected=store.core(*slot) or {};cid=str(selected.get('core_id') or '').strip()
+    local=core_signal_code(selected.get('signal'))
+    if cid:
+        stamp=(getattr(store,'_view_generation',0),store.data_revision(),store.conn.total_changes)
+        if getattr(store,'_core_id_signal_stamp',None)!=stamp:
+            groups=defaultdict(lambda:defaultdict(int))
+            for table in ('cores','ports'):
+                for row in store.conn.execute('SELECT core_id,signal,COUNT(*) AS count FROM '+table+" WHERE TRIM(COALESCE(core_id,''))<>'' GROUP BY core_id,signal"):
+                    identity=str(row['core_id'] or '').strip()
+                    if identity:groups[identity][core_signal_code(row['signal'])]+=int(row['count'])
+            store._core_id_signal_groups={k:dict(v) for k,v in groups.items()};store._core_id_signal_stamp=stamp
+        counts=dict(store._core_id_signal_groups.get(cid,{local:1}))
+    else:counts={local:1}
+    known=set(counts)-{'unknown'}
+    order=[s for s in CORE_SIGNAL_NAMES if counts.get(s)]+sorted(set(counts)-set(CORE_SIGNAL_NAMES))
+    label=lambda value:CORE_SIGNAL_NAMES.get(value,value)
+    code='mixed' if len(known)>1 else next(iter(known),'unknown')
+    summary='불일치 ('+' / '.join(label(s) for s in order if s!='unknown')+')' if code=='mixed' else label(code)
+    breakdown=' · '.join(label(s)+' '+str(counts[s]) for s in order)
+    scope=f'같은 ID {sum(counts.values())}개 위치' if cid else '코어ID 없음 · 선택 번호 기준'
+    return dict(core_id=cid,signal=code,label=summary,counts=counts,total=sum(counts.values()),
+                local_signal=local,local_label=label(local),detail=scope+' · '+breakdown+'\n선택 번호 신호: '+label(local))
+
+
 def core_completion_brief(store,slot):
     """Short saved-state reasons for the selected physical core, without tracing."""
     slot=tuple(slot)

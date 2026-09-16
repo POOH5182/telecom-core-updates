@@ -40,6 +40,62 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual(status,'미완료');self.assertIn('코어연결 미완료',reason)
         self.connect(1);self.assertEqual(wf.core_completion_brief(self.store,(self.left,1)),('연결완료',''))
 
+    def test_selected_unknown_shows_same_id_on_across_disconnected_marked_positions(self):
+        self.core(1,'SHARED','unknown');s=self.store
+        with s.action('독립 위치 신호'):
+            s.conn.execute("UPDATE cores SET core_id='SHARED',signal='on' WHERE cable_id=? AND core_index=7",(self.right,))
+            s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.right,))
+        for kind in ('gis','before','after'):
+            self.stage(kind);before=self.snapshot();summary=wf.core_id_signal_summary(s,(self.left,1))
+            self.assertEqual((summary['signal'],summary['local_signal'],summary['total']),('on','unknown',2))
+            self.assertEqual(summary['counts'],{'on':1,'unknown':1})
+            self.assertIn('선택 번호 신호: 확인필요',summary['detail'])
+            self.assertFalse(wf.completion_report(s)['by_id']['SHARED']['complete'])
+            self.assertEqual(self.snapshot(),before)
+        self.assertEqual(s.core(self.left,1)['signal'],'unknown')
+        self.assertFalse(list(s.conn.execute('SELECT * FROM splices')))
+
+    def test_whole_id_signal_matrix_preserves_conflicts_errors_and_local_values(self):
+        s=self.store;self.core(1,'ONE','unknown')
+        cases=[('','unknown','확인필요'),('ON','on','ON'),('off','off','OFF'),('예외','exception','예외'),('error','error','오류')]
+        for remote,expected,label in cases:
+            with self.subTest(remote=remote):
+                with s.action('다른 선번 신호'):
+                    s.conn.execute("UPDATE cores SET core_id='ONE',signal=? WHERE cable_id=? AND core_index=1",(remote,self.right))
+                summary=wf.core_id_signal_summary(s,(self.left,1))
+                self.assertEqual((summary['signal'],summary['label']),(expected,label))
+                self.assertEqual(s.core(self.left,1)['signal'],'unknown')
+        with s.action('ON OFF 혼재'):
+            s.conn.execute("UPDATE cores SET signal='on' WHERE cable_id=? AND core_index=1",(self.left,))
+            s.conn.execute("UPDATE cores SET signal='off' WHERE cable_id=? AND core_index=1",(self.right,))
+        summary=wf.core_id_signal_summary(s,(self.left,1))
+        self.assertEqual(summary['signal'],'mixed');self.assertEqual(summary['label'],'불일치 (ON / OFF)')
+
+    def test_signal_summary_includes_exact_id_ports_but_never_merges_blank_or_similar_ids(self):
+        s=self.store;self.core(1,'ONE','unknown');self.core(2,'ONE-OTHER','on')
+        self.core(3,'','on');self.core(4,'','off')
+        self.assertEqual(wf.core_id_signal_summary(s,(self.left,1))['signal'],'unknown')
+        self.assertEqual(wf.core_id_signal_summary(s,(self.left,4))['counts'],{'off':1})
+        rn=s.add_node('RN 신호',900,0,node_type='rn');s.ensure_ports(rn,{'mp':1,'sp':0,'p':1})
+        with s.action('동일 ID 포트 신호'):
+            s.conn.execute("UPDATE ports SET core_id='ONE',signal='on' WHERE node_id=? AND port_index=1",(rn,))
+        summary=wf.core_id_signal_summary(s,(self.left,1));self.assertEqual(summary['counts'],{'unknown':1,'on':1})
+        self.assertEqual(wf.core_id_signal_summary(s,('PORT:'+rn,1))['local_signal'],'on')
+
+    def test_signal_summary_recalculates_on_edit_undo_redo_identity_change_and_reopen(self):
+        s=self.store;self.core(1,'ONE','unknown')
+        self.assertEqual(wf.core_id_signal_summary(s,(self.left,1))['signal'],'unknown')
+        with s.action('같은 ID 신호 변경'):
+            s.conn.execute("UPDATE cores SET core_id='ONE',signal='on' WHERE cable_id=? AND core_index=1",(self.right,))
+        self.assertEqual(wf.core_id_signal_summary(s,(self.left,1))['signal'],'on')
+        s.undo();self.assertEqual(wf.core_id_signal_summary(s,(self.left,1))['signal'],'unknown')
+        s.redo();self.assertEqual(wf.core_id_signal_summary(s,(self.left,1))['signal'],'on')
+        with s.action('다른 ID로 변경'):
+            s.conn.execute("UPDATE cores SET core_id='OTHER' WHERE cable_id=? AND core_index=1",(self.right,))
+        self.assertEqual(wf.core_id_signal_summary(s,(self.left,1))['signal'],'unknown')
+        s.undo();s.close();self.store=code['Store'](self.path)
+        self.assertEqual(wf.core_id_signal_summary(self.store,(self.left,1))['signal'],'on')
+
     def test_explicit_before_after_policy_matrix_and_exclusion_precedence(self):
         cases=[('REAL','',[],True,True),('REAL','on',[],True,True),('임시-1','',[],False,False),
                ('임시-1','on',[],True,True),('REAL','on',['예외'],True,True),('REAL','on',['끊김'],True,True),
@@ -213,8 +269,57 @@ def windows_ui():
     print('PASS Windows stage denominators and 100%, shared cancellation repaint in both cable tabs/enclosure, draft preservation, undo/redo and excluded list')
 
 
+def windows_signal_ui():
+    if sys.platform!='win32':return
+    with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,TELECOM_APP_HOME=temp), \
+         patch.object(code['messagebox'],'showinfo'),patch.object(code['messagebox'],'showerror') as error, \
+         patch.object(code['messagebox'],'askyesno',return_value=True):
+        app=code['App']();errors=[];app.report_callback_exception=lambda *a:errors.append(a)
+        try:
+            s=app.store;a=s.add_node('시작',0,0);h=s.add_node('중간',300,0);b=s.add_node('끝',600,0)
+            left=s.add_cable(a,h,'LEFT','12C','기설');right=s.add_cable(h,b,'RIGHT','12C','기설')
+            with s.action('합성 신호'):
+                s.conn.execute("UPDATE cores SET core_id='SHARED',signal='unknown' WHERE cable_id=? AND core_index=1",(left,))
+                s.conn.execute("UPDATE cores SET core_id='SHARED',signal='on' WHERE cable_id=? AND core_index=7",(right,))
+                s.conn.execute("UPDATE cores SET core_id='OTHER',signal='off' WHERE cable_id=? AND core_index=2",(left,))
+                s.conn.execute("UPDATE cores SET signal='on' WHERE cable_id=? AND core_index=3",(left,))
+            app.refresh();app.update();snapshot=wf.plan_snapshot(s.conn);history=s.history_rows()
+            dialog=code['CableDialog'](app,s,left);dialog.tree.selection_set('1');app.update()
+            assert dialog.completion_signal.get()=='전체 신호: ON'
+            assert '선택 번호 신호: 확인필요' in dialog.completion_signal_detail.get()
+            assert dialog.edit_vars[2].get()=='확인필요' and dialog.tree.item('1','values')[1]=='확인필요'
+            assert (wf.plan_snapshot(s.conn),s.history_rows())==(snapshot,history)
+            dialog.notebook.select(dialog.identity_tab);dialog.identity_tree.selection_set('1');app.update()
+            dialog.identity_tree.item('1',values=(1,'UNSAVED-ID','입력 내용 보존'));dialog.identity_undo_stack.append({1:('SHARED','')})
+            with s.action('다른 케이블 신호 수정'):
+                s.conn.execute("UPDATE cores SET signal='off' WHERE cable_id=? AND core_index=7",(right,))
+            app.refresh();app.update();assert dialog.completion_signal.get()=='전체 신호: OFF'
+            assert dialog.identity_tree.item('1','values')[1:] == ('UNSAVED-ID','입력 내용 보존')
+            assert len(dialog.identity_undo_stack)==1
+            s.undo();app.refresh();app.update();assert dialog.completion_signal.get()=='전체 신호: ON'
+            s.redo();app.refresh();app.update();assert dialog.completion_signal.get()=='전체 신호: OFF'
+            with s.action('신호 충돌'):
+                s.conn.execute("UPDATE cores SET signal='on' WHERE cable_id=? AND core_index=1",(left,))
+            app.refresh();app.update();assert dialog.completion_signal.get()=='전체 신호: 불일치 (ON / OFF)'
+            for width in (1240,1000):
+                dialog.geometry(f'{width}x740');app.update()
+                assert dialog.completion_signal_label.winfo_viewable() and dialog.identity_tree.winfo_height()>90
+                for widget in (dialog.completion_signal_label,dialog.completion_signal_detail_label,dialog.map_allocation_button):
+                    assert widget.winfo_rootx()+widget.winfo_width()<=dialog.winfo_rootx()+dialog.winfo_width(),(width,widget.winfo_geometry())
+                    assert widget.winfo_rooty()+widget.winfo_height()<=dialog.winfo_rooty()+dialog.winfo_height()
+            dialog.identity_tree.selection_set('2');dialog.identity_tree.cycle_sort('number');app.update()
+            assert dialog.completion_signal.get()=='전체 신호: OFF'
+            dialog.identity_tree.selection_set('3');app.update();assert dialog.completion_signal.get()=='선택 번호 신호: ON'
+            dialog.identity_tree.selection_remove(*dialog.identity_tree.selection());app.update()
+            assert not dialog.completion_signal.get() and not dialog.completion_signal_detail.get()
+            dialog.destroy();assert not errors and not error.called,(errors,error.call_args_list)
+        finally:app.on_close()
+    print('PASS Windows same-ID whole signal/local signal, both tabs, draft preservation, edit/undo/redo, conflict, sorting and narrow layout')
+
+
 if __name__=='__main__':
     result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(CompletionTests))
     if not result.wasSuccessful():raise SystemExit(1)
     windows_ui()
+    windows_signal_ui()
     print('PASS before/after mandatory-core matrix, exact exclusions, temporary signals, missing-ID slots, topology and persistence')

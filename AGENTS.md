@@ -679,3 +679,29 @@ that authorized scope for requested program updates without asking again.
   actual physical numbers, including scrolled 144C rows. Run Windows main-map and
   separate-window incremental save gates, cut/removed/RN completion/reopen gates,
   existing auto/replacement/field tests and the full publication workflow.
+
+- V97 core_id_signal_summary shows saved signals across the current drawing for
+  the exact nonempty core ID, including disconnected slots and work-marked cable
+  and port positions. Unknown/blank is neutral: ON plus unknown displays ON;
+  multiple known signal types display their conflict rather than hiding it.
+  Empty IDs stay local and never combine unrelated anonymous capacity.
+- The CableDialog connection panel displays aggregate signal, per-type counts
+  and selected-slot signal in both tabs. It is read-only: never propagate signal,
+  alter completion policy or commit identity drafts from this display. Cache only
+  within the current Store revision/generation and invalidate on writes/history.
+  Run check_completion.py's ID/port/blank/conflict/edit/history/reopen tests and
+  Windows tab/draft/sort/narrow-layout gate plus the full release workflow.
+
+- V97 explicit temporary-to-temporary joins unify temporary identities in the
+  resulting physical splice component using the left/source selected ID. This
+  is the user's requested exception to field slot identity independence; real
+  identities and each slot's detail, status and signal must remain intact.
+  Follow actual splices through real-ID legs and RN ports, never same-ID matching
+  alone. Do not rewrite unrelated disconnected slots or migrate on opening.
+- Preserve temporary annotations/memos and phase membership on the surviving
+  ID, retaining old references when disconnected slots still use the old ID.
+  Join, identity changes and reference transport share one transaction and undo
+  group. Any remote lock failure must roll everything back. An explicitly
+  reselected existing pair can normalize its temporary route without a new edge.
+  Run check_temporary_merge.py including the Windows field/after connection
+  button, undo/redo repaint gate and the full publication workflow.
