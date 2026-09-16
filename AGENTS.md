@@ -625,3 +625,17 @@ publication of requested app changes through the existing main release workflow.
 - Field identity repair is on the always-visible utility toolbar. Run
   check_save_status.py and expanded check_after_assignment.py on Windows along
   with existing cloud, after-identity, allocation and full release gates.
+
+- V95 MapCoreAllocationPanel shares manual allocation actions/engine with the
+  existing separate window. CableDialog's 도면에서 코어배정 action preserves its
+  selected core, refuses dirty input, and withdraws/restores that editor. Keep
+  the main canvas viewport and show compact all-number capacity below it.
+- Main-map cable clicks inspect capacity; occupied number clicks trace actual
+  splices without assignment. Only chosen blank numbers enter the reviewed route.
+  Node dragging/Delete cannot mutate geometry in allocation mode. Preserve
+  locked/reserved/occupied numbers, full route validation, backup and atomic undo.
+- Cancel timers/bindings and restore the dashboard/editor on exit. Source switches
+  must destroy the panel before replacing Store and never reopen an obsolete editor.
+  Run check_map_allocation.py on Windows with real map/144-number clicks, dirty
+  source guard, occupied inspection, review cancel/apply, undo, narrow layout and
+  source replacement, plus the existing manual/full release gates.

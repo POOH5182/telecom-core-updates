@@ -166,44 +166,10 @@ class ManualAllocationReview(RememberedToplevel):
     def confirm(self):self.result=True;self.destroy()
 
 
-class ManualCoreAllocationDialog(RememberedToplevel):
+class ManualAllocationActions:
     CELL_W=220;CELL_H=54;GUTTER=48
 
-    def __init__(self,app,source,editor=None):
-        service=ManualCoreAllocator(app,source)
-        super().__init__(app);self.app=app;self.store=app.store;self.service=service;self.editor=editor
-        self._closed=False;self._watch=None;self.stale=False;self.scope='전체';self.inspect_cables=set();self.inspected=None
-        self.selected=dict(service.existing);self.columns=list(self.selected);self.active_cable=source[0]
-        self.title('코어분배 · 도면과 선번 직접 선택');self.geometry('1420x900');self.minsize(960,680)
-        self.protocol('WM_DELETE_WINDOW',self.destroy)
-        for sequence in ('<Control-z>','<Control-Z>'):self.bind(sequence,lambda e:self.history(False))
-        for sequence in ('<Control-y>','<Control-Y>'):self.bind(sequence,lambda e:self.history(True))
-        row=service.net.slots[tuple(source)]
-        title=ttk.Frame(self,padding=10);title.pack(fill='x')
-        ttk.Label(title,text='코어분배 · '+service.core_id+' · '+str(row.get('detail') or ''),style='Title.TLabel').pack(side='left')
-        toolbar=FlowToolbar(self);toolbar.pack(fill='x')
-        toolbar.add(ttk.Button(toolbar,text='새로고침 · 배정안 초기화',command=lambda:self.run(self.reload)))
-        toolbar.add(ttk.Button(toolbar,text='전체 / 경로 주변',command=self.toggle_scope))
-        toolbar.add(ttk.Button(toolbar,text='도면 맞춤',command=self.draw_map))
-        toolbar.add(ttk.Button(toolbar,text='다른 코어 선택',command=self.return_to_core))
-        self.apply_button=toolbar.add(ttk.Button(toolbar,text='배정안 확인·적용',command=lambda:self.run(self.apply)))
-        toolbar.add(ttk.Button(toolbar,text='닫기 · 배정안 취소',command=self.destroy))
-        self.message=tk.StringVar(value='도면에서 케이블 클릭 → 아래 선번표에서 빈 번호 클릭 → 배정안 확인·적용. 기존 선번은 유지됩니다.')
-        ttk.Label(self,textvariable=self.message,padding=(12,5),wraplength=1350,foreground='#1769aa').pack(fill='x')
-        panes=ttk.Panedwindow(self,orient='vertical');panes.pack(fill='both',expand=True,padx=10,pady=(0,8))
-        upper=ttk.Panedwindow(panes,orient='horizontal');panes.add(upper,weight=1)
-        mapbox=ttk.Frame(upper);detailbox=ttk.Frame(upper,width=340);upper.add(mapbox,weight=3);upper.add(detailbox,weight=1)
-        self.map=tk.Canvas(mapbox,bg='#f7f9fc',height=290,highlightthickness=0)
-        self.map.grid(row=0,column=0,sticky='nsew');mapbox.rowconfigure(0,weight=1);mapbox.columnconfigure(0,weight=1)
-        sy=ttk.Scrollbar(mapbox,orient='vertical',command=self.map.yview);sy.grid(row=0,column=1,sticky='ns')
-        sx=ttk.Scrollbar(mapbox,orient='horizontal',command=self.map.xview);sx.grid(row=1,column=0,sticky='ew')
-        self.map.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
-        self.map.bind('<Configure>',lambda e:self.draw_map());self.map.bind('<Button-1>',self.map_click)
-        self.map.bind('<MouseWheel>',self.zoom)
-        self.map.bind('<ButtonPress-2>',lambda e:self.map.scan_mark(e.x,e.y));self.map.bind('<B2-Motion>',lambda e:self.map.scan_dragto(e.x,e.y,gain=1))
-        ttk.Label(detailbox,text='기존 연결 · 배정안 · 선택 번호 확인',padding=6).pack(fill='x')
-        self.details=field_readonly_text(detailbox,10)
-        sheetbox=ttk.Frame(panes);panes.add(sheetbox,weight=1)
+    def build_sheet(self,sheetbox):
         ttk.Label(sheetbox,text='전체 선번표 · 흰색: 빈 번호 / 파랑: 기존 선택 코어 / 주황: 배정안 / 회색: 사용·잠금·예약 · 사용 중인 칸을 누르면 실제 연결을 확인합니다.',wraplength=1350,padding=4).grid(row=0,column=0,columnspan=2,sticky='ew')
         self.headers=tk.Canvas(sheetbox,height=60,bg='#e7edf5',highlightthickness=0);self.headers.grid(row=1,column=0,sticky='ew')
         self.sheet=tk.Canvas(sheetbox,bg='white',height=280,highlightthickness=0);self.sheet.grid(row=2,column=0,sticky='nsew')
@@ -213,9 +179,6 @@ class ManualCoreAllocationDialog(RememberedToplevel):
         self.sheet.configure(yscrollcommand=self.sy.set,xscrollcommand=self.sx.set)
         self.sheet.bind('<Button-1>',self.sheet_click);self.headers.bind('<Button-1>',self.header_click)
         self.sheet.bind('<MouseWheel>',lambda e:self.sheet.yview_scroll(-3 if e.delta>0 else 3,'units'))
-        if editor:
-            editor.clear_core_trace();editor._core_trace_enabled=False
-        self.live_stamp=self.read_stamp();self.render();self._watch=self.after(500,self.check_live)
 
     def read_stamp(self):return (id(self.app.store),getattr(self.app.store,'_view_generation',0),self.app.store.data_revision(),self.app.store.conn.total_changes)
 
@@ -241,7 +204,7 @@ class ManualCoreAllocationDialog(RememberedToplevel):
     def run(self,fn):
         try:return fn()
         except (ValueError,sqlite3.Error,OSError) as error:
-            self.message.set(str(error));messagebox.showwarning('코어분배',str(error),parent=self)
+            self.message.set(str(error));messagebox.showwarning('코어분배',str(error),parent=self.winfo_toplevel())
 
     def reload(self):
         self.service.load();self.selected=dict(self.service.existing);self.columns=list(self.selected)
@@ -425,3 +388,184 @@ class ManualCoreAllocationDialog(RememberedToplevel):
             except tk.TclError:pass
         if getattr(self.app,'_manual_allocation_window',None) is self:self.app._manual_allocation_window=None
         super().destroy()
+
+
+class ManualCoreAllocationDialog(ManualAllocationActions,RememberedToplevel):
+    CELL_W=220;CELL_H=54;GUTTER=48
+
+    def __init__(self,app,source,editor=None):
+        service=ManualCoreAllocator(app,source)
+        super().__init__(app);self.app=app;self.store=app.store;self.service=service;self.editor=editor
+        self._closed=False;self._watch=None;self.stale=False;self.scope='전체';self.inspect_cables=set();self.inspected=None
+        self.selected=dict(service.existing);self.columns=list(self.selected);self.active_cable=source[0]
+        self.title('코어분배 · 도면과 선번 직접 선택');self.geometry('1420x900');self.minsize(960,680)
+        self.protocol('WM_DELETE_WINDOW',self.destroy)
+        for sequence in ('<Control-z>','<Control-Z>'):self.bind(sequence,lambda e:self.history(False))
+        for sequence in ('<Control-y>','<Control-Y>'):self.bind(sequence,lambda e:self.history(True))
+        row=service.net.slots[tuple(source)]
+        title=ttk.Frame(self,padding=10);title.pack(fill='x')
+        ttk.Label(title,text='코어분배 · '+service.core_id+' · '+str(row.get('detail') or ''),style='Title.TLabel').pack(side='left')
+        toolbar=FlowToolbar(self);toolbar.pack(fill='x')
+        toolbar.add(ttk.Button(toolbar,text='새로고침 · 배정안 초기화',command=lambda:self.run(self.reload)))
+        toolbar.add(ttk.Button(toolbar,text='전체 / 경로 주변',command=self.toggle_scope))
+        toolbar.add(ttk.Button(toolbar,text='도면 맞춤',command=self.draw_map))
+        toolbar.add(ttk.Button(toolbar,text='다른 코어 선택',command=self.return_to_core))
+        self.apply_button=toolbar.add(ttk.Button(toolbar,text='배정안 확인·적용',command=lambda:self.run(self.apply)))
+        toolbar.add(ttk.Button(toolbar,text='닫기 · 배정안 취소',command=self.destroy))
+        self.message=tk.StringVar(value='도면에서 케이블 클릭 → 아래 선번표에서 빈 번호 클릭 → 배정안 확인·적용. 기존 선번은 유지됩니다.')
+        ttk.Label(self,textvariable=self.message,padding=(12,5),wraplength=1350,foreground='#1769aa').pack(fill='x')
+        panes=ttk.Panedwindow(self,orient='vertical');panes.pack(fill='both',expand=True,padx=10,pady=(0,8))
+        upper=ttk.Panedwindow(panes,orient='horizontal');panes.add(upper,weight=1)
+        mapbox=ttk.Frame(upper);detailbox=ttk.Frame(upper,width=340);upper.add(mapbox,weight=3);upper.add(detailbox,weight=1)
+        self.map=tk.Canvas(mapbox,bg='#f7f9fc',height=290,highlightthickness=0)
+        self.map.grid(row=0,column=0,sticky='nsew');mapbox.rowconfigure(0,weight=1);mapbox.columnconfigure(0,weight=1)
+        sy=ttk.Scrollbar(mapbox,orient='vertical',command=self.map.yview);sy.grid(row=0,column=1,sticky='ns')
+        sx=ttk.Scrollbar(mapbox,orient='horizontal',command=self.map.xview);sx.grid(row=1,column=0,sticky='ew')
+        self.map.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        self.map.bind('<Configure>',lambda e:self.draw_map());self.map.bind('<Button-1>',self.map_click)
+        self.map.bind('<MouseWheel>',self.zoom)
+        self.map.bind('<ButtonPress-2>',lambda e:self.map.scan_mark(e.x,e.y));self.map.bind('<B2-Motion>',lambda e:self.map.scan_dragto(e.x,e.y,gain=1))
+        ttk.Label(detailbox,text='기존 연결 · 배정안 · 선택 번호 확인',padding=6).pack(fill='x')
+        self.details=field_readonly_text(detailbox,10)
+        sheetbox=ttk.Frame(panes);panes.add(sheetbox,weight=1)
+        self.build_sheet(sheetbox)
+        if editor:
+            editor.clear_core_trace();editor._core_trace_enabled=False
+        self.live_stamp=self.read_stamp();self.render();self._watch=self.after(500,self.check_live)
+
+
+class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
+    """Keep the main map interactive while one core's explicit draft is open."""
+    GRID_H=28
+
+    def __init__(self,app,source,editor):
+        service=ManualCoreAllocator(app,source)
+        super().__init__(app,padding=(10,4))
+        self.app=app;self.store=app.store;self.service=service;self.editor=editor
+        self._closed=False;self._watch=None;self.stale=False;self.scope='전체';self.inspect_cables=set();self.inspected=None
+        self.selected=dict(service.existing);self.columns=list(self.selected);self.active_cable=source[0]
+        self._size_binding=None;self._grid_columns=12
+        self.dashboard_visible=bool(app.dashboard_frame.place_info())
+        app.cancel_left_pan();app.drag_anchor=None;app.pending_drag=None;app.selected.clear()
+        app.mode='select';app.cable_start=None
+        self.configure(height=self.panel_height());self.pack_propagate(False)
+        self.pack(side='bottom',fill='x',before=app.canvas_frame)
+        app.dashboard_frame.place_forget()
+        toolbar=FlowToolbar(self);toolbar.pack(fill='x')
+        toolbar.add(ttk.Label(toolbar,text='코어배정 중 · '+service.core_id,font=('Malgun Gothic',10,'bold')))
+        self.apply_button=toolbar.add(ttk.Button(toolbar,text='배정안 확인·적용',command=lambda:self.run(self.apply),style='Primary.TButton'))
+        toolbar.add(ttk.Button(toolbar,text='전체도면 맞춤',command=app.fit_view))
+        toolbar.add(ttk.Button(toolbar,text='배정안 초기화',command=lambda:self.run(self.reload)))
+        toolbar.add(ttk.Button(toolbar,text='코어 선택으로 돌아가기',command=self.close_requested))
+        self.message=tk.StringVar(value='도면 케이블 클릭 → 아래 빈 번호 클릭 → 배정안 확인·적용. 다른 사용 번호를 누르면 접속 경로를 확인합니다.')
+        self.message_label=ttk.Label(self,textvariable=self.message,foreground='#1769aa',padding=(2,2))
+        self.message_label.pack(fill='x')
+        body=ttk.Panedwindow(self,orient='horizontal');body.pack(fill='both',expand=True)
+        left=ttk.Frame(body);right=ttk.Frame(body,width=300);body.add(left,weight=3);body.add(right,weight=1)
+        self.cable_status=tk.StringVar();ttk.Label(left,textvariable=self.cable_status,font=('Malgun Gothic',9,'bold'),wraplength=650).grid(row=0,column=0,columnspan=2,sticky='ew')
+        self.sheet=tk.Canvas(left,bg='white',highlightthickness=0,width=600,height=190)
+        self.sheet.grid(row=1,column=0,sticky='nsew');left.rowconfigure(1,weight=1);left.columnconfigure(0,weight=1)
+        self.sy=ttk.Scrollbar(left,orient='vertical',command=self.sheet.yview);self.sy.grid(row=1,column=1,sticky='ns')
+        self.sheet.configure(yscrollcommand=self.sy.set)
+        self.sheet.bind('<Button-1>',self.sheet_click);self.sheet.bind('<Configure>',lambda e:self.render_sheet())
+        self.sheet.bind('<MouseWheel>',lambda e:self.sheet.yview_scroll(-3 if e.delta>0 else 3,'units'))
+        self.sheet.bind('<Motion>',self.hover_slot)
+        self.hover=tk.StringVar(value='흰색: 빈 번호 · 파랑: 기존 연결 · 주황: 배정안 · 회색: 사용·잠금·예약')
+        ttk.Label(left,textvariable=self.hover,wraplength=650).grid(row=2,column=0,columnspan=2,sticky='ew')
+        ttk.Label(right,text='기존 구간 · 배정안 · 양쪽 접속',padding=2).pack(fill='x')
+        self.details=field_readonly_text(right,6)
+        self.details.configure(width=34)
+        editor.clear_core_trace();editor._core_trace_enabled=False
+        self.editor_grab=editor.grab_current() is editor
+        if self.editor_grab:editor.grab_release()
+        editor.withdraw();app._map_allocation_panel=self
+        self.live_stamp=self.read_stamp();self.render();self._watch=self.after(500,self.check_live)
+        self._size_binding=app.bind('<Configure>',self.resize_panel,add='+')
+        app.update_idletasks();app.lift();app.canvas.focus_set()
+        app.status.set('코어배정 중 · '+service.core_id+' · 케이블을 클릭하면 아래에 전체 선번이 표시됩니다.')
+
+    def panel_height(self):return max(240,min(340,int(self.app.winfo_height()*.42)))
+
+    def resize_panel(self,event):
+        if event.widget is self.app and not self._closed:
+            self.configure(height=self.panel_height());self.message_label.configure(wraplength=max(650,event.width-35))
+
+    def draw_map(self):pass # The real App canvas retains its viewport, zoom and panning.
+
+    def add_cable(self,cid):
+        self.service.fresh()
+        if cid not in self.service.net.cables:raise ValueError('철거·절단 케이블은 배분할 수 없습니다.')
+        if cid not in self.columns:self.columns.append(cid)
+        self.active_cable=cid;self.inspected=None;self.inspect_cables=set()
+        self.message.set(self.cable_title(cid)+' · 빈 번호 클릭: 배정안 선택 / 사용 번호 클릭: 실제 접속 확인')
+        self.sheet.yview_moveto(0);self.render()
+
+    def render_sheet(self):
+        if self._closed:return
+        self.sheet.delete('all');s=self.service;cid=self.active_cable
+        if cid not in s.net.cables:return
+        count=int(s.net.cables[cid]['size']);width=max(260,self.sheet.winfo_width())
+        self._grid_columns=max(8,min(24,width//32));cell=width/self._grid_columns
+        height=math.ceil(count/self._grid_columns)*self.GRID_H
+        self.sheet.configure(scrollregion=(0,0,width,height))
+        empty=allowed_count=0
+        for index in range(1,count+1):
+            row=s.rows[cid,index];allowed,reason=s.availability(cid,index)
+            empty+=not plan_used(row) and (cid,index) not in s.occupied;allowed_count+=allowed
+            chosen=self.selected.get(cid)==index;existing=s.existing.get(cid)==index
+            fill='#dbeafe' if existing else '#ffedd5' if chosen else 'white' if allowed else '#e5e7eb'
+            x=((index-1)%self._grid_columns)*cell;y=((index-1)//self._grid_columns)*self.GRID_H
+            self.sheet.create_rectangle(x+1,y+1,x+cell-1,y+self.GRID_H-1,fill=fill,outline='#f97316' if chosen and not existing else '#94a3b8',width=2 if chosen else 1,tags=('number:'+str(index),))
+            self.sheet.create_text(x+cell/2,y+self.GRID_H/2,text=str(index),fill='#1e3a8a' if existing else '#172033',tags=('number:'+str(index),))
+        self.cable_status.set(self.cable_title(cid)+f' · 전체 {count} / 빈 {empty} / 선택 가능 {allowed_count}')
+
+    def pointer_number(self,event):
+        x=self.sheet.canvasx(event.x);y=self.sheet.canvasy(event.y);width=max(260,self.sheet.winfo_width())
+        if x<0 or x>=width or y<0:return None
+        index=int(y//self.GRID_H)*self._grid_columns+int(x/(width/self._grid_columns))+1
+        if index<=int(self.service.net.cables[self.active_cable]['size']):return index
+
+    def sheet_click(self,event):
+        index=self.pointer_number(event)
+        if index is not None:self.run(lambda:self.choose_slot(self.active_cable,index))
+        return 'break'
+
+    def hover_slot(self,event):
+        index=self.pointer_number(event)
+        if index is None:return
+        row=self.service.rows[self.active_cable,index];reason=self.service.availability(self.active_cable,index)[1]
+        self.hover.set(f"{index}번 · {row['core_id'] or '(ID 없음)'} · {row['detail'] or '(내역 없음)'} · {reason}")
+
+    def highlight(self):
+        if self.stale:return
+        colors={c:'#be185d' for c in self.inspect_cables};colors.update(self.component_colors())
+        colors.update({c:ROUTE_ORANGE for c in self.selected if c not in self.service.existing})
+        colors.setdefault(self.active_cable,'#0891b2')
+        labels={c:str(n)+'번'+(' 기존' if c in self.service.existing else ' 배정안') for c,n in self.selected.items()}
+        if self.inspected:
+            labels[self.inspected[0]]=labels.get(self.inspected[0],'')+' · 확인 '+str(self.inspected[1])+'번'
+        self.app.start_highlight_blink(colors,owner=self,core_labels=labels)
+
+    def apply(self):
+        # Visiting a cable only inspects capacity; only selected numbers enter the route.
+        proposal=self.service.preview(self.selected)
+        review=ManualAllocationReview(self.app,self.review_text(proposal));self.wait_window(review)
+        if not review.result:return
+        self.service.apply(proposal);self.app.refresh();self.reload()
+        self.message.set('선번과 함체 접속 적용 완료 · Ctrl+Z로 취소 가능 · 코어 선택으로 돌아가 다음 코어를 배정하세요.')
+
+    def close_requested(self):
+        if self.selected!=self.service.existing and not messagebox.askyesno('배정안 취소','아직 적용하지 않은 선번 선택을 취소하고 코어 선택으로 돌아갈까요?',parent=self.app):return False
+        self.destroy();return True
+
+    def destroy(self,restore_editor=True):
+        if self._closed:return
+        valid=self.app.store is self.store and getattr(self.store,'_view_generation',0)==self.service.generation
+        if self._size_binding is not None:self.app.unbind('<Configure>',self._size_binding);self._size_binding=None
+        if getattr(self.app,'_map_allocation_panel',None) is self:self.app._map_allocation_panel=None
+        if self.dashboard_visible:self.app.dashboard_frame.place(relx=1.0,x=-24,y=18,anchor='ne')
+        editor=self.editor
+        super().destroy()
+        if restore_editor and valid and editor is not None and editor.winfo_exists():
+            editor.deiconify();editor.lift();editor.focus_core(self.service.source[1]);editor.queue_core_trace()
+            if self.editor_grab:editor.grab_set()
