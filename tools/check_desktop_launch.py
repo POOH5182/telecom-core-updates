@@ -120,7 +120,9 @@ def run_case(mode):
                 assert 'Synthetic failure' in (home/'desktop_output.log').read_text(encoding='utf-8',errors='replace')
                 print('PASS Windows failed detached startup exits before rollback; valid backup-reference fixture restores data and previous version')
                 return
-            gui=until(lambda:read(home/'gui.json') if read(home/'gui.json').get('mapped') else None);pid=gui['pid']
+            # The synthetic GUI rewrites its heartbeat every 100 ms. Read one
+            # complete snapshot; a transient truncated JSON is not GUI failure.
+            gui=until(lambda:(value if (value:=read(home/'gui.json')).get('mapped') else None));pid=gui['pid']
             assert gui['console']==0 and alive(pid),gui
             assert read(home/'bootstrap.json')['console']!=0
             with InstanceLock(home):pass # Parent launcher really exited and released its lock.
@@ -130,7 +132,8 @@ def run_case(mode):
             else:raise AssertionError('Detached GUI did not retain the app lifetime lock')
             with (home/'second.log').open('wb') as log:
                 second=subprocess.run([sys.executable,str(home/'telecom_updater.py')],cwd=home,env=env,stdout=log,stderr=subprocess.STDOUT,timeout=10,creationflags=subprocess.CREATE_NO_WINDOW)
-            assert second.returncode!=0 and read(home/'gui.json')['pid']==pid and alive(pid)
+            second_gui=until(lambda:read(home/'gui.json'))
+            assert second.returncode!=0 and second_gui['pid']==pid and alive(pid)
             if mode=='update':
                 assert state['active'].startswith(f'program_versions/v{VERSION}-') and not state.get('pending'),state
                 assert Path(gui['ready']).read_text()==gui['token'] # Never delete updater's commit marker.
