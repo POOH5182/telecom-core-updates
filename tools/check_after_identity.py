@@ -161,13 +161,16 @@ def windows_ui():
                 with s.action('후도면 원래 ID 케이블 삭제'):
                     s.conn.execute('DELETE FROM splices WHERE cable1_id=? OR cable2_id=?',(cables[0],cables[0]));s.conn.execute('DELETE FROM cables WHERE id=?',(cables[0],))
                 app.refresh();app.update();original=wf.plan_snapshot(s.conn);real=wf.TableDialog
+                if not app.advanced_tools_visible:app.toggle_advanced_tools();app.update()
+                assert app.after_identity_button.winfo_viewable()
                 def review(accept):
                     def show(*args,**kwargs):
                         d=real(*args,**kwargs);d.after(50,d.confirm if accept else d.destroy);return d
                     return show
                 with patch.object(wf,'TableDialog',side_effect=review(False)):app.after_identity_button.invoke();app.update()
-                assert wf.plan_snapshot(s.conn)==original
+                assert not errors,errors;assert wf.plan_snapshot(s.conn)==original
                 with patch.object(wf,'TableDialog',side_effect=review(True)):app.after_identity_button.invoke();app.update()
+                assert not errors,errors
                 assert all(s.core(*p)['core_id']=='CORE' for p in slots[1:]);assert s.cable(cables[0]) is None
                 app.undo();app.update();assert wf.plan_snapshot(s.conn)==original
                 # Scenario manager's explicit regeneration uses the same materialization.

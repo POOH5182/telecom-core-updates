@@ -163,6 +163,6 @@ def sync_after_identities(app):
         if not rows:messagebox.showinfo('현장 코어내역 반영','반영할 임시·빈 접속 코어가 없습니다.',parent=app);return
         dialog=TableDialog(app,'현장 코어내역 → 후도면 · 적용 전 확인',('처리','케이블·선번 / 코어ID','기존 ID / 확인내용','기존 내역','반영 ID','반영 내역'),rows,'반영 가능한 내역 적용' if p['changes'] else None)
         app.wait_window(dialog)
-        if not dialog.result:return
+        if not dialog.accepted:return
         service.apply(p);app.refresh();app.status.set(f"현장 코어내역 {len(p['changes'])}개 번호 반영 완료 · Ctrl+Z로 취소할 수 있습니다.")
     except (ValueError,sqlite3.Error,OSError) as error:messagebox.showwarning('현장 코어내역 반영',str(error),parent=app)
