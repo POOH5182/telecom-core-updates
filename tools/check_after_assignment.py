@@ -82,6 +82,48 @@ class AfterAssignmentTests(unittest.TestCase):
         self.assertEqual(s.node_assignment_needs(self.h),{self.left:{1},self.right:{7}})
         self.assertFalse(s.waiting_connection_groups(self.h))
 
+    def test_after_rn_neutral_port_follows_actual_splice_without_writing_identity(self):
+        s=self.s;self.connect()
+        with s.action('RN 변환'):s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(self.a,))
+        s.ensure_ports(self.a,{'mp':1,'sp':0,'p':1});port=('PORT:'+self.a,1)
+        s.connect(self.a,(self.left,1),port)
+        for identity in ('','임시-RN'):
+            with self.subTest(identity=identity),s.action('중립 RN 포트'):
+                s.conn.execute("UPDATE ports SET core_id=?,detail='',signal='unknown' WHERE node_id=? AND port_index=1",(identity,self.a))
+            snapshot=wf.plan_snapshot(s.conn);history=s.history_rows()
+            report=wf.completion_report(s)
+            self.assertTrue(report['by_id']['CORE']['complete'],report['by_id']['CORE'])
+            self.assertIs(report['by_slot'][port],report['by_id']['CORE'])
+            self.assertEqual(wf.core_completion_brief(s,(self.left,1)),('연결완료',''))
+            self.assertFalse(s.node_assignment_needs(self.a));self.assertFalse(s.incomplete_core_groups())
+            self.assertEqual(s.cable_core_warning_summary()[self.left]['error'],0)
+            self.assertEqual((wf.plan_snapshot(s.conn),s.history_rows()),(snapshot,history))
+        s.disconnect(self.a,*port)
+        self.assertFalse(wf.completion_report(s)['by_id']['CORE']['complete'])
+        self.assertIn('RN 내부포트',wf.core_completion_brief(s,(self.left,1))[1])
+        s.undo();self.assertTrue(wf.completion_report(s)['by_id']['CORE']['complete'])
+        path=s.path;s.close();self.s=code['Store'](path)
+        self.assertTrue(wf.completion_report(self.s)['by_id']['CORE']['complete'])
+
+    def test_after_rn_conflict_retired_or_duplicate_splice_stays_incomplete(self):
+        s=self.s;self.connect()
+        with s.action('RN 변환'):s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(self.a,))
+        s.ensure_ports(self.a,{'mp':1,'sp':0,'p':1});port=('PORT:'+self.a,1)
+        s.connect(self.a,(self.left,1),port)
+        for identity,signal,status in [('OTHER','unknown','normal'),('','off','normal'),('','unknown','error')]:
+            with self.subTest(identity=identity,signal=signal,status=status):
+                with s.action('포트 오류'):s.conn.execute("UPDATE ports SET core_id=?,signal=?,status1=? WHERE node_id=? AND port_index=1",(identity,signal,status,self.a))
+                self.assertFalse(wf.completion_report(s)['by_id']['CORE']['complete'])
+                s.undo()
+        with s.action('빈 포트'):s.conn.execute("UPDATE ports SET core_id='' WHERE node_id=? AND port_index=1",(self.a,))
+        with s.action('철거'):s.conn.execute("UPDATE cables SET status='철거' WHERE id=?",(self.left,))
+        self.assertFalse(wf.completion_report(s)['by_id']['CORE']['complete']);s.undo()
+        with s.action('잘못된 중복 접속'):
+            s.conn.execute('INSERT INTO splices(node_id,cable1_id,core1_index,cable2_id,core2_index) VALUES(?,?,?,?,?)',(self.a,port[0],port[1],self.left,1))
+        self.assertFalse(wf.completion_report(s)['by_id']['CORE']['complete']);s.undo()
+        update(s,*('PORT:'+self.a,2),dict(core_id='CORE',signal='on'))
+        self.assertFalse(wf.completion_report(s)['by_id']['CORE']['complete'])
+
 
 def windows_ui():
     if sys.platform!='win32':return
@@ -102,6 +144,13 @@ def windows_ui():
                 assert wf.core_completion_brief(s,(left,1))==('연결완료','')
                 s.disconnect(h,left,1);app.refresh();app.update();assert '미배정코어' in texts()
                 app.undo();app.update();assert '미배정코어' not in texts()
+                with s.action('RN 변환'):s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(a,))
+                s.ensure_ports(a,{'mp':1,'sp':0,'p':1});s.connect(a,(left,1),('PORT:'+a,1))
+                with s.action('중립 RN 포트'):s.conn.execute("UPDATE ports SET core_id='',signal='unknown' WHERE node_id=? AND port_index=1",(a,))
+                app.refresh();app.update();assert '미배정코어' not in texts() and '미완료코어' not in texts(),texts()
+                dialog=code['CableDialog'](app,s,left);dialog.tree.selection_set('1');app.update()
+                assert dialog.completion_reason.get()=='연결완료',dialog.completion_reason.get()
+                dialog.destroy()
                 assert not errors,errors
             finally:app.on_close()
     print('PASS Windows after terminal-to-terminal map badges, connected status, disconnect and undo repaint')

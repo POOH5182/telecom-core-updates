@@ -77,7 +77,7 @@ def cloud_http(path, body=None, token=None):
         data = json.dumps(body).encode('utf-8')
     req = urllib.request.Request(CLOUD_URL + path, data=data, headers=headers)
     try:
-        with urllib.request.build_opener(CloudNoRedirect()).open(req, timeout=25) as response:
+        with urllib.request.build_opener(CloudNoRedirect()).open(req, timeout=45) as response:
             content = response.read(13 * 1024 * 1024 + 1)
             if len(content) > 13 * 1024 * 1024:
                 raise CloudError('서버 응답이 허용 크기를 초과했습니다.')
@@ -96,6 +96,14 @@ def cloud_http(path, body=None, token=None):
         raise CloudError(friendly.get(message, message[:250]), code) from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise CloudError('서버에 연결할 수 없습니다. PC의 작업 내용은 보존됩니다.', 'network') from None
+
+
+def cloud_error_text(error):
+    if getattr(error,'code','')=='57014' or 'canceling statement' in str(error).lower():
+        return '서버 처리 시간 초과 · 클라우드 저장 확인 대기 · 자동 재시도합니다.'
+    if getattr(error,'code','')=='network':
+        return '서버 응답을 확인하지 못했습니다. 연결 복구 후 자동 재시도합니다.'
+    return str(error)
 
 
 def cloud_protect(data, decrypt=False):
@@ -464,6 +472,23 @@ class CloudController:
     def editable_idle(self):
         return not (self.app.store.conn.hold_commit or self.app.store._history_depth or self.app.pending_drag)
 
+    def save_status(self,drawing_id=None):
+        drawing_id=drawing_id or self.current
+        if not drawing_id:return '클라우드 도면 선택 필요'
+        if self.access_lost:return '클라우드 저장 미완료 · 로그인 또는 계정 승인 확인 필요'
+        entry=self.entry(drawing_id)
+        pending=(self.outbox()/(drawing_id+'.json')).exists()
+        if drawing_id==self.current and not pending and entry.get('synced_signature')==self.signature() and entry.get('synced_name')==entry['name']:
+            return '클라우드 저장 완료'+(' · '+entry['synced_at'] if entry.get('synced_at') else '')
+        issue=getattr(self,'sync_errors',{}).get(drawing_id)
+        if issue:return '클라우드 저장 미완료 · '+issue
+        return '클라우드 전송 중…' if self.jobs.busy else '클라우드 저장 대기 · 자동 재시도합니다.'
+
+    def publish_save_status(self):
+        text=self.save_status()
+        self.status.set(text)
+        self.status_label.configure(fg='#155e42' if text.startswith('클라우드 저장 완료') else '#a03c16')
+
     def capture(self):
         if not self.current:
             return
@@ -494,6 +519,7 @@ class CloudController:
         self.queue_drawing_copies()
         pending=sorted(self.outbox().glob('*.json'))
         if not pending:
+            self.publish_save_status()
             if done:
                 done()
             return True
@@ -503,17 +529,26 @@ class CloudController:
         if path.stem!=drawing_id or drawing_id not in self.index['docs']:
             raise CloudError('계정의 동기화 대기 파일을 확인해 주세요.')
         self.status.set('클라우드에 저장하는 중…')
+        if hasattr(self,'sync_errors'):self.sync_errors.pop(drawing_id,None)
         def work():
             return self.session.call('save',**{k:v for k,v in request.items() if not k.startswith('_')})
         def succeeded(result):
-            entry=self.entry(drawing_id)
-            entry.update(base_revision=result['revision'],synced_sha=request['sha256'],
-                         synced_name=request['name'],synced_signature=request['_signature'])
-            self.persist()
-            path.unlink(missing_ok=True)
-            self.status.set('동기화 완료 · '+time.strftime('%H:%M:%S'))
-            self.status_label.configure(fg='#155e42')
-            self.send_next(done,failed)
+            try:
+                if (result.get('id')!=drawing_id or result.get('sha256')!=request['sha256']
+                        or result.get('revision')!=request['base_revision']+1):
+                    raise CloudError('서버 저장 확인 응답이 일치하지 않습니다. 대기 파일을 보존합니다.')
+                entry=self.entry(drawing_id)
+                entry.update(base_revision=result['revision'],synced_sha=request['sha256'],
+                             synced_name=request['name'],synced_signature=request['_signature'],synced_at=time.strftime('%H:%M:%S'))
+                self.persist()
+                path.unlink(missing_ok=True)
+                # An acknowledgement covers only its captured revision. Queue edits
+                # made during upload before reporting completion or switching files.
+                if self.current and self.editable_idle():self.capture()
+                self.send_next(done,failed)
+            except Exception as error:
+                self.failed(error,drawing_id)
+                if failed:failed(error)
         def failure(error):
             if isinstance(error,CloudError) and error.code=='40001':
                 # Keep both revisions: local changes become a distinct cloud drawing.
@@ -545,14 +580,16 @@ class CloudController:
                     '다른 PC의 변경과 겹쳤습니다.\n이 PC의 작업은 “'+entry['name']+'”으로 따로 보관합니다.\n다른 PC의 원본도 내 도면 목록에 그대로 남습니다.',parent=self.app)
                 self.send_next(done,failed)
                 return
-            self.failed(error)
+            self.failed(error,drawing_id)
             if failed:
                 failed(error)
         return self.jobs.run(work,succeeded,failure)
 
-    def failed(self,error):
+    def failed(self,error,drawing_id=None):
         self.retry_at=time.monotonic()+20
-        self.status.set('PC에 저장됨 · '+str(error))
+        if not hasattr(self,'sync_errors'):self.sync_errors={}
+        self.sync_errors[drawing_id or self.current]=cloud_error_text(error)
+        self.status.set('클라우드 동기화 미완료 · '+cloud_error_text(error))
         self.status_label.configure(fg='#a03c16')
         if isinstance(error,CloudError) and error.code in ('42501','401','PGRST301'):
             self.access_lost=True
@@ -570,7 +607,7 @@ class CloudController:
             return
         try:
             self.capture()
-            self.send_next(done=lambda:self.status.set('동기화 완료 · '+time.strftime('%H:%M:%S')))
+            self.send_next()
         except Exception as error:
             self.failed(error)
 

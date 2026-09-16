@@ -610,3 +610,18 @@ publication of requested app changes through the existing main release workflow.
   stale guards and one atomic undo group. Run check_after_identity.py including
   actual Windows initial transition, repair button/review/undo and regeneration,
   plus existing field, after routes/allocation and full Windows release gates.
+
+- V94 save receipts distinguish committed local snapshots from cloud acknowledgement.
+  Keep persistent operation IDs through timeout/lost ACK/restart; only matching ID,
+  checksum and expected next revision acknowledge a queued request. Capture edits
+  made during upload before completion. Cancel receipt timers when dialogs close.
+- The cloud save RPC returns metadata directly without serializing the payload;
+  only telecom_call has a 20-second timeout. Retain all existing auth/owner/CAS
+  checks. cloud/verify_save.sql tests maximum synthetic payload and rolls back.
+- After Network treats a neutral RN internal port as belonging to its one actual
+  connected real-ID cable for read-only classification. Do not invent splices,
+  rewrite port IDs, hide real-ID/signal/branch faults or ignore unused real-ID
+  ports. Completion and cable diagnostics share this effective port identity.
+- Field identity repair is on the always-visible utility toolbar. Run
+  check_save_status.py and expanded check_after_assignment.py on Windows along
+  with existing cloud, after-identity, allocation and full release gates.

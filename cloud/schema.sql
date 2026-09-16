@@ -118,7 +118,8 @@ begin
     end if;
     if item.id is not null and item.operation_id=operation then
       if item.sha256 <> digest or item.name <> title then raise exception 'OPERATION_REUSED'; end if;
-      return to_jsonb(item)-'payload'-'owner_id'-'operation_id';
+      return jsonb_build_object('id',item.id,'name',item.name,'revision',item.revision,
+        'sha256',item.sha256,'updated_at',item.updated_at);
     end if;
     if coalesce(item.revision,0) <> expected then
       raise serialization_failure using message='DRAWING_CONFLICT';
@@ -128,7 +129,8 @@ begin
     on conflict(id) do update set name=excluded.name,revision=excluded.revision,
       payload=excluded.payload,sha256=excluded.sha256,operation_id=excluded.operation_id,updated_at=now()
     returning * into item;
-    return to_jsonb(item)-'payload'-'owner_id'-'operation_id';
+    return jsonb_build_object('id',item.id,'name',item.name,'revision',item.revision,
+      'sha256',item.sha256,'updated_at',item.updated_at);
   end if;
   raise exception 'UNKNOWN_ACTION';
 end;
@@ -137,7 +139,7 @@ revoke all on function telecom_private.dispatch(jsonb) from public, anon, authen
 grant execute on function telecom_private.dispatch(jsonb) to authenticated;
 
 create function public.telecom_call(request jsonb) returns jsonb
-language sql security invoker set search_path = '' as $$
+language sql security invoker set search_path = '' set statement_timeout = '20s' as $$
   select telecom_private.dispatch(request);
 $$;
 revoke all on function public.telecom_call(jsonb) from public, anon;

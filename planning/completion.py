@@ -81,6 +81,8 @@ def completion_report(store,kind=None):
     for nid,others in neighbors.items():net.degree[nid]=max(net.degree[nid],len(others))
     grouped={}
     for row in store.all_core_rows():
+        slot=(row['cable_id'],int(row['core_index']))
+        if slot in net.rn_port_identities:row=dict(row,core_id=net.rn_port_identities[slot])
         cid=str(row.get('core_id') or '').strip();slot=(row['cable_id'],int(row['core_index']))
         group_key=('id',cid) if cid else ('slot',slot)
         # Unused capacity must not flood the excluded list.
@@ -154,6 +156,7 @@ def completion_report(store,kind=None):
     result={'kind':kind,'total':total,'done':done,'rate':100.0*done/total if total else None,'rows':targets,
             'excluded':len(excluded),'excluded_rows':excluded,'by_id':by_id,'by_slot':all_slots,
             'degree':dict(net.degree),
+            'rn_port_identities':dict(net.rn_port_identities),
             'assignment_needs':{n:frozenset(slots) for n,slots in assignment_needs.items()},
             'waiting_slots':{n:frozenset(slots) for n,slots in waiting_slots.items()},
             'required_slots':frozenset(s for row in targets if not row['exception_complete'] for s in row['active_slots'] if not core_connection_exempt(store.core(*s))),
@@ -194,7 +197,7 @@ def core_completion_brief(store,slot):
     if entry['complete']:return '연결완료',''
     if not entry['required'] and not (entry.get('error') or entry.get('holds')):return '필수 연결 대상 아님',''
     causes=set(entry['causes']);reasons=[]
-    for keys,label in (({'unconnected','endpoints'},'코어연결 미완료'),({'port'},'RN 내부포트 미접속'),
+    for keys,label in (({'unconnected','endpoints'} if 'port' not in causes else set(),'코어연결 미완료'),({'port'},'RN 내부포트 접속 확인'),
                        ({'identity'},'코어ID 다름'),({'signal'},'신호 불일치'),({'split'},'코어경로 분리'),
                        ({'branch'},'중복·분기 연결'),({'invalid'},'접속정보 오류'),({'marked'},'오류 상태 표시')):
         if causes&keys:reasons.append(label)
