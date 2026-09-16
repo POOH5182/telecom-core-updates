@@ -444,7 +444,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         self.app=app;self.store=app.store;self.service=service;self.editor=editor
         self._closed=False;self._watch=None;self.stale=False;self.scope='전체';self.inspect_cables=set();self.inspected=None
         self.selected=dict(service.existing);self.columns=list(self.selected);self.active_cable=source[0]
-        self._size_binding=None;self._grid_columns=12
+        self._size_binding=None;self._resize_job=None;self._grid_columns=12
         self.dashboard_visible=bool(app.dashboard_frame.place_info())
         app.cancel_left_pan();app.drag_anchor=None;app.pending_drag=None;app.selected.clear()
         app.mode='select';app.cable_start=None
@@ -484,11 +484,18 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         app.update_idletasks();app.lift();app.canvas.focus_set()
         app.status.set('코어배정 중 · '+service.core_id+' · 케이블을 클릭하면 아래에 전체 선번이 표시됩니다.')
 
-    def panel_height(self):return max(240,min(340,int(self.app.winfo_height()*.42)))
+    def panel_height(self):
+        available=self.app.canvas_frame.winfo_height()+(self.winfo_height() if self.winfo_ismapped() else 0)
+        return max(210,min(340,int(available*.43)))
 
     def resize_panel(self,event):
         if event.widget is self.app and not self._closed:
-            self.configure(height=self.panel_height());self.message_label.configure(wraplength=max(650,event.width-35))
+            self.message_label.configure(wraplength=max(650,event.width-35))
+            if self._resize_job is None:self._resize_job=self.after_idle(self.resize_fit)
+
+    def resize_fit(self):
+        self._resize_job=None
+        if not self._closed:self.configure(height=self.panel_height())
 
     def draw_map(self):pass # The real App canvas retains its viewport, zoom and panning.
 
@@ -561,6 +568,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
     def destroy(self,restore_editor=True):
         if self._closed:return
         valid=self.app.store is self.store and getattr(self.store,'_view_generation',0)==self.service.generation
+        if self._resize_job is not None:self.after_cancel(self._resize_job);self._resize_job=None
         if self._size_binding is not None:self.app.unbind('<Configure>',self._size_binding);self._size_binding=None
         if getattr(self.app,'_map_allocation_panel',None) is self:self.app._map_allocation_panel=None
         if self.dashboard_visible:self.app.dashboard_frame.place(relx=1.0,x=-24,y=18,anchor='ne')

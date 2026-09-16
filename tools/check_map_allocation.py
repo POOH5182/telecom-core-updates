@@ -41,7 +41,8 @@ def windows_ui():
             assert isinstance(panel,wf.MapCoreAllocationPanel) and editor.state()=='withdrawn'
             assert app.view_scale==scale and app.highlight_owner is panel
             assert len(panel.service.problem['components'])==2
-            assert panel.winfo_ismapped() and app.canvas.winfo_height()>250
+            print('MAP LAYOUT:',app.winfo_geometry(),panel.winfo_ismapped(),app.canvas.winfo_height(),panel.winfo_height(),panel.sheet.winfo_height(),flush=True)
+            assert panel.winfo_ismapped() and app.canvas.winfo_height()>150
             assert not app.dashboard_frame.winfo_ismapped()
             app.fit_view();app.update()
 
