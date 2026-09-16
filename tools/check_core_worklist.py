@@ -100,7 +100,7 @@ def windows_ui():
             s=app.store;nodes,cables,rn=fixture(s);s.backup_to(app.scenario_path('before'));app.refresh();app.update()
             # Source evidence remains frozen; current names/signals must override its display.
             source=dict(core_id='SYNTH-A',detail='전도면 이름',signal='unknown',result='미완료',method='작업',source_routes=['합성 경로'],source_slots=[(cables[0],1)])
-            with patch.object(app,'work_report',return_value={'rows':[source]}):
+            with patch.object(app,'work_report',return_value=dict(app.work_report(),rows=[source])):
                 dialog=code['CoreCheckDialog'](app,s);app.update()
                 assert dialog.rows[0][1]=='ON' and dialog.rows[0][3]!='전도면 이름',dialog.rows
                 def choose(cid):
