@@ -245,6 +245,37 @@ def core_signal_code(value):
     return {'':'unknown','확인필요':'unknown','예외':'exception','오류':'error'}.get(value,value)
 
 
+def core_id_overview(store):
+    """Cached current-drawing names and signals, including detached slots/ports."""
+    stamp=(getattr(store,'_view_generation',0),store.data_revision(),store.conn.total_changes)
+    if getattr(store,'_core_id_overview_stamp',None)!=stamp:
+        groups={}
+        for table in ('cores','ports'):
+            for row in store.conn.execute('SELECT core_id,detail,signal,COUNT(*) AS count FROM '+table+" WHERE TRIM(COALESCE(core_id,''))<>'' GROUP BY core_id,detail,signal ORDER BY core_id,detail,signal"):
+                cid=str(row['core_id'] or '').strip()
+                group=groups.setdefault(cid,dict(counts=defaultdict(int),names=[]))
+                group['counts'][core_signal_code(row['signal'])]+=int(row['count'])
+                name=str(row['detail'] or '')
+                if name not in group['names']:group['names'].append(name)
+        store._core_id_overview_value=groups;store._core_id_overview_stamp=stamp
+    return store._core_id_overview_value
+
+
+def core_check_info(store,core_id,slot=None,fallback_signal=''):
+    """Work-list signal: any ON wins, while conflicts remain visible as notes."""
+    cid=str(core_id or '').strip();group=core_id_overview(store).get(cid) if cid else None
+    if group:counts=dict(group['counts'])
+    else:
+        local=store.core(*slot) if slot else None
+        counts={core_signal_code(local.get('signal') if local else fallback_signal):1}
+    known=set(counts)-{'unknown'}
+    signal='on' if 'on' in known else 'mixed' if len(known)>1 else next(iter(known),'unknown')
+    parts=[CORE_SIGNAL_NAMES.get(k,k)+' '+str(v) for k,v in sorted(counts.items())]
+    warning='신호 불일치: '+' · '.join(parts) if len(known)>1 else ''
+    return dict(signal=signal,label=CORE_SIGNAL_NAMES.get(signal,'불일치' if signal=='mixed' else signal),
+                warning=warning,counts=counts,names=list(group['names']) if group else [],current=bool(group))
+
+
 def core_id_signal_summary(store,slot):
     """Read stored signals for this exact ID across the current drawing.
 
@@ -254,15 +285,7 @@ def core_id_signal_summary(store,slot):
     selected=store.core(*slot) or {};cid=str(selected.get('core_id') or '').strip()
     local=core_signal_code(selected.get('signal'))
     if cid:
-        stamp=(getattr(store,'_view_generation',0),store.data_revision(),store.conn.total_changes)
-        if getattr(store,'_core_id_signal_stamp',None)!=stamp:
-            groups=defaultdict(lambda:defaultdict(int))
-            for table in ('cores','ports'):
-                for row in store.conn.execute('SELECT core_id,signal,COUNT(*) AS count FROM '+table+" WHERE TRIM(COALESCE(core_id,''))<>'' GROUP BY core_id,signal"):
-                    identity=str(row['core_id'] or '').strip()
-                    if identity:groups[identity][core_signal_code(row['signal'])]+=int(row['count'])
-            store._core_id_signal_groups={k:dict(v) for k,v in groups.items()};store._core_id_signal_stamp=stamp
-        counts=dict(store._core_id_signal_groups.get(cid,{local:1}))
+        counts=dict(core_id_overview(store).get(cid,{}).get('counts',{local:1}))
     else:counts={local:1}
     known=set(counts)-{'unknown'}
     order=[s for s in CORE_SIGNAL_NAMES if counts.get(s)]+sorted(set(counts)-set(CORE_SIGNAL_NAMES))

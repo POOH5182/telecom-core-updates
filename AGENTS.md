@@ -752,3 +752,15 @@ that authorized scope for requested program updates without asking again.
   Keep the existing identity-only operation in every stage. Run the expanded
   check_core_identity_swap.py including Windows both-tab move, enclosure peers,
   route highlight, cancel/drafts and undo/redo gates plus the full release suite.
+
+- V101 CoreCheckDialog uses current-drawing exact-ID signal aggregation in every
+  list/filter/export. Any ON wins; conflicting known signals remain in the note.
+  Include disconnected/work-marked slots and RN ports, keep anonymous slots local,
+  and use source evidence only when that ID is absent from the current drawing.
+- Its explicit name action updates detail only at all current same-ID positions.
+  Preserve identities, signals, topology, annotations and frozen snapshots. Protect
+  locks, stale scope, typed drafts, sorted/raw temporary-ID selection, atomic backup
+  and one-step undo. Name edits suppress the generic after auto-join hook. Refresh
+  clean saved-name cells across open windows without overwriting dirty editors.
+  Run check_core_worklist.py including Windows source override, filters, global
+  name/RN repaint, drafts/stale/locks/history and CSV/print, plus the full pipeline.
