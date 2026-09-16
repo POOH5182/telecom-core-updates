@@ -81,6 +81,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM AUTO ALLOCATION\n' + (ROOT / 'planning' / 'auto_allocation.py').read_text(encoding='utf-8')
         if version >= 92:
             baseline += '\n\n# BEGIN TELECOM MANUAL ALLOCATION\n' + (ROOT / 'planning' / 'manual_allocation.py').read_text(encoding='utf-8')
+        if version >= 93:
+            baseline += '\n\n# BEGIN TELECOM AFTER IDENTITY\n' + (ROOT / 'planning' / 'after_identity.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()

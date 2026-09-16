@@ -592,3 +592,21 @@ publication of requested app changes through the existing main release workflow.
   endpoint policy, RN internal ports and all before/field behavior. Run
   check_manual_allocation.py and check_after_assignment.py including Windows
   real pointer, reviewed apply, key undo, map repaint and narrow-window gates.
+
+- V93 planning/after_identity.py materializes a complete physical field component's
+  unique real ID and unique nonempty real-ID name into every member cable/port in
+  a newly created after snapshot. Temporary names do not choose the real name.
+  Do not merge disconnected components, guess ambiguous real names, or normalize
+  field/GIS source files. Build a fresh staged derivative before installing its
+  inherited triggers and locks; preserve all signals, status, numbering, splices,
+  annotations, policy and source history, and replace the target only on success.
+- Both initial after creation and explicit scenario-manager regeneration use the
+  same copy function. Existing after drawings are not changed merely on opening.
+  The explicit reviewed sync uses the creation baseline when available, matching
+  original physical slot and cable endpoint IDs, even when an intervening cable
+  has been deleted. Never recreate deleted geometry, fill unconnected empty
+  capacity, overwrite another real identity/nonempty edited name, or ignore locks.
+  Preserve annotations via field_slot_write, pre-apply backups, source/current
+  stale guards and one atomic undo group. Run check_after_identity.py including
+  actual Windows initial transition, repair button/review/undo and regeneration,
+  plus existing field, after routes/allocation and full Windows release gates.
