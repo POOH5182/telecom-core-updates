@@ -106,6 +106,53 @@ class OffLegacyTests(unittest.TestCase):
     connect=CompletionTests.connect
     report=CompletionTests.report
 
+    def test_after_whole_id_off_unknown_is_exempt_read_only_and_on_restores_need(self):
+        self.stage('after');s=self.store;self.core(1,'SHARED','off')
+        with s.action('같은 ID 확인필요 구간'):
+            s.conn.execute("UPDATE cores SET core_id='SHARED',detail='보존 내역',signal='unknown' WHERE cable_id=? AND core_index=7",(self.right,))
+        before=wf.plan_snapshot(s.conn);history=s.history_rows()
+        self.assertEqual(wf.core_id_signal_summary(s,(self.right,7))['label'],'OFF')
+        self.assertEqual(self.report()['total'],0)
+        self.assertEqual(s.node_assignment_needs(self.h),{});self.assertFalse(s.waiting_connection_groups(self.h))
+        self.assertTrue(all(v['unassigned']==0 for v in s.cable_core_warning_summary().values()))
+        self.assertEqual(wf.core_completion_brief(s,(self.right,7)),('집계 제외','신호 OFF'))
+        self.assertEqual((wf.plan_snapshot(s.conn),s.history_rows()),(before,history))
+        with s.action('다른 위치 ON'):
+            s.conn.execute("UPDATE cores SET signal='on' WHERE cable_id=? AND core_index=7",(self.right,))
+        self.assertEqual(s.node_assignment_needs(self.h),{self.right:{7}})
+        self.assertEqual(s.cable_core_warning_summary()[self.left]['unassigned'],0)
+        self.assertEqual(s.cable_core_warning_summary()[self.right]['unassigned'],1)
+        s.undo();self.assertEqual(s.node_assignment_needs(self.h),{})
+        s.redo();self.assertEqual(s.node_assignment_needs(self.h),{self.right:{7}});s.undo()
+        path=s.path;s.close();self.store=code['Store'](path)
+        self.assertEqual(self.store.node_assignment_needs(self.h),{})
+        self.assertEqual(self.store.core(self.right,7)['signal'],'unknown')
+
+    def test_after_off_resolution_includes_marked_cables_and_ports_but_not_other_ids(self):
+        self.stage('after');s=self.store;self.core(1,'SHARED','unknown');self.core(2,'OTHER','unknown')
+        with s.action('절단 케이블 OFF'):
+            s.conn.execute("UPDATE cores SET core_id='SHARED',signal='OFF' WHERE cable_id=? AND core_index=7",(self.right,))
+            s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.right,))
+        self.assertEqual(s.node_assignment_needs(self.h),{self.left:{2}})
+        self.assertEqual(wf.core_completion_brief(s,(self.left,1)),('집계 제외','신호 OFF'))
+        with s.action('RN 포트 확정 신호'):
+            s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(self.a,))
+            s.conn.execute("INSERT INTO ports VALUES(?,1,'P1','SHARED','','','','error')",(self.a,))
+        self.assertNotIn((self.left,1),wf.completion_report(s)['off_slots'])
+        self.assertIn((self.right,7),wf.completion_report(s)['off_slots'])
+
+    def test_after_actual_neutral_rn_on_port_prevents_off_inference(self):
+        self.stage('after');s=self.store;self.core(1,'SHARED','unknown')
+        with s.action('실제 ON RN 포트와 다른 OFF 위치'):
+            s.conn.execute("UPDATE nodes SET type='rn' WHERE id=?",(self.a,))
+            s.conn.execute("INSERT INTO ports VALUES(?,1,'P1','','','','','on')",(self.a,))
+            s.conn.execute('INSERT INTO splices VALUES(?,?,?,?,?)',(self.a,self.left,1,'PORT:'+self.a,1))
+            s.conn.execute("UPDATE cores SET core_id='SHARED',signal='off' WHERE cable_id=? AND core_index=7",(self.right,))
+        report=wf.completion_report(s)
+        self.assertTrue(report['by_id']['SHARED']['required'])
+        self.assertNotIn((self.left,1),report['off_slots'])
+        self.assertIn((self.right,7),report['off_slots'])
+
     def test_before_after_off_named_temporary_and_no_id_are_excluded(self):
         self.core(1,'REAL','off');self.core(2,'임시-81','off');self.core(3,'','off')
         for stage in ('gis','before','after'):

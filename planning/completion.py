@@ -14,6 +14,15 @@ def core_signal_off(row):
     return bool(row) and str(dict(row).get('signal') or '').strip().lower()=='off'
 
 
+def after_resolved_off_ids(rows):
+    """Unknown is neutral when the only known signal for a saved ID is OFF."""
+    signals=defaultdict(set)
+    for row in rows:
+        cid=str(row.get('core_id') or '').strip()
+        if cid:signals[cid].add(core_signal_code(row.get('signal')))
+    return {cid for cid,kinds in signals.items() if 'off' in kinds and kinds<={'off','unknown'}}
+
+
 def core_connection_exempt(row):
     """OFF and non-ON broken slots require no allocation or completion work."""
     if not row:return ''
@@ -101,20 +110,28 @@ def completion_report(store,kind=None):
     stored_net=Network(store.conn,resolve_rn_ports=True) if kind=='after' and len(source_cables)!=len(net.cables) else None
     if stored_net is not None:stored_net.degree=net.degree.copy()
     port_identities={**(stored_net.rn_port_identities if stored_net else {}),**net.rn_port_identities}
-    grouped={}
+    grouped={};source_rows={}
     for row in store.all_core_rows():
         slot=(row['cable_id'],int(row['core_index']))
+        source_rows[slot]=row
         if slot in port_identities:row=dict(row,core_id=port_identities[slot])
         cid=str(row.get('core_id') or '').strip();slot=(row['cable_id'],int(row['core_index']))
         group_key=('id',cid) if cid else ('slot',slot)
         # Unused capacity must not flood the excluded list.
         if not cid and not completion_policy([row],kind)['required']:continue
         grouped.setdefault(group_key,[]).append(row)
+    off_ids=after_resolved_off_ids(row for rows in grouped.values() for row in rows) if kind=='after' else set()
+    off_slots=frozenset(slot for slot,row in source_rows.items() if core_signal_off(row) or
+                       (port_identities.get(slot,str(row.get('core_id') or '').strip()) in off_ids and core_signal_code(row.get('signal'))=='unknown'))
+    auto_conflicts=after_auto_conflicts(store,stored_net) if kind=='after' else []
+    conflicts_by_id=defaultdict(list)
+    for conflict in auto_conflicts:conflicts_by_id[conflict['core_id']].append(conflict['reason'])
     targets=[];excluded=[];all_slots={};by_id={};route_by_slot={}
     audit=field_slot_audit(store);exempt_components=audit['exempt_component_slots']
     options={**DEFAULTS,'reject_temporary':False,'check_details':False,'reject_removed':kind=='after'}
     for group_key,rows in grouped.items():
-        cid=str(rows[0].get('core_id') or '').strip();policy=completion_policy(rows,kind)
+        cid=str(rows[0].get('core_id') or '').strip()
+        policy=completion_policy([dict(row,signal='off') for row in rows] if cid in off_ids else rows,kind)
         slots=sorted((row['cable_id'],int(row['core_index'])) for row in rows)
         active_slots=sorted(s for s in slots if s in net.slots)
         if policy['required']:
@@ -143,9 +160,10 @@ def completion_report(store,kind=None):
                     # Neutral RN ports belong to the physically connected core,
                     # including ports reached through a work-marked cable.
                     for slot in active_slots:all_slots[slot]=entry
-            notes=route['notes']
+            notes=list(dict.fromkeys(route['notes']+conflicts_by_id.get(cid,[])))
+            if conflicts_by_id.get(cid):route=dict(route,complete=False,notes=notes)
             if cid and not active_slots and not notes:notes=['연결할 코어 경로가 없습니다.']
-            entry.update(complete=bool(route['complete'] and active_slots),reason=' / '.join(notes),reason_items=tuple(notes),causes=completion_causes(notes))
+            entry.update(complete=bool(route['complete'] and active_slots and not conflicts_by_id.get(cid)),reason=' / '.join(notes),reason_items=tuple(notes),causes=completion_causes(notes))
             if kind=='after':
                 for slot in active_slots:route_by_slot[slot]=route
             if kind=='before':
@@ -179,12 +197,19 @@ def completion_report(store,kind=None):
             if entry['complete']:continue
             members=set(entry['active_slots'])
             for slot in members:
-                if core_connection_exempt(net.slots.get(slot)):continue
-                cable=net.cables.get(slot[0]);nids=(cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)
+                if slot in off_slots or core_connection_exempt(source_rows.get(slot)):continue
+                cable=net.cables.get(slot[0]) or (stored_net.cables.get(slot[0]) if stored_net else None)
+                nids=(cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)
                 for nid in nids:
                     if cable and cable_terminal(net.nodes.get(nid),net.degree[nid]):continue
                     local=[peer for node,peer in net.links.get(slot,()) if node==nid]
                     valid=len(local)==1 and local[0] in members and bool(entry['core_id'])
+                    # A valid stored local join stays assigned even if a cut
+                    # marker hides its peer and another part is still unfinished.
+                    if not valid and not local and stored_net is not None:
+                        saved=[peer for node,peer in stored_net.links.get(slot,()) if node==nid]
+                        if len(saved)==1 and str(stored_net.slots.get(saved[0],{}).get('core_id') or '').strip()==entry['core_id']:
+                            valid=True;local=saved
                     if not valid:assignment_needs[nid].add(slot)
                     if not local:waiting_slots[nid].add(slot)
     done=sum(r['complete'] for r in targets);total=len(targets)
@@ -192,10 +217,12 @@ def completion_report(store,kind=None):
             'excluded':len(excluded),'excluded_rows':excluded,'by_id':by_id,'by_slot':all_slots,
             'degree':dict(net.degree),
             'route_by_slot':route_by_slot,
+            'automatic_conflicts':auto_conflicts,
+            'off_slots':off_slots,
             'rn_port_identities':{**(stored_net.rn_port_identities if stored_net else {}),**net.rn_port_identities},
             'assignment_needs':{n:frozenset(slots) for n,slots in assignment_needs.items()},
             'waiting_slots':{n:frozenset(slots) for n,slots in waiting_slots.items()},
-            'required_slots':frozenset(s for row in targets if not row['exception_complete'] for s in row['active_slots'] if not core_connection_exempt(store.core(*s))),
+            'required_slots':frozenset(s for row in targets if not row['exception_complete'] for s in row['active_slots'] if s not in off_slots and not core_connection_exempt(source_rows.get(s))),
             'excluded_counts':{reason:sum(row['excluded_reason']==reason for row in excluded) for reason in sorted({row['excluded_reason'] for row in excluded})}}
     store._completion_key=key;store._completion_value=result
     return result
@@ -259,6 +286,7 @@ def core_completion_brief(store,slot):
         temporary=not entry['real_ids']
     else:
         report=completion_report(store);entry=report['by_slot'].get(slot)
+        if slot in report.get('off_slots',()):exempt='신호 OFF'
         if not entry:return ('집계 제외',exempt) if exempt else ('미사용 코어','')
         temporary=entry['temporary']
         if exempt:

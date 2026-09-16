@@ -705,3 +705,24 @@ that authorized scope for requested program updates without asking again.
   reselected existing pair can normalize its temporary route without a new edge.
   Run check_temporary_merge.py including the Windows field/after connection
   button, undo/redo repaint gate and the full publication workflow.
+
+- V98 after same-ID automatic joins use stored physical cables, independent of
+  cut/removal work marks and remote signal/state classifications. Exactly two
+  eligible owners may join; preserve locks, occupied slots, actual real-ID
+  conflicts, loop/branch guards and explicit disconnects. A new backed-up policy
+  activation repairs existing after drawings once; its marker survives undo.
+- Same-ID candidates at one facility numbering three or more produce read-only
+  node/cable/error-list diagnostics; never pick two arbitrarily or overwrite
+  statuses. Existing pairs remain intact. Recheck both old/new affected nodes
+  on deletion/movement. Preserve wholly detached replaced historical records.
+  Deletion-origin same-number exclusions may be relaxed only when recorded
+  history positively identifies them; unknown/manual exclusions remain protected.
+- In after drawings, same-ID OFF plus unknown/blank resolves to OFF for allocation
+  and completion eligibility, consistent with the whole-ID signal display. Any
+  other known signal prevents this inference. Explicit local OFF stays exempt
+  even when another slot is ON. Do not rewrite saved signal values or apply this
+  new aggregation policy to GIS/field drawings. Keep actual conflict diagnostics.
+- Local assignment must recognize a saved join through marked cables even when
+  a distant leg remains incomplete. Run expanded check_after_autoconnect.py and
+  check_off_assignment.py with Windows duplicate badges/OFF display/history,
+  existing after assignment/manual allocation/completion gates and full release.

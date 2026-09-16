@@ -41,7 +41,7 @@ jobs:
         run: python tools/materialize_release.py
       - name: 임시코어 실제 경로 통합·실제 ID 보존·내역·RN·잠금·실행취소 검증
         run: python tools/check_temporary_merge.py
-      - name: 후도면 동일 ID 자동접속·ON 확인필요 완료·신호 보존·실행취소 검증
+      - name: 후도면 두 대상 자동접속·3개 중복 오류·OFF 미배정 제외·실행취소 검증
         run: python tools/check_after_autoconnect.py
       - name: 현장 경로 ID·내역 전체 반영·후도면 삭제 구간·원본 보존 검증
         run: python tools/check_after_identity.py

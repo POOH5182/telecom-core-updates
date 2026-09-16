@@ -63,13 +63,68 @@ class AutoConnectTests(unittest.TestCase):
         self.s.disconnect(self.h,self.l,1);update(self.s,self.r,7,dict(detail='수정명'))
         self.assertFalse(self.connected())
 
-    def test_ambiguous_and_retired_and_locked_do_not_join(self):
+    def test_ambiguous_and_locked_do_not_join_but_work_marks_allow_join(self):
         self.fill();update(self.s,self.r,8,dict(core_id='CORE'))
         self.assertFalse(wf.after_auto_pairs(self.s))
         self.s.delete_core_assignment(self.r,8)
-        self.s.set_node_status(self.h,'철거');self.assertFalse(wf.after_auto_pairs(self.s));self.s.undo()
+        self.s.set_node_status(self.h,'철거');self.assertEqual(len(wf.after_auto_pairs(self.s)),1);self.s.undo()
         self.s.set_node_locked(self.h,True);wf.after_auto_activate(self.s);self.assertFalse(self.connected())
         self.s.set_node_locked(self.h,False);self.assertTrue(self.connected())
+
+    def test_v95_upgrade_repairs_marked_wait_once_and_preserves_all_values(self):
+        self.fill();s=self.s
+        s.conn.execute("INSERT INTO meta VALUES('after_same_id_v95','1')")
+        s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.r,))
+        s.conn.execute("UPDATE nodes SET status='철거' WHERE id=?",(self.b,));s.conn.commit()
+        before=wf.plan_snapshot(s.conn);self.assertEqual(wf.after_auto_activate(s),1)
+        after=wf.plan_snapshot(s.conn)
+        for table in before:
+            if table!='splices':self.assertEqual(before[table],after[table],table)
+        self.assertTrue(self.complete());self.assertEqual(s.cable_core_warning_summary()[self.l]['unassigned'],0)
+        s.undo();self.assertEqual(wf.plan_snapshot(s.conn),before)
+        path=s.path;s.close();self.s=code['Store'](path)
+        self.assertEqual(wf.after_auto_activate(self.s),0);self.assertFalse(self.connected())
+        self.s.redo();self.assertTrue(self.complete())
+
+    def test_three_candidates_report_exact_node_without_join_and_resolve_on_delete(self):
+        s=self.s;wf.after_auto_activate(s)
+        end=s.add_node('세번째 말단',200,200);third=s.add_cable(self.h,end,'THIRD','12C','신설')
+        with s.action('세 방향 한 번에 입력'):
+            self.fill();update(s,third,3,dict(core_id='CORE',detail='같은 내역',signal='on'))
+        self.assertFalse(self.connected());self.assertFalse(s.splice_for(self.h,third,3))
+        before=wf.plan_snapshot(s.conn);history=s.history_rows()
+        conflict=wf.completion_report(s)['automatic_conflicts'][0]
+        self.assertEqual((conflict['node_id'],len(conflict['slots'])),(self.h,3))
+        self.assertIn('3개 번호',conflict['reason']);self.assertIn('함체',conflict['reason'])
+        self.assertEqual(s.node_warning_summary()[self.h]['duplicate_count'],1)
+        self.assertEqual(s.error_core_summary()['core_count'],1)
+        self.assertTrue(all(s.cable_core_warning_summary()[c]['error'] for c in (self.l,self.r,third)))
+        self.assertIn('3개 번호',wf.core_completion_locations(s,(self.l,1)))
+        self.assertEqual((wf.plan_snapshot(s.conn),s.history_rows()),(before,history))
+        s.delete_core_assignment(third,3);self.assertTrue(self.connected());self.assertTrue(self.complete())
+        self.assertEqual(s.error_core_summary()['core_count'],0)
+        s.undo();self.assertEqual(wf.plan_snapshot(s.conn),before);self.assertEqual(s.error_core_summary()['core_count'],1)
+        s.redo();self.assertTrue(self.connected())
+        pair=dict(s.splice_for(self.h,self.l,1))
+        update(s,third,3,dict(core_id='CORE',signal='on'))
+        self.assertEqual(dict(s.splice_for(self.h,self.l,1)),pair);self.assertFalse(s.splice_for(self.h,third,3))
+        self.assertEqual(s.node_warning_summary()[self.h]['duplicate_count'],1)
+
+    def test_deleted_assignment_can_be_filled_again_without_reviving_manual_disconnect(self):
+        self.fill();s=self.s;wf.after_auto_activate(s);s.delete_core_assignment(self.r,7)
+        self.assertFalse(self.connected());old=wf.plan_snapshot(s.conn)
+        update(s,self.r,7,dict(core_id='CORE',detail='같은 내역',signal='unknown'))
+        self.assertTrue(self.connected());s.undo();self.assertEqual(wf.plan_snapshot(s.conn),old)
+        s.redo();s.disconnect(self.h,self.l,1);update(s,self.r,7,dict(detail='새 메모'))
+        self.assertFalse(self.connected())
+
+    def test_work_marked_local_join_not_unassigned_when_far_end_still_open(self):
+        self.fill();s=self.s;s.connect(self.h,(self.l,1),(self.r,7))
+        end=s.add_node('먼 말단',600,0);s.add_cable(self.b,end,'EMPTY','12C','신설')
+        s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.r,));s.conn.commit()
+        self.assertFalse(self.complete())
+        self.assertEqual(s.node_assignment_needs(self.h),{})
+        self.assertEqual(s.cable_core_warning_summary()[self.l]['unassigned'],0)
 
     def test_same_id_elsewhere_off_conflict_and_field_never_join(self):
         self.fill();update(self.s,self.r,7,dict(signal='off'))
@@ -111,9 +166,37 @@ def windows_ui():
             assert s.core(r,7)['signal']=='unknown'
             s.undo();app.refresh();app.update();assert not s.splice_for(h,l,1)
             s.redo();app.refresh();app.update();assert s.drawing_connection_progress()['done']==1
+            print('AUTO UI: three-way ambiguity',flush=True)
+            end=s.add_node('세번째 말단',400,450);third=s.add_cable(h,end,'THIRD','12C','신설')
+            update(s,third,3,dict(core_id='CORE',detail='동일내역',signal='on'));app.refresh();app.update()
+            assert s.splice_for(h,l,1) and not s.splice_for(h,third,3)
+            assert s.error_core_summary()['core_count']==1
+            texts=[app.canvas.itemcget(i,'text') for i in app.canvas.find_all() if app.canvas.type(i)=='text']
+            assert any('코어ID 중복 오류 1개' in text for text in texts),texts
+            assert '중복·분기' in editor.completion_reason.get()
+            s.undo();app.refresh();app.update();assert not s.error_core_summary()['core_count']
+            # Remove the now empty side branch so only the original route is required.
+            with s.action('합성 곁가지 제거'):
+                s.conn.execute('DELETE FROM cores WHERE cable_id=?',(third,));s.conn.execute('DELETE FROM cables WHERE id=?',(third,))
+            print('AUTO UI: OFF plus unknown',flush=True)
+            with s.action('합성 OFF와 확인필요'):
+                s.conn.execute("UPDATE cores SET core_id='OFF-CORE',signal='off' WHERE cable_id=? AND core_index=2",(l,))
+                s.conn.execute("UPDATE cores SET core_id='OFF-CORE',signal='unknown' WHERE cable_id=? AND core_index=8",(r,))
+            editor=code['open_detail_dialog'](app,s,'cable',r);editor.focus_core(8);app.refresh();app.update()
+            assert editor.completion_signal.get()=='전체 신호: OFF'
+            assert editor.completion_reason.get()=='신호 OFF',editor.completion_reason.get()
+            assert s.core(r,8)['signal']=='unknown' and not s.node_assignment_needs(h)
+            assert all(v['unassigned']==0 for v in s.cable_core_warning_summary().values())
+            texts=[app.canvas.itemcget(i,'text') for i in app.canvas.find_all() if app.canvas.type(i)=='text']
+            assert not any('미배정코어' in text or '배정필요' in text for text in texts),texts
+            with s.action('확정 ON 입력'):s.conn.execute("UPDATE cores SET signal='on' WHERE cable_id=? AND core_index=8",(r,))
+            app.refresh();app.update();assert s.node_assignment_needs(h)=={r:{8}}
+            assert s.cable_core_warning_summary()[l]['unassigned']==0
+            s.undo();app.refresh();app.update();assert editor.completion_reason.get()=='신호 OFF'
+            s.redo();app.refresh();app.update();assert s.node_assignment_needs(h)=={r:{8}}
             assert not callbacks,callbacks;assert not errors.called,errors.call_args_list;assert not warnings.called,warnings.call_args_list
         finally:app.on_close();faulthandler.cancel_dump_traceback_later()
-    print('PASS after automatic same-ID join, ON/unknown completion, UI refresh and undo/redo')
+    print('PASS after automatic same-ID join, three-way error badge, OFF/unknown exemption, original signal preservation, UI refresh and undo/redo')
 
 
 if __name__=='__main__':
