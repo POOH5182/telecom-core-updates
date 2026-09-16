@@ -47,12 +47,20 @@ def windows_ui():
             app.fit_view();app.update()
 
             def click_cable(cid):
-                items=[x for x,c in app.item_to_cable.items() if c==cid and app.canvas.type(x)=='text']
-                if items:x,y=app.canvas.coords(items[0])
-                else:
-                    a,b,m,n,c,d=app.canvas.coords(app.cable_line_items[cid]);x,y=(a+2*m+c)/4,(b+2*n+d)/4
-                x=int(x-app.canvas.canvasx(0));y=int(y-app.canvas.canvasy(0))
-                assert app.target(SimpleNamespace(x=x,y=y))==('cable',cid)
+                points=[]
+                # Text anchors can fall outside glyphs or under a node label.
+                for item,cable in app.item_to_cable.items():
+                    if cable!=cid:continue
+                    box=app.canvas.bbox(item)
+                    if box:
+                        l,t,r,b=box
+                        points.extend((l+(r-l)*fx,t+(b-t)*fy) for fx in (.5,.25,.75) for fy in (.5,.25,.75))
+                candidates=[]
+                for x,y in points:
+                    x=int(x-app.canvas.canvasx(0));y=int(y-app.canvas.canvasy(0))
+                    if 0<x<app.canvas.winfo_width() and 0<y<app.canvas.winfo_height() and app.target(SimpleNamespace(x=x,y=y))==('cable',cid):candidates.append((x,y))
+                assert candidates,('No exposed cable target',cid,app.canvas.winfo_geometry(),points)
+                x,y=candidates[0]
                 app.canvas.event_generate('<Button-1>',x=x,y=y);app.canvas.event_generate('<ButtonRelease-1>',x=x,y=y);app.update()
 
             def click_number(number):

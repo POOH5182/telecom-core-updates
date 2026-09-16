@@ -639,3 +639,14 @@ publication of requested app changes through the existing main release workflow.
   Run check_map_allocation.py on Windows with real map/144-number clicks, dirty
   source guard, occupied inspection, review cancel/apply, undo, narrow layout and
   source replacement, plus the existing manual/full release gates.
+
+- V95 after_autoconnect.py enables same-real-ID automatic joining when activating
+  an after drawing. At each physical facility exactly two eligible owners must
+  be free. Preserve metadata, names, signals and numbers; do not infer RN ports,
+  merge ambiguities, close loops or replace occupied/retired splices. Honor locks
+  and explicit disconnect exclusions. Field/GIS behavior remains unchanged.
+- Existing waits get one backed-up migration. Its policy marker survives undo;
+  reopening cannot redo an undone join. Subsequent relevant edits add joins inside
+  the same transaction/history group, after all changes are available. Reads stay
+  pure. ON with unknown/empty signals remains complete on a valid full route.
+  Run check_after_autoconnect.py including its Windows repaint/undo/redo gate.

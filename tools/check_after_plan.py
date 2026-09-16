@@ -58,6 +58,7 @@ class PlannerTest(unittest.TestCase):
 
     def test_renumber_annotations_edges_undo_redo_and_before(self):
         s=self.store
+        update(s,self.small,2,{'signal':'off'})
         wf.save_annotations(s,(self.small,2),['정상','확인필요'],'보존 메모 A')
         wf.save_annotations(s,(self.small,1),['정상'],'다른 메모 B')
         # Force consistent metadata across the whole ID, preserving off signals.
