@@ -83,39 +83,120 @@ class SaveStatusTests(unittest.TestCase):
 
 def windows_ui():
     if sys.platform!='win32':return
+    import threading
+    from types import SimpleNamespace
+    from check_popup_monitor import assert_centered
     fixture.HEADLESS=False
+    class HeldServer(TimeoutServer):
+        def __init__(self):super().__init__();self.hold=False;self.release=threading.Event();self.release.set()
+        def call(self,action,**request):
+            if action=='save' and self.hold:
+                if not self.release.wait(5):raise cloud.CloudError('Synthetic held upload timeout','network')
+            return super().call(action,**request)
     with tempfile.TemporaryDirectory() as tmp:
-        app,c=fixture.make_app(Path(tmp)/'pc',TimeoutServer());errors=[]
+        server=HeldServer();app,c=fixture.make_app(Path(tmp)/'pc',server);errors=[]
         app.report_callback_exception=lambda *args:errors.append(args)
-        try:
-            fixture.new_drawing(app,c,'Save UI');app.deiconify();app.geometry('1000x760');app.update()
-            assert not app.advanced_tools_visible
-            assert app.after_identity_button.winfo_viewable()
-            assert app.after_identity_button.master is app.utility_toolbar
-            s=app.store;s.add_node('Saved locally',0,0);c.session.fail='timeout'
-            real=fixture.ns['DrawingSavedDialog'];observed=[]
-            def dialog(*args,**kwargs):
-                d=real(*args,**kwargs)
-                def check():
-                    if c.jobs.busy:d.after(50,check);return
-                    try:
-                        d.refresh_sync()
-                        observed.append(d.sync_text.get())
-                        assert d.title()=='PC 저장 완료'
-                        assert '시간 초과' in observed[-1],observed
-                        assert 'canceling' not in observed[-1]
-                        assert app.scenario_path(app.scenario_kind()).exists()
-                    except Exception as error:errors.append(error)
-                    finally:d.destroy()
-                d.after(200,check);return d
-            with patch.dict(fixture.ns,DrawingSavedDialog=dialog):app.save_current_drawing()
-            assert observed and not errors,(observed,errors)
-            c.session.fail=None;c.sync_now();fixture.pump(app,c)
-            d=real(app,'Save UI',app.scenario_kind(),s.path,app.scenario_path(app.scenario_kind()),'synthetic',cloud=c)
-            assert d.sync_text.get().startswith('클라우드 저장 완료');d.destroy();app.update()
+        def guarded(fn):
+            def run():
+                try:fn()
+                except Exception as exc:
+                    errors.append(exc)
+                    d=getattr(app,'_save_dialog',None)
+                    if d is not None and d.winfo_exists():d.destroy()
+            return run
+        def key(d,name='space'):
+            d.primary.focus_force();app.update_idletasks()
+            d.primary.event_generate('<KeyPress-'+name+'>');d.primary.event_generate('<KeyRelease-'+name+'>')
+        def saved_when_ready(d,check):
+            def poll():
+                if d.save_phase=='complete':check();return
+                assert d.save_phase!='error',d.detail.get()
+                d.after(25,guarded(poll))
+            d.after(25,guarded(poll))
+        def run_save(inspect,event=None):
+            app.after(100,guarded(lambda:inspect(app._save_dialog)))
+            timeout=app.after(12000,guarded(lambda:(_ for _ in ()).throw(AssertionError('Save dialog did not finish'))))
+            try:app.save_current_drawing(event)
+            finally:app.after_cancel(timeout)
             assert not errors,errors
-        finally:c.finish_close()
-    print('PASS Windows actual save dialog: PC receipt, live timeout/recovery, timer cleanup and visible field identity button')
+            assert app._save_dialog is None and not app._saving_now
+        try:
+            fixture.new_drawing(app,c,'Save UI');app.deiconify();app.geometry('1000x760+30+40');app.update()
+            assert not app.advanced_tools_visible and app.after_identity_button.winfo_viewable()
+            s=app.store;s.add_node('Saved locally',0,0)
+            before=app.scenario_path(app.scenario_kind())
+            old=before.read_bytes() if before.exists() else None
+            def cancel(d):
+                assert d.message.get()=='저장하시겠습니까?' and d.detail.get()==''
+                assert d.save_phase=='confirm';assert_centered(d,app)
+                d.secondary.invoke()
+            with patch.object(app,'save_current_snapshot',wraps=app.save_current_snapshot) as commit:
+                run_save(cancel);assert commit.call_count==0
+            assert (before.read_bytes() if before.exists() else None)==old
+            # A held real background upload cannot be mistaken for a completed save.
+            server.hold=True;server.release.clear()
+            def confirm_held(d):
+                key(d)
+                def during():
+                    assert d.save_phase=='saving' and d.local_done and c.jobs.busy
+                    assert before.exists() and 'disabled' in d.primary.state()
+                    d.close_notice();assert d.winfo_exists()
+                    d.tk.call(d.protocol('WM_DELETE_WINDOW'));assert d.winfo_exists()
+                    d.event_generate('<Escape>');assert d.winfo_exists()
+                    key(d,'Return');assert d.winfo_exists()
+                    app.save_current_drawing();assert app._save_dialog is d
+                    d.primary.event_generate('<KeyPress-space>')
+                    server.hold=False;server.release.set()
+                    def complete():
+                        assert d.message.get()=='저장 완료되었습니다.' and 'PC·클라우드 저장 완료' in d.detail.get()
+                        assert d.winfo_exists() and d.sync_timer is None
+                        # Release of a key held during upload must not dismiss completion.
+                        d.primary.event_generate('<KeyRelease-space>');assert d.winfo_exists()
+                        key(d);assert not d.winfo_exists()
+                    saved_when_ready(d,complete)
+                d.after(100,guarded(during))
+            with patch.object(app,'save_current_snapshot',wraps=app.save_current_snapshot) as commit:
+                run_save(confirm_held);assert commit.call_count==1
+            assert cloud.CloudController.save_status(c).startswith('클라우드 저장 완료')
+            # Failed cloud saves keep the same popup, PC receipt and retry operation.
+            s.add_node('Retry latest',100,0);server.fail='timeout'
+            owner=cloud.RememberedToplevel(app);owner.geometry('540x300');owner.grab_set();app.update()
+            def retry_flow(d):
+                assert d.master is owner;assert_centered(d,owner);d.primary.invoke()
+                def failed():
+                    if d.save_phase=='saving':d.after(25,guarded(failed));return
+                    assert d.save_phase=='error' and d.winfo_exists() and d.local_done
+                    assert '시간 초과' in d.detail.get() and 'canceling' not in d.detail.get()
+                    request=c.outbox()/(c.current+'.json');operation=json.loads(request.read_bytes())['operation_id']
+                    server.fail=None;d.primary.invoke()
+                    def complete():
+                        assert server.rows[c.current]['operation_id']==operation
+                        assert '편집창' in d.detail.get();key(d,'Return')
+                    saved_when_ready(d,complete)
+                d.after(100,guarded(failed))
+            run_save(retry_flow,SimpleNamespace(widget=owner));assert owner.grab_current() is owner
+            owner.destroy();app.update()
+            # Disk failures remain visible and never claim PC or cloud success.
+            def failed_disk(d):
+                d.primary.invoke()
+                def check():
+                    assert d.save_phase=='error' and not d.local_done
+                    assert d.message.get()=='저장하지 못했습니다.' and '디스크' in d.detail.get()
+                    d.secondary.invoke()
+                d.after(100,guarded(check))
+            with patch.object(app,'save_current_snapshot',side_effect=OSError('디스크 시험 실패')),patch.object(c,'sync_now') as sync:
+                run_save(failed_disk);assert not sync.called
+            # Local-only saving also waits for the snapshot and keeps completion visible.
+            def local(d):
+                key(d)
+                def complete():
+                    assert d.local_done and d.detail.get()=='이 PC에 저장되었습니다.';key(d)
+                saved_when_ready(d,complete)
+            with patch.object(app,'cloud',None):run_save(local)
+            app.save_current_drawing(silent=True);app.update();fixture.pump(app,c)
+            assert not errors,errors
+        finally:server.release.set();c.finish_close()
+    print('PASS Windows simple confirmation/Space, no-write cancel, held upload, blocked close/duplicate keys, persistent completion, cloud retry/PC receipt, disk failure, owner monitor/grab and silent save')
 
 
 if __name__=='__main__':

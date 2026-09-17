@@ -123,10 +123,8 @@ def check_single_enclosure_window(code, app):
     assert second.node_id == b and not first.winfo_exists() and cable_window.winfo_exists()
     assert wf.plan_snapshot(store.conn) == before
     assert app.highlight_owner is not first
-    assert wf.popup_position(second._popup_position_path, 'NodeDialog') == position
-    expected = wf.clamp_popup_position(*position, second.winfo_width(), second.winfo_height(),
-                                      (0, 0, second.winfo_screenwidth(), second.winfo_screenheight()))
-    assert abs(second.winfo_x() - expected[0]) <= 2 and abs(second.winfo_y() - expected[1]) <= 2
+    from check_popup_monitor import assert_centered
+    assert_centered(second,app)
     second.name_var.set('저장하지 않은 이름')
     with patch.object(code['messagebox'], 'askyesnocancel', return_value=None):
         assert open_node(a) is second
@@ -151,7 +149,7 @@ def check_single_enclosure_window(code, app):
     first.destroy(); app.update()
     first = open_node(a); assert first.node_id == a
     first.destroy(); cable_window.destroy(); app.update()
-    print('PASS Windows single enclosure double-click, same-window selection, previous close/position, highlight cleanup, header save/discard/cancel, field draft cancel and independent cable editor')
+    print('PASS Windows single enclosure double-click, same-window selection, previous close/monitor center, highlight cleanup, header save/discard/cancel, field draft cancel and independent cable editor')
 
 
 def check_single_cable_window(code, app):
@@ -189,7 +187,8 @@ def check_single_cable_window(code, app):
         second = open_cable(right)
     assert second.cable_key == right and not first.winfo_exists() and node.winfo_exists()
     assert app.highlight_owner is not first
-    assert wf.popup_position(second._popup_position_path, 'CableDialog') == position
+    from check_popup_monitor import assert_centered
+    assert_centered(second,app)
     assert wf.plan_snapshot(store.conn) == before and store.data_revision() == revision
     assert store.history_rows() == history
 
@@ -245,7 +244,7 @@ def check_single_cable_window(code, app):
     first.destroy(); app.update(); first = open_cable(left)
     first.destroy(); node.destroy(); app.update()
     store.set_node_locked(nodes[1], False); store.set_node_locked(nodes[2], False)
-    print('PASS Windows single cable editor, same-window reuse, position/highlight cleanup, header/signal/inline draft cancel-discard, exact navigation, saved edits and locked copy')
+    print('PASS Windows single cable editor, same-window reuse, monitor center/highlight cleanup, header/signal/inline draft cancel-discard, exact navigation, saved edits and locked copy')
 
 
 def check_bulk_keyboard(code, app):

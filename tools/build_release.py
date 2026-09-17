@@ -87,6 +87,10 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM AFTER AUTO CONNECT\n' + (ROOT / 'planning' / 'after_autoconnect.py').read_text(encoding='utf-8')
         if version >= 104:
             baseline += '\n\n# BEGIN TELECOM CORE WORKLIST\n' + (ROOT / 'planning' / 'core_worklist.py').read_text(encoding='utf-8')
+        if version >= 105:
+            baseline += '\n\n# BEGIN TELECOM POPUP MONITOR\n' + (ROOT / 'planning' / 'popup_monitor.py').read_text(encoding='utf-8')
+        if version >= 105:
+            baseline += '\n\n# BEGIN TELECOM SAVE DIALOG\n' + (ROOT / 'planning' / 'save_dialog.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()

@@ -816,3 +816,25 @@ that authorized scope for requested program updates without asking again.
   Run check_work_classification.py's field-to-after retention, cut priority,
   existing-number/peer/route/port changes, neutral negatives, history/reopen and
   real Windows list/filter/draft/export gates plus the full release workflow.
+
+- V105 user explicitly supersedes old saved popup positions: newly opened dialogs
+  center on their owner's current monitor work area. planning/popup_monitor.py
+  owns native handle/monitor geometry, negative coordinates, plain Tk mapping and
+  a scoped same-thread native messagebox activation hook. Keep native results,
+  focus/grabs, child ownership and tooltip placement. Never move the main window.
+  Ignore historical popup coordinates without deleting user settings. Existing
+  reused windows stay usable and movable; only new opens are centered.
+- V105 planning/save_dialog.py owns one confirmation/progress/completion window.
+  Explicit save starts only after confirmation; Space/Enter fire on key release
+  and repeat keys cannot close completion. Block X/Esc and duplicate save while
+  active, retain success until acknowledged, and keep failures visible with retry.
+  Local snapshots and active cloud acknowledgement must both finish for success;
+  failed cloud writes must not claim success. Keep idempotent queued requests,
+  actual-current-drawing receipts, conflict copies, previous grabs and all timer
+  cleanup. Cancellation before confirmation writes nothing. Silent internal saves
+  retain the existing no-dialog flow and drafts are never silently committed.
+- Run check_save_status.py's actual Windows confirmation/cancel/held upload/keys/
+  retry/disk failure/local-only/silent gates, check_popup_monitor.py including
+  synthetic three-monitor negative coordinates and real native/Tk centering, the
+  updated owner-centered smoke checks, and the complete release workflow. Do not
+  claim validation on three physical displays from the single-display CI runner.
