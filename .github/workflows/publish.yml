@@ -39,6 +39,8 @@ jobs:
         run: python -m unittest discover -s tools -p "test_*.py" -v
       - name: 배포할 프로그램 준비
         run: python tools/materialize_release.py
+      - name: GIS·과거 작업목록 제외·현장반영 후도면 기준·목록 복사 검증
+        run: python tools/check_work_basis.py
       - name: 찾기 종료 강조해제·도면 이동·케이블 내 Ctrl+F·입력 보존 검증
         run: python tools/check_routes_find.py
       - name: 작업목록 실제 ID·ON 임시코어·빈 ID 제외·진행표 수량 검증

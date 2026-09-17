@@ -872,3 +872,18 @@ that authorized scope for requested program updates without asking again.
   usable while locked. Work classification remains field-to-after comparison.
   Run check_core_worklist.py's clipboard, context menu, narrow layout, draft,
   lock and nonmutation checks with the complete release workflow.
+
+- V108 user explicitly limits transfer work to the current field drawing and
+  after drawing. Workflow.source never captures active GIS. Its saved baseline
+  is before.sqlite3 only; missing field data must not fall back to GIS/history.
+  Historical accepted items acknowledge field changes but never add targets.
+  Missing after allocations still come from the current field route index.
+- Tag newly captured/accepted work and explicit dispositions with source_kind
+  before. Untagged/GIS captures cannot drive change notifications or review
+  tokens. Retain legacy decisions only when their signature matches current
+  field evidence (or a proven field acceptance); new field decisions keep stale
+  guards. Preserve stored history, drawings, topology, exclusions and approvals.
+- Work-related labels say 현장반영 도면 explicitly. Keep GIS reference/survey,
+  copying, mandatory-completion and connection policies unchanged. Run
+  check_work_basis.py including its actual Windows work list/progress/counter/
+  clipboard/CSV/print gate, existing work tests and full publication workflow.
