@@ -71,11 +71,32 @@ def windows_ui():
             real=wf.center_native_popup;seen=[];api=ctypes.windll.user32
             api.PostMessageW.argtypes=[ctypes.c_void_p,ctypes.c_uint,ctypes.c_size_t,ctypes.c_ssize_t]
             def native_center(hwnd,bounds):
-                result=real(hwnd,bounds);seen.append((hwnd,bounds,result));api.PostMessageW(hwnd,0x111,1,0);return result
+                result=real(hwnd,bounds);seen.append((hwnd,bounds,result));print('Native activation',hwnd,bounds,result,flush=True);api.PostMessageW(hwnd,0x111,1,0);return result
             import threading
             api.FindWindowW.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p];api.FindWindowW.restype=ctypes.c_void_p
             def close_failed_hook():
                 hwnd=api.FindWindowW(None,'합성 중앙 알림')
+                print('Native watchdog',hwnd,'seen',seen,flush=True)
+                from ctypes import wintypes
+                api.GetWindowThreadProcessId.argtypes=[ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD)]
+                api.GetWindowTextW.argtypes=[ctypes.c_void_p,ctypes.c_wchar_p,ctypes.c_int]
+                api.GetClassNameW.argtypes=[ctypes.c_void_p,ctypes.c_wchar_p,ctypes.c_int]
+                api.GetDlgItem.argtypes=[ctypes.c_void_p,ctypes.c_int];api.GetDlgItem.restype=ctypes.c_void_p
+                callback_type=ctypes.WINFUNCTYPE(wintypes.BOOL,ctypes.c_void_p,wintypes.LPARAM)
+                def inspect(hwnd,data):
+                    pid=wintypes.DWORD();api.GetWindowThreadProcessId(hwnd,ctypes.byref(pid))
+                    if pid.value==os.getpid():
+                        title=ctypes.create_unicode_buffer(256);name=ctypes.create_unicode_buffer(256)
+                        api.GetWindowTextW(hwnd,title,256);api.GetClassNameW(hwnd,name,256)
+                        print('Native window',hwnd,repr(title.value),name.value,flush=True)
+                        if name.value=='#32770':
+                            button=api.GetDlgItem(hwnd,1)
+                            print('Native OK button',button,flush=True)
+                            if button:api.PostMessageW(button,0xF5,0,0)
+                            api.PostMessageW(hwnd,0x111,1,0)
+                            api.PostMessageW(hwnd,0x10,0,0)
+                    return True
+                api.EnumWindows(callback_type(inspect),0)
                 if hwnd:api.PostMessageW(hwnd,0x111,1,0)
             timeout=threading.Timer(3,close_failed_hook);timeout.daemon=True;timeout.start()
             try:
