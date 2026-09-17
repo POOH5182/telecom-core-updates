@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "product": "telecom-core-python",
-  "version": 109,
+  "version": 110,
   "launcher_min": 1,
-  "package": "telecom_core_update_v109.zip",
-  "size": 352593,
-  "sha256": "454cb29f3e2c3123a5cfb781d02c854536e5ea173e1bc7a61c0fbf706f550db0"
+  "package": "telecom_core_update_v110.zip",
+  "size": 355057,
+  "sha256": "48523cf4c6b42cfd00184f3d78a2fa98d12aadb93430ebc322d6d559c5b8c169"
 }

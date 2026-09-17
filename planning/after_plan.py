@@ -104,6 +104,7 @@ class AfterPlanner:
         if old:ids=sorted({cid for cid in ids if not cid.startswith('임시-')}|set(field_temps))
         rows, global_issues = [], []
         connections=completion_report(self.store)
+        handled=handled_missing_work(self.app)
         if old is None: global_issues.append('전도면 기준본이 없습니다. 전/후관리에서 기준본을 먼저 저장하세요.')
         if self.store.conn.execute('PRAGMA foreign_key_check').fetchone(): global_issues.append('시설·케이블 참조 오류: 파일·출력의 데이터점검을 실행하세요.')
         for c in current['cables']:
@@ -175,6 +176,10 @@ class AfterPlanner:
             if not blocking and exception: status = '예외 확인 완료'
             if policy and policy.get('exception_complete'):
                 exception=False;blocking=[];notes=[];status='완료';reviewed=True
+            if core_id in handled:
+                treatment=handled[core_id];blocking=[];notes=[treatment['note']];status=treatment['result'];reviewed=True
+                required=not treatment['excluded']
+                policy=dict(policy or {},excluded_reason=treatment['reason'] if treatment['excluded'] else '')
             rows.append(dict(core_id=core_id, detail=(actual or prev or {}).get('detail', ''),
                              before=prev, after=actual, change=' / '.join(change) or '유지',
                              plan=plan, kind=kind, exception=exception, reviewed=reviewed,connection_required=required,connection_excluded=(policy or {}).get('excluded_reason',''),

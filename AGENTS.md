@@ -907,3 +907,26 @@ that authorized scope for requested program updates without asking again.
 - Run check_field_work_endpoints.py including Windows one-row completion,
   remaining filter, counters, copy/CSV/print and undo, the updated eligibility
   and after-route gates, existing work/allocation tests and full release workflow.
+
+- V110 handles only work rows whose after route is absent: explicit broken,
+  exception and cancel statuses display 끊김, 예외 처리 and 해지 instead of 누락.
+  Broken/cancel leave the connection denominator; exception follows accepted
+  completion while physical_complete stays false. Keep reason rows in all-work
+  lists/exports, excluding them from remaining-work filters and allocation demand.
+  Signal exception and cancel_expected are not explicit status dispositions.
+- Preserve last-allocation removal statuses (including an empty cleared status)
+  in workflow_state.missing_work_status_v110 within the existing outer action
+  transaction/history group. Undo/redo must restore this ledger atomically; do
+  not let history pruning erase the only retained disposition. Read-only legacy
+  recovery uses active-branch deletion records, excluding inherited field groups;
+  current after status/clear takes priority over field fallback. Never recover
+  targets from old GIS/accepted work lists or write during report generation.
+- Keep explicit work decisions and stale guards, partial-route diagnostics,
+  field-endpoint temporary eligibility and raw physical completion unchanged.
+  Missing temporary records may follow retained field endpoint positions after
+  a temporary ID change. The existing 연결 필요 restore action can override a
+  handled missing status without inventing a physical connection.
+- Run check_missing_work_status.py including last-annotation deletion, legacy
+  recovery, clear-state negatives, history pruning/reopen, temporary ID changes,
+  undo/redo and actual Windows lists, filters, totals, clipboard/CSV/print; run
+  the existing work/planning/connection gates and full release workflow.

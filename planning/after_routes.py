@@ -53,6 +53,12 @@ class AfterRoutePlanner:
                 entries[key]=dict(key=('id',cid),core_id=cid,detail=row['detail'],slots=row['current_slots'],active_slots=row['current_slots'],all_slots=row['current_slots'],
                     complete=route['complete'],reason=' / '.join(route['notes']),**completion_policy([{'core_id':cid,'signal':'on'}],'after'))
             entries[key]['field_work']=row
+        for cid,row in handled_missing_work(self.app).items():
+            key=json.dumps(['id',cid],ensure_ascii=False,separators=(',',':'))
+            if row['excluded']:entries.pop(key,None)
+            else:
+                entries[key]=dict(key=('id',cid),core_id=cid,detail=row['detail'],slots=[],active_slots=[],all_slots=[],
+                    **completion_policy([{'core_id':cid,'status1':'exception'}],'after'),complete=True,reason=row['note'])
         graph=digest([sorted((n['id'],n['type'],n['status']) for n in net.nodes.values()),
                       sorted((c['id'],c['n1id'],c['n2id'],c['size'],c['spec'],c['status']) for c in net.cables.values())])
         stamp=digest([self.store.data_revision(),self.store._view_generation,net.fingerprint,old.fingerprint if old else None])

@@ -79,6 +79,116 @@ def work_source_method(source,changed=False):
     return source.get('method','')
 
 
+WORK_MISSING_STATUS_KEY='missing_work_status_v110'
+WORK_HANDLED_STATUS={'exception':'예외 처리','cancel':'해지','broken':'끊김'}
+
+
+def work_status_codes(rows=(),labels=()):
+    values=set(labels)
+    for row in rows:values.update(statuses(row))
+    aliases={'예외':'exception','예외처리':'exception','예외코어':'exception','해지':'cancel','해지코어':'cancel',
+             '끊김':'broken','끊킴':'broken','끊김코어':'broken','끊킴코어':'broken'}
+    codes={aliases.get(''.join(str(v).split()),STATUS_CODES.get(v,v)) for v in values}
+    return [code for code in WORK_HANDLED_STATUS if code in codes]
+
+
+def work_removed_status_history(store,group_id=None,exclude_groups=()):
+    """Recover the most recent identity-removal snapshot on the active undo branch.
+
+    A later reintroduction invalidates old removal evidence. Empty statuses are
+    retained too, so clearing a state cannot revive an older field disposition.
+    Signal exception and cancel_expected never become a handled disposition.
+    """
+    sql="""SELECT e.*,g.created_at FROM history_events e JOIN history_groups g ON g.id=e.group_id
+        WHERE g.undone=0 AND e.table_name IN ('cores','ports','core_annotations')"""
+    args=()
+    if group_id:sql+=' AND e.group_id=?';args=(group_id,)
+    if exclude_groups:
+        sql+=' AND e.group_id NOT IN (SELECT value FROM json_each(?))';args+= (json.dumps(sorted(exclude_groups)),)
+    sql+=' ORDER BY e.seq'
+    removed={};seen={};annotations={}
+    for event in store.conn.execute(sql,args):
+        old=json.loads(event['old_json']) if event['old_json'] else {}
+        new=json.loads(event['new_json']) if event['new_json'] else {}
+        cid=str(old.get('core_id') or '').strip();new_id=str(new.get('core_id') or '').strip()
+        if event['table_name']=='core_annotations':
+            if cid and (not new or new_id!=cid):annotations[(event['group_id'],cid)]=json.loads(old.get('labels') or '[]')
+            continue
+        if new_id:seen[new_id]=event['seq']
+        if not cid or cid==new_id:continue
+        record=removed.get(cid)
+        if not record or record['group_id']!=event['group_id']:
+            record=dict(core_id=cid,source_kind='after',group_id=event['group_id'],rows=[],slots=[],order=event['seq'],time=event['created_at'])
+            removed[cid]=record
+        slot=(old['cable_id'],int(old['core_index'])) if event['table_name']=='cores' else ('PORT:'+old['node_id'],int(old['port_index']))
+        record['rows'].append(old);record['slots'].append(list(slot));record['order']=event['seq']
+    for cid,record in list(removed.items()):
+        if seen.get(cid,0)>record['order']:del removed[cid];continue
+        record['codes']=work_status_codes(record.pop('rows'),annotations.get((record['group_id'],cid),()))
+    return removed
+
+
+def work_removed_status_ledger(store):
+    row=store.conn.execute('SELECT value FROM workflow_state WHERE key=?',(WORK_MISSING_STATUS_KEY,)).fetchone()
+    return json.loads(row[0]) if row else {}
+
+
+def preserve_removed_work_status(store):
+    """Join the caller's existing transaction/history group; never write on read."""
+    if completion_kind(store)!='after' or not store._history_group:return
+    removed=work_removed_status_history(store,store._history_group)
+    if not removed:return
+    present={r[0] for r in store.conn.execute("SELECT core_id FROM cores WHERE core_id<>'' UNION SELECT core_id FROM ports WHERE core_id<>''")}
+    removed={cid:row for cid,row in removed.items() if cid not in present}
+    if not removed:return
+    saved=work_removed_status_ledger(store);saved.update(removed)
+    store.conn.execute('INSERT INTO workflow_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+        (WORK_MISSING_STATUS_KEY,json.dumps(saved,ensure_ascii=False)))
+
+
+def work_missing_status_context(app,net):
+    store=app.store;stamp=(store.data_revision(),store.conn.total_changes,getattr(store,'_view_generation',0),getattr(app,'_transfer_source_stamp',None))
+    if getattr(store,'_missing_status_stamp',None)!=stamp:
+        ledger=work_removed_status_ledger(store)
+        # Old drawings can still provide their last deletion's saved row even
+        # before V110. Never use undone events or the old accepted work list.
+        history=work_removed_status_history(store,exclude_groups=getattr(app,'_work_field_history_groups',()))
+        store._missing_status_value=(ledger,history);store._missing_status_stamp=stamp
+    ledger,history=store._missing_status_value
+    return dict(net=net,ledger=ledger,history=history,field=getattr(app,'_work_field_status',{}))
+
+
+def work_missing_status(item,context):
+    net=context['net'];cid=item['core_id'];evidence=None
+    current=net.by_id.get(cid,set())
+    if current or cid in net.annotations:
+        evidence=dict(codes=work_status_codes([net.slots[s] for s in current],json.loads(net.annotations.get(cid,{}).get('labels','[]'))),origin='후도면 현재 상태')
+    else:
+        endpoints={tuple(a['slot']) for a in item.get('field_endpoints',())}
+        for source,label in ((context['history'],'후도면 삭제 직전 기록'),(context['ledger'],'후도면 삭제 시 보존한 상태')):
+            matches=[r for key,r in source.items() if r.get('source_kind')=='after' and
+                ((not endpoints and key==cid) or (endpoints and endpoints & {tuple(s) for s in r.get('slots',())}))]
+            if matches:
+                latest=max(matches,key=lambda r:r.get('order',0))
+                if evidence is None or latest.get('order',0)>=evidence.get('order',0):
+                    evidence=dict(codes=latest['codes'],origin=label,order=latest.get('order',0))
+        if evidence is None:
+            if endpoints:codes=item.get('field_status_codes',[])
+            else:codes=context['field'].get(cid,[])
+            evidence=dict(codes=codes,origin='현장반영 도면 상태')
+    codes=work_status_codes(labels=evidence['codes'])
+    if not codes:return None
+    result=WORK_HANDLED_STATUS[codes[0]];labels=' · '.join(WORK_HANDLED_STATUS[c] for c in codes)
+    return dict(result=result,reason=labels,complete='exception' in codes,excluded='exception' not in codes,
+        missing=False,error=False,handled_missing=True,physical_complete=False,
+        note=labels+' 처리 · 후도면 배정 없음 · 근거: '+evidence['origin'])
+
+
+def handled_missing_work(app):
+    report=app.work_report() if callable(getattr(app,'work_report',None)) else Workflow(app).report()
+    return {row['core_id']:row for row in report['rows'] if row.get('handled_missing')}
+
+
 def work_physical_components(net):
     result={};remaining=set(net.slots)
     for root in sorted(net.slots):
@@ -138,6 +248,8 @@ def field_temporary_work(net):
             source_edges=work_physical_edges(net,members),
             source_routes=[net.title(s) for s in sorted(members)],ends=sorted(ends),end_names=sorted(end_names),input_missing=False)
         row['method']=work_source_method(row);row['signature']=digest([row,[(s,net.slots[s]) for s in sorted(members)]])
+        row['field_status_codes']=work_status_codes([net.slots[s] for s in members],
+            [label for cid in ids for label in json.loads(net.annotations.get(cid,{}).get('labels','[]'))])
         items[key]=row
     return items
 
@@ -212,7 +324,7 @@ def project_field_temporary(net,basis):
             # obligations even when the after drawing accidentally merges them.
             existing={(a['slot'][0],a['node']):tuple(a['slot']) for a in target['field_endpoints']}
             target['endpoint_collision']=target.get('endpoint_collision',False) or any((a['slot'][0],a['node']) in existing and existing[(a['slot'][0],a['node'])]!=tuple(a['slot']) for a in row['field_endpoints'])
-            for field in ('source_core_ids','source_keys','field_endpoints','source_slots','source_cables','source_states','source_facilities','source_routes','source_edges','ends','end_names'):
+            for field in ('source_core_ids','source_keys','field_endpoints','source_slots','source_cables','source_states','source_facilities','source_routes','source_edges','ends','end_names','field_status_codes'):
                 target[field]=list({json.dumps(v,ensure_ascii=False,sort_keys=True):v for v in target[field]+row[field]}.values())
             target['work_key']='field-ends:'+digest(sorted(target['source_keys']))
             target['signature']=digest([basis[k]['signature'] for k in sorted(target['source_keys'])])
@@ -311,6 +423,9 @@ def work_transfer_sources(app,items):
         try:
             basis_net=Network(conn);basis=work_route_index(basis_net)
             app._field_temporary_basis=field_temporary_work(basis_net)
+            app._work_field_history_groups={r[0] for r in conn.execute('SELECT id FROM history_groups')}
+            app._work_field_status={cid:work_status_codes([basis_net.slots[s] for s in slots],json.loads(basis_net.annotations.get(cid,{}).get('labels','[]')))
+                                    for cid,slots in basis_net.by_id.items()}
             for cid,row in basis.items():
                 original=basis_net.by_id[cid]
                 try:
@@ -349,4 +464,6 @@ def work_transfer_sources(app,items):
         # completion does; cut/removal paint is work evidence, not a break.
         row['field_route']=field_work_route(current_net,row,state(app.store)['options'])
         items[key]=row
+    context=work_missing_status_context(app,current_net)
+    for row in items.values():row['missing_status']=work_missing_status(row,context)
     return items
