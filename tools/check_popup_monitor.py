@@ -38,6 +38,8 @@ def assert_centered(window,parent,bounds=None):
 def windows_ui():
     if sys.platform!='win32':return
     import ctypes
+    import faulthandler
+    faulthandler.dump_traceback_later(20,exit=True)
     with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,TELECOM_APP_HOME=temp):
         app=code['App']();errors=[];app.report_callback_exception=lambda *args:errors.append(args)
         try:
@@ -51,6 +53,7 @@ def windows_ui():
             second=wf.RememberedToplevel(app);second.geometry('460x230');app.update();assert_centered(second,app)
             child=wf.TableDialog(second,'합성 중첩 확인',('항목',),[('내용',)]);app.update();assert_centered(child,second)
             child.destroy()
+            print('PASS Windows centered new/reopened/nested dialogs',flush=True)
             # Exercise actual SetWindowPos with simulated three-monitor work
             # areas; the hosted Windows runner itself has only one display.
             for bounds in ((-1920,0,1920,1040),(0,0,2560,1400),(2560,-240,1920,1040),(0,-1440,2560,1400)):
@@ -60,7 +63,9 @@ def windows_ui():
                     child=wf.RememberedToplevel(second);child.geometry('460x230');app.update()
                     assert owners and all(p is second for p in owners),owners
                     assert_centered(child,second,bounds);child.destroy()
+            print('PASS Windows synthetic three-display work areas',flush=True)
             plain=code['tk'].Toplevel(second);plain.geometry('360x160');app.update();assert_centered(plain,second);plain.destroy()
+            print('PASS Windows plain Tk dialog center; checking native notice',flush=True)
             # Native notice keeps native OK semantics while its activation hook
             # centers it. Post the OK command so the gate needs no human input.
             real=wf.center_native_popup;seen=[];api=ctypes.windll.user32
@@ -80,6 +85,7 @@ def windows_ui():
             assert answer=='ok' and len(seen)==1,(answer,seen)
             second.destroy();app.update();assert not errors,errors
         finally:app.on_close()
+    faulthandler.cancel_dump_traceback_later()
     print('PASS Windows owner-monitor centering, ignored stale position, nested/plain/native dialogs and synthetic three-display negative coordinates')
 
 
