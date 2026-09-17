@@ -6,7 +6,7 @@ class DrawingSaveDialog(RememberedToplevel):
         super().__init__(parent);self.app=app;self.store=app.store;self.editor_open=parent is not app
         self.generation=getattr(self.store,'_view_generation',0);self.kind=app.scenario_kind()
         self.cloud=getattr(app,'cloud',None);self.drawing_id=self.cloud.current if self.cloud else None
-        self.save_phase='confirm';self.local_done=False;self.sync_timer=None;self.start_timer=None
+        self.save_phase='confirm';self.local_done=False;self.sync_timer=None;self.start_timer=None;self.focus_timer=None
         self._key_phases={};self._previous_grab=self.grab_current();self._closed=False
         self.title('저장');self.geometry('460x230');self.resizable(False,False)
         self.transient(parent);self.grab_set();self.protocol('WM_DELETE_WINDOW',self.close_notice)
@@ -22,14 +22,14 @@ class DrawingSaveDialog(RememberedToplevel):
         self.secondary=ttk.Button(buttons,text='취소',command=self.close_notice,width=12);self.secondary.pack(side='left',padx=4)
         # Consume keys before TButton's class binding, so a repeat/release cannot
         # invoke both commands or dismiss the completed notice with the save key.
-        self._key_tag=str(self)+'SaveKeys';pending=[self]
+        self._key_tag='DrawingSaveKeys'+str(id(self));self._key_callbacks=[];pending=[self]
         while pending:
             widget=pending.pop();pending.extend(widget.winfo_children())
             widget.bindtags((self._key_tag,*widget.bindtags()))
         for key in ('space','Return'):
-            self.bind_class(self._key_tag,'<KeyPress-'+key+'>',self.key_press)
-            self.bind_class(self._key_tag,'<KeyRelease-'+key+'>',self.key_release)
-        self.bind_class(self._key_tag,'<Escape>',self.close_notice)
+            self._key_callbacks.append(self.bind_class(self._key_tag,'<KeyPress-'+key+'>',self.key_press))
+            self._key_callbacks.append(self.bind_class(self._key_tag,'<KeyRelease-'+key+'>',self.key_release))
+        self._key_callbacks.append(self.bind_class(self._key_tag,'<Escape>',self.close_notice))
         self.focus_timer=self.after(50,self.focus_action)
 
     def focus_action(self):
@@ -126,6 +126,7 @@ class DrawingSaveDialog(RememberedToplevel):
         for key in ('space','Return'):
             self.unbind_class(self._key_tag,'<KeyPress-'+key+'>');self.unbind_class(self._key_tag,'<KeyRelease-'+key+'>')
         self.unbind_class(self._key_tag,'<Escape>')
+        for callback in self._key_callbacks:self._root().deletecommand(callback)
         previous=self._previous_grab;super().destroy()
         try:
             if previous is not None and previous.winfo_exists():previous.grab_set()
