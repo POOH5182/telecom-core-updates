@@ -887,3 +887,23 @@ that authorized scope for requested program updates without asking again.
   copying, mandatory-completion and connection policies unchanged. Run
   check_work_basis.py including its actual Windows work list/progress/counter/
   clipboard/CSV/print gate, existing work tests and full publication workflow.
+
+
+- V109 temporary work eligibility supersedes V106 whole-ID ON: use physical
+  field components with ON on a terminal cable slot (including RN end cables).
+  Interior ON, disconnected same-token rows and isolated RN-port ON cannot
+  supply the evidence. After signals never add/remove a field obligation.
+- Match field endpoints by retained physical cable/number and endpoint IDs;
+  allow a unique same-token number move only within that cable when the old
+  slot is empty. Never guess by a cable name or endpoint node alone. Coalesce
+  field halves only through actual after splices, retaining all source evidence.
+  Missing/ambiguous positions and same-end number collisions remain unresolved.
+- Physical temporary work rows use stable field endpoint keys for decisions;
+  current temporary labels cannot resurrect old planner/work-list targets.
+  Read-only inspection permits neutral temporary labels while retaining real-ID,
+  signal, branch, endpoint and RN-port checks. It never rewrites a stored ID,
+  signal or splice. Work-list signal/exports use field evidence; ordinary raw
+  completion and general signal views retain their existing policies.
+- Run check_field_work_endpoints.py including Windows one-row completion,
+  remaining filter, counters, copy/CSV/print and undo, the updated eligibility
+  and after-route gates, existing work/allocation tests and full release workflow.

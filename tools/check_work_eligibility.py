@@ -1,4 +1,4 @@
-"""Work lists exclude anonymous slots and temporary IDs without any ON signal."""
+"""Work lists require real IDs or ON on their physical field end cable."""
 import csv
 import os
 from pathlib import Path
@@ -20,11 +20,12 @@ def eligible_fixture(s):
             s.conn.execute('UPDATE cores SET core_id=?,signal=?,detail=? WHERE cable_id=? AND core_index=?',
                            (cid,signal,'합성 내역',cables[1],index))
         s.conn.execute("UPDATE cores SET core_id='임시-104',signal='on' WHERE cable_id=? AND core_index=4",(cables[0],))
+        s.conn.execute('INSERT INTO splices VALUES(?,?,?,?,?)',(nodes[1],cables[0],4,cables[1],4))
         s.conn.execute("UPDATE ports SET core_id='임시-111',signal='on' WHERE node_id=? AND port_index=1",(rn,))
     return nodes,cables,rn
 
 
-EXPECTED={'SYNTH-WORK','REAL-OFF','REAL-UNKNOWN','임시-104','임시-106','임시-111'}
+EXPECTED={'SYNTH-WORK','REAL-OFF','REAL-UNKNOWN','임시-104'}
 
 
 class EligibilityTests(unittest.TestCase):
@@ -37,7 +38,7 @@ class EligibilityTests(unittest.TestCase):
         self.s.backup_to(self.app.scenario_path('before'))
         self.before=self.app.scenario_path('before').read_bytes();phase(self.s,'after')
 
-    def test_field_real_ids_all_signals_temporary_any_on_and_anonymous_exclusion(self):
+    def test_field_real_ids_all_signals_temporary_endpoint_on_and_anonymous_exclusion(self):
         snapshot=wf.plan_snapshot(self.s.conn);history=self.s.history_rows();state=wf.state(self.s)
         completion=self.s.drawing_connection_progress()
         self.assertEqual(self.ids(),EXPECTED)
@@ -63,10 +64,10 @@ class EligibilityTests(unittest.TestCase):
         with self.s.action('합성 임시 신호 변경'):
             self.s.conn.execute("UPDATE cores SET signal='off' WHERE core_id='임시-106'")
             self.s.conn.execute("UPDATE cores SET signal='on' WHERE core_id='임시-105'")
-        self.assertEqual(self.ids(),EXPECTED-{'임시-106'}|{'임시-105'})
+        self.assertEqual(self.ids(),EXPECTED)
         self.assertEqual(wf.state(self.s),saved);self.assertEqual(self.app.scenario_path('before').read_bytes(),self.before)
 
-    def test_missing_allocations_keep_field_any_on_and_real_id_targets(self):
+    def test_missing_allocations_keep_field_endpoint_on_and_real_id_targets(self):
         self.baseline()
         with self.s.action('합성 재배정 전 제거'):
             self.s.conn.execute('DELETE FROM splices')
@@ -107,15 +108,17 @@ def windows_ui():
                 exported=list(csv.reader(dest.open(encoding='utf-8-sig')));assert {r[2] for r in exported[1:]}==EXPECTED
                 with s.action('합성 목록 신호 OFF'):s.conn.execute("UPDATE cores SET signal='off' WHERE core_id='임시-104'")
                 app.refresh();progress.reload();app.update()
-                assert {r[2] for r in dialog.rows}==EXPECTED-{'임시-104'}
-                assert {r['core_id'] for r in progress.visible}==EXPECTED-{'임시-104'}
+                expected=EXPECTED-{'임시-104'} if kind=='before' else EXPECTED
+                assert {r[2] for r in dialog.rows}==expected
+                assert {r['core_id'] for r in progress.visible}==expected
+                if kind=='after':assert next(r[1] for r in dialog.rows if r[2]=='임시-104')=='ON'
                 s.undo();app.refresh();progress.reload();app.update()
                 assert {r[2] for r in dialog.rows}==EXPECTED
                 progress.destroy();dialog.destroy()
             assert app.scenario_path('before').read_bytes()==baseline
             assert not errors and not error.called,(errors,error.call_args)
         finally:app.on_close()
-    print('PASS Windows field/after work-list and progress eligibility, whole-ID/RN ON, live signal changes, undo, CSV, counts and baseline preservation')
+    print('PASS Windows field-end ON eligibility, interior/isolated RN negatives, stable after targets, undo, CSV, counts and baseline preservation')
 
 
 if __name__=='__main__':

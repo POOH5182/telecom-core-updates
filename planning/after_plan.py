@@ -99,6 +99,9 @@ class AfterPlanner:
     def report(self):
         current, net, before, old, data = self.snapshot()
         ids = sorted(set(net.present_ids) | (old.present_ids if old else set()) | set(data['plans']))
+        temporary,_=project_field_temporary(net,field_temporary_work(old)) if old else ({},{})
+        field_temps={row['core_id']:row for row in temporary.values()}
+        if old:ids=sorted({cid for cid in ids if not cid.startswith('임시-')}|set(field_temps))
         rows, global_issues = [], []
         connections=completion_report(self.store)
         if old is None: global_issues.append('전도면 기준본이 없습니다. 전/후관리에서 기준본을 먼저 저장하세요.')
@@ -121,6 +124,9 @@ class AfterPlanner:
             if survey.get('invalid'): global_issues.append('선번 입력 오류: '+str(survey.get('error_message') or survey['id']))
         for core_id in ids:
             prev, actual = self.core_record(old, core_id), self.core_record(net, core_id)
+            field_work=field_temps.get(core_id)
+            if field_work:
+                prev=field_work_record(old,field_work,True);actual=field_work_record(net,field_work)
             plan = data['plans'].get(core_id, {})
             kind = plan.get('kind', '연결 필요')
             change = []
@@ -138,10 +144,12 @@ class AfterPlanner:
             notes = list(actual['result']['notes']) if actual else ['후도면에서 코어ID를 찾지 못함']
             policy=connections['by_id'].get(core_id)
             required=policy['required'] if policy is not None else True
+            if field_work:required=True
             # Manual exception disposition accepts completion; raw routes remain inspectable.
             if policy is not None:
                 notes=list(policy['reason_items']) if required else ['완료율 제외 · '+policy['excluded_reason']]
                 if required and actual:notes.extend(n for n in actual['result']['notes'] if '코어내역 불일치' in n)
+            if field_work:notes=list(actual['result']['notes']) if actual else ['현장 끝단 케이블의 후도면 배정 위치 확인 필요']
             if not required: notes=[]
 
             if kind != '연결 필요':

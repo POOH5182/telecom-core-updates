@@ -26,11 +26,16 @@ class AfterRoutePlanner:
         if self.app.store is not self.store:raise ValueError('열린 도면이 바뀌었습니다. 작업실을 다시 여세요.')
         _,net,_,old,data=AfterPlanner(self.app).snapshot()
         completion=completion_report(self.store,'after');entries={after_route_key(r):dict(r) for r in completion['rows']}
+        temporary,_=project_field_temporary(net,field_temporary_work(old)) if old else ({},{})
+        field_temps={row['core_id']:row for row in temporary.values()}
+        if old:
+            entries={key:row for key,row in entries.items() if not row['core_id'].startswith('임시-') or row['core_id'] in field_temps}
         excluded={r['core_id'] for r in completion['excluded_rows'] if r['core_id']}
         # A real before-drawing identity must not disappear merely because all
         # its slots were removed from the working drawing.
         old_ids=old.by_id if old else {}
         for cid in sorted(set(old_ids)|set(data['plans'])):
+            if old and cid.startswith('임시-') and cid not in field_temps:continue
             key=json.dumps(['id',cid],ensure_ascii=False,separators=(',',':'))
             if key in entries or cid in excluded:continue
             rows=[]
@@ -41,6 +46,13 @@ class AfterRoutePlanner:
             if not rows and data['plans'].get(cid,{}).get('kind','연결 필요')!='연결 필요':continue
             entries[key]=dict(key=('id',cid),core_id=cid,detail=' / '.join(dict.fromkeys(r.get('detail','') for r in rows if r.get('detail'))),
                               slots=[],active_slots=[],all_slots=[],complete=False,reason='후도면 배정 위치 없음 · 양 끝을 지정하세요.',**policy)
+        for cid,row in field_temps.items():
+            key=json.dumps(['id',cid],ensure_ascii=False,separators=(',',':'))
+            if key not in entries:
+                route=field_work_route(net,row,DEFAULTS)
+                entries[key]=dict(key=('id',cid),core_id=cid,detail=row['detail'],slots=row['current_slots'],active_slots=row['current_slots'],all_slots=row['current_slots'],
+                    complete=route['complete'],reason=' / '.join(route['notes']),**completion_policy([{'core_id':cid,'signal':'on'}],'after'))
+            entries[key]['field_work']=row
         graph=digest([sorted((n['id'],n['type'],n['status']) for n in net.nodes.values()),
                       sorted((c['id'],c['n1id'],c['n2id'],c['size'],c['spec'],c['status']) for c in net.cables.values())])
         stamp=digest([self.store.data_revision(),self.store._view_generation,net.fingerprint,old.fingerprint if old else None])
@@ -94,8 +106,8 @@ class AfterRoutePlanner:
             result=network.inspect(cid,{**DEFAULTS,'check_details':False,'reject_temporary':False})
             result=result['ends']
             return [e[1] for e in result] if len(result)==2 and result[0][1]!=result[1][1] else []
-        default_ends=endpoints(ctx['old'])
-        end_source='전도면의 양 끝'
+        default_ends=[e[1] for e in entry['field_work']['ends']] if entry.get('field_work') else endpoints(ctx['old'])
+        end_source='현장반영 도면의 양 끝'
         if not default_ends:
             default_ends=endpoints(net);end_source='현재 코어의 양 끝'
             # Cutting a transit cable must not turn the remaining dangling end
