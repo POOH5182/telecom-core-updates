@@ -1,5 +1,6 @@
 """One core, explicit cable numbers, real map/grid clicks, atomic apply and undo."""
 import copy
+import json
 import os
 from pathlib import Path
 import sys
@@ -132,6 +133,16 @@ def clear_old_connector(app,ids):
         app.store.conn.execute("UPDATE cores SET core_id='',detail='',signal='unknown' WHERE cable_id=?",(ids['cut'],))
 
 
+def seed_exclusions(store,cable,number,nodes):
+    with store.action('합성 이전 배정 제외 기록'):
+        for nid in nodes:
+            extra=json.loads(store.node(nid)['extra_json'] or '{}')
+            extra['autoSameNumberExcluded']=[f'{cable}::{number}',f'{cable}::{number+1}']
+            extra['assignmentExceptions']={f'{cable}::{number}':True,f'{cable}::{number+1}':True}
+            extra['synthetic_note']='다른 함체 정보 보존'
+            store.conn.execute('UPDATE nodes SET extra_json=? WHERE id=?',(json.dumps(extra,ensure_ascii=False),nid))
+
+
 class IncrementalTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.app=LocalApp(self.temp.name);self.s=self.app.store
@@ -202,6 +213,53 @@ class IncrementalTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'injected'):self.service.apply(p)
         self.assertEqual((wf.plan_snapshot(self.s.conn),self.s.history_rows()),(original,history))
 
+    def test_empty_74_reuses_old_exclusions_both_ends_only_selected_number_and_one_undo(self):
+        s=self.s;seed_exclusions(s,self.first,74,self.nodes[1:3]);wf.after_auto_activate(s);self.service.load()
+        original=wf.plan_snapshot(s.conn);state=wf.state(s);history=s.history_rows();p=self.service.preview({self.first:74})
+        self.assertTrue(self.service.capacity_row(self.first,74)['available']);self.assertEqual(len(p['exclusion_changes']),2)
+        self.assertEqual((wf.plan_snapshot(s.conn),s.history_rows()),(original,history));self.assertEqual(len(p['added']),1)
+        self.assertTrue(self.service.apply(p).exists());self.assertEqual(s.core(self.first,74)['core_id'],'SYNTHETIC')
+        for nid in self.nodes[1:3]:
+            extra=json.loads(s.node(nid)['extra_json']);self.assertEqual(extra['synthetic_note'],'다른 함체 정보 보존')
+            for field in ('autoSameNumberExcluded','assignmentExceptions'):
+                self.assertNotIn(f'{self.first}::74',extra[field]);self.assertIn(f'{self.first}::75',extra[field])
+        self.assertEqual(wf.state(s),state);self.assertEqual(len(s.history_rows()),len(history)+1)
+        self.assertEqual(self.app.scenario_path('before').read_bytes(),self.before)
+        after=wf.plan_snapshot(s.conn);s.undo();self.assertEqual(wf.plan_snapshot(s.conn),original)
+        s.redo();self.assertEqual(wf.plan_snapshot(s.conn),after);path=s.path;s.close();self.app.store=self.s=code['Store'](path)
+        self.assertEqual(wf.plan_snapshot(self.s.conn),after)
+        self.service=wf.IncrementalCoreAllocator(self.app,(self.left,99));self.assign(self.second,7)
+        self.assertTrue(wf.completion_report(self.s)['by_id']['SYNTHETIC']['complete'])
+
+    def test_actual_deleted_slot_can_be_assigned_but_peer_disconnect_is_never_cleared(self):
+        s=self.s;update(s,self.first,74,dict(core_id='OLD',signal='on'));s.delete_core_assignment(self.first,74)
+        self.service.load();self.assertTrue(self.service.availability(self.first,74)[0]);self.assign(self.first,74)
+        self.assertIsNotNone(s.splice_for(self.nodes[1],self.first,74));s.undo()
+        with s.action('합성 상대측 명시적 연결 해제'):s.set_auto_splice_exclusions(self.nodes[1],[(self.left,99)])
+        p=self.assign(self.first,74);self.assertFalse(p['added']);self.assertEqual(s.core(self.first,74)['core_id'],'SYNTHETIC')
+        self.assertIn(f'{self.left}::99',json.loads(s.node(self.nodes[1])['extra_json'])['autoSameNumberExcluded'])
+
+    def test_excluded_slot_failure_stale_tamper_lock_and_real_reservation_protection(self):
+        s=self.s;seed_exclusions(s,self.first,74,self.nodes[1:3]);self.service.load();p=self.service.preview({self.first:74})
+        original=wf.plan_snapshot(s.conn);history=s.history_rows()
+        bad=copy.deepcopy(p);bad['exclusion_changes'][0]['after']='{}'
+        with self.assertRaises(ValueError):self.service.apply(bad)
+        with patch.object(wf,'after_auto_apply',side_effect=ValueError('injected after exclusion clear')):
+            with self.assertRaisesRegex(ValueError,'injected'):self.service.apply(p)
+        self.assertEqual((wf.plan_snapshot(s.conn),s.history_rows()),(original,history))
+        wf.AfterPlanner(self.app).set_fixed(slots=[(self.first,74)],reason='유지할 실제 예비번호')
+        with self.assertRaises(ValueError):self.service.apply(p)
+        self.service.load();row=self.service.capacity_row(self.first,74)
+        self.assertTrue(row['empty']);self.assertFalse(row['available']);self.assertIn('예약',row['state']);self.assertIn('유지할 실제 예비번호',row['reason'])
+        wf.AfterPlanner(self.app).set_fixed(slots=[(self.first,74)],remove=True);s.set_node_locked(self.nodes[1],True);self.service.load()
+        with self.assertRaisesRegex(ValueError,'잠금'):self.service.preview({self.first:74})
+
+    def test_batch_allocator_still_preserves_exclusions_until_explicit_selection(self):
+        seed_exclusions(self.s,self.first,74,self.nodes[1:3]);self.service.load()
+        automatic=wf.AfterAllocator(self.app).prepare(wf.ALLOCATION_DEFAULTS)
+        self.assertIn((self.first,74),automatic['fixed'])
+        self.assertTrue(self.service.availability(self.first,74)[0])
+
 
 def windows_ui():
     if sys.platform!='win32':return
@@ -215,7 +273,8 @@ def windows_ui():
             try:
                 # Same actual after-stage entry used by the automatic allocator.
                 app.store.conn.execute("INSERT INTO meta(key,value) VALUES('active_scenario','after') ON CONFLICT(key) DO UPDATE SET value='after'")
-                app.store.conn.commit();i=drawing(app);clear_old_connector(app,i);app.refresh();app.update()
+                app.store.conn.commit();i=drawing(app);clear_old_connector(app,i)
+                seed_exclusions(app.store,i['direct'],7,(i['b'],i['c']));app.refresh();app.update()
                 editor=code['open_detail_dialog'](app,app.store,'cable',i['left']);editor.focus_core(1);app.update()
                 original=wf.plan_snapshot(app.store.conn);editor.manual_allocation_button.invoke();app.update()
                 dialog=app._manual_allocation_window;assert isinstance(dialog,wf.ManualCoreAllocationDialog)
@@ -241,6 +300,7 @@ def windows_ui():
                 # Preview cancellation preserves the draft and physical state.
                 def review_action(accept):
                     review=next(w for w in dialog.winfo_children() if isinstance(w,wf.ManualAllocationReview))
+                    assert '이전 제외 기록 해제' in dialog.review_text(dialog.service.preview(dialog.selected))
                     (review.confirm if accept else review.destroy)()
                 dialog.after(120,lambda:review_action(False));dialog.apply_button.invoke();app.update()
                 assert wf.plan_snapshot(app.store.conn)==original and dialog.selected[i['direct']]==7

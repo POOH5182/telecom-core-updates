@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from check_after_plan import code,wf,update
 from check_after_routes import drawing
-from check_manual_allocation import clear_old_connector
+from check_manual_allocation import clear_old_connector,seed_exclusions
 
 
 def windows_ui():
@@ -31,6 +31,8 @@ def windows_ui():
                     s.conn.execute('INSERT INTO cores(cable_id,core_index) VALUES(?,?)',(i['direct'],n))
             update(s,i['direct'],2,dict(core_id='OCCUPIED',detail='다른 회선',signal='on'))
             s.connect(i['b'],(i['direct'],2),(i['detour1'],2))
+            seed_exclusions(s,i['direct'],74,(i['b'],i['c']))
+            wf.AfterPlanner(app).set_fixed(slots=[(i['direct'],68)],reason='실제 예비번호')
             app.refresh();app.update();app.fit_view();app.update()
             editor=code['open_detail_dialog'](app,s,'cable',i['left']);editor.focus_core(1);app.update()
             original=wf.plan_snapshot(s.conn);history=s.history_rows();before=app.scenario_path('before').read_bytes();scale=app.view_scale
@@ -78,6 +80,13 @@ def windows_ui():
             assert '빈 코어' in panel.sheet.itemcget(panel.sheet.find_withtag('state:144')[0],'text')
             assert '사용 중' in panel.sheet.itemcget(panel.sheet.find_withtag('state:2')[0],'text')
             assert panel.capacity_table.item('2','values')[2:4]==('OCCUPIED','다른 회선')
+            assert panel.service.capacity_row(i['direct'],74)['available']
+            assert '빈 코어' in panel.sheet.itemcget(panel.sheet.find_withtag('state:74')[0],'text')
+            assert panel.sheet.itemcget(panel.sheet.find_withtag('state:68')[0],'text')=='68번 예약'
+            reserved=next(item for item in panel.sheet.find_withtag('number:68') if panel.sheet.type(item)=='rectangle')
+            assert panel.sheet.itemcget(reserved,'fill')=='#e2e8f0'
+            click_number(68);assert i['direct'] not in panel.selected
+            assert '실제 예비번호' in panel.details.get('1.0','end')
             click_number(2)
             assert i['direct'] not in panel.selected and i['detour1'] in panel.inspect_cables
             assert '다른 회선' in panel.details.get('1.0','end')
@@ -93,13 +102,13 @@ def windows_ui():
             panel.capacity_table.event_generate('<Button-1>',x=x+20,y=y+h//2)
             panel.capacity_table.event_generate('<ButtonRelease-1>',x=x+20,y=y+h//2);app.update()
             assert i['direct'] not in panel.selected and i['detour1'] in panel.inspect_cables
-            panel.capacity_table.selection_set('7');panel.capacity_table.focus_force()
-            panel.capacity_table.event_generate('<Return>');app.update();assert panel.selected[i['direct']]==7
+            panel.capacity_table.selection_set('74');panel.capacity_table.focus_force()
+            panel.capacity_table.event_generate('<Return>');app.update();assert panel.selected[i['direct']]==74
             panel.capacity_table.event_generate('<Return>');app.update();assert i['direct'] not in panel.selected
             panel.capacity_tabs.select(0);app.update()
-            click_number(7)
-            assert panel.selected[i['direct']]==7
-            assert '7번' in app.highlight_core_labels[i['direct']]
+            click_number(74)
+            assert panel.selected[i['direct']]==74
+            assert '74번' in app.highlight_core_labels[i['direct']]
             # Node clicks/drags and Delete never move or delete drawing geometry in this mode.
             app.selected={i['b']};app.delete_selected();assert wf.plan_snapshot(s.conn)==original
             # Merely inspect another cable: no forced extra segment in the proposal.
@@ -109,10 +118,12 @@ def windows_ui():
             for accept in (False,True):
                 def answer(accept=accept):
                     review=next(w for w in app.winfo_children() if isinstance(w,wf.ManualAllocationReview))
+                    if panel.selected.get(i['direct'])==74:
+                        assert '이전 제외 기록 해제' in panel.review_text(panel.service.preview(panel.selected))
                     (review.confirm if accept else review.destroy)()
                 app.after(100,answer);panel.apply_button.invoke();app.update()
-                if not accept:assert wf.plan_snapshot(s.conn)==original and panel.selected[i['direct']]==7
-            assert s.core(i['direct'],7)['core_id']=='CORE-1'
+                if not accept:assert wf.plan_snapshot(s.conn)==original and panel.selected[i['direct']]==74
+            assert s.core(i['direct'],74)['core_id']=='CORE-1'
             assert wf.completion_report(s)['by_id']['CORE-1']['complete']
             assert app.scenario_path('before').read_bytes()==before
             panel.sheet.focus_force();panel.sheet.event_generate('<Control-z>');app.update();panel.check_live()

@@ -118,6 +118,42 @@ class AutoConnectTests(unittest.TestCase):
         s.redo();s.disconnect(self.h,self.l,1);update(s,self.r,7,dict(detail='새 메모'))
         self.assertFalse(self.connected())
 
+    def test_74_to_70_unknown_different_names_restored_on_marked_cable_joins(self):
+        s=self.s;s.resize_cable(self.l,'144C');s.resize_cable(self.r,'72C')
+        with s.action('합성 작업 표시'):s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.r,))
+        wf.after_auto_activate(s)
+        with s.action('합성 번호별 내역 입력'):
+            s.conn.execute("UPDATE cores SET core_id='SYNTH-74',detail='왼쪽 코어명',signal='unknown' WHERE cable_id=? AND core_index=74",(self.l,))
+            s.conn.execute("UPDATE cores SET core_id='SYNTH-74',detail='오른쪽 코어명',signal='unknown' WHERE cable_id=? AND core_index=70",(self.r,))
+        self.assertTrue(s.splice_for(self.h,self.l,74));s.delete_core_assignment(self.r,70)
+        before=wf.plan_snapshot(s.conn);history=len(s.history_rows())
+        with s.action('합성 번호별 내역 복원'):
+            s.conn.execute("UPDATE cores SET core_id='SYNTH-74',detail='서로 다른 이름',signal='unknown' WHERE cable_id=? AND core_index=70",(self.r,))
+        pair=s.splice_for(self.h,self.l,74);self.assertIsNotNone(pair)
+        self.assertEqual({(pair['cable1_id'],pair['core1_index']),(pair['cable2_id'],pair['core2_index'])},{(self.l,74),(self.r,70)})
+        self.assertTrue(wf.completion_report(s)['by_id']['SYNTH-74']['complete'])
+        self.assertFalse(s.waiting_connection_groups(self.h));self.assertFalse(s.node_assignment_needs(self.h))
+        self.assertEqual(s.core(self.l,74)['detail'],'왼쪽 코어명');self.assertEqual(s.core(self.r,70)['detail'],'서로 다른 이름')
+        self.assertEqual(s.core(self.r,70)['signal'],'unknown');self.assertEqual(len(s.history_rows()),history+1)
+        s.undo();self.assertEqual(wf.plan_snapshot(s.conn),before);s.redo();self.assertIsNotNone(s.splice_for(self.h,self.l,74))
+
+    def test_v99_existing_marked_restoration_repaired_once_without_reversing_explicit_disconnect(self):
+        s=self.s;s.conn.execute("INSERT INTO meta VALUES('after_same_id_v99','1')");s.conn.commit()
+        self.fill();s.connect(self.h,(self.l,1),(self.r,7));s.delete_core_assignment(self.r,7)
+        with s.action('합성 이전 버전 복원'):
+            s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.r,))
+            s.conn.execute("UPDATE cores SET core_id='CORE',detail='다른 표시명',signal='unknown' WHERE cable_id=? AND core_index=7",(self.r,))
+        before=wf.plan_snapshot(s.conn);s.backup_to(self.app.scenario_path('before'));baseline=self.app.scenario_path('before').read_bytes()
+        self.assertFalse(self.connected());self.assertEqual(wf.after_auto_activate(s),1);self.assertTrue(self.connected())
+        self.assertEqual(self.app.scenario_path('before').read_bytes(),baseline)
+        for table in before:
+            if table!='splices':self.assertEqual(wf.plan_snapshot(s.conn)[table],before[table],table)
+        s.undo();self.assertEqual(wf.plan_snapshot(s.conn),before)
+        path=s.path;s.close();self.s=self.app.store=code['Store'](path)
+        self.assertEqual(wf.after_auto_activate(self.s),0);self.assertFalse(self.connected());self.s.redo();self.assertTrue(self.connected())
+        self.s.disconnect(self.h,self.l,1);update(self.s,self.r,7,dict(detail='접속 해제 유지'))
+        self.assertFalse(self.connected());self.assertEqual(wf.after_auto_pairs(self.s),[])
+
     def test_work_marked_local_join_not_unassigned_when_far_end_still_open(self):
         self.fill();s=self.s;s.connect(self.h,(self.l,1),(self.r,7))
         end=s.add_node('먼 말단',600,0);s.add_cable(self.b,end,'EMPTY','12C','신설')
@@ -194,9 +230,26 @@ def windows_ui():
             assert s.cable_core_warning_summary()[l]['unassigned']==0
             s.undo();app.refresh();app.update();assert editor.completion_reason.get()=='신호 OFF'
             s.redo();app.refresh();app.update();assert s.node_assignment_needs(h)=={r:{8}}
+            print('AUTO UI: restored 74 to 70 on marked cable',flush=True)
+            s.resize_cable(l,'144C');s.resize_cable(r,'72C')
+            with s.action('합성 절단 표시'):s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(r,))
+            update(s,l,74,dict(core_id='SYNTH-74',detail='왼쪽 이름',signal='unknown'))
+            update(s,r,70,dict(core_id='SYNTH-74',detail='오른쪽 이름',signal='unknown'))
+            s.delete_core_assignment(r,70);app.refresh();app.update()
+            node=code['NodeDialog'](app,s,h)
+            for value in node.assignment_filters.values():value.set(False)
+            node.left_var.set(next(k for k,v in node.by_label.items() if v==l))
+            node.right_var.set(next(k for k,v in node.by_label.items() if v==r));node.reload_all();app.update()
+            assert node.left_tree.item('74','values')[5]==''
+            update(s,r,70,dict(core_id='SYNTH-74',detail='다른 코어명',signal='unknown'));app.refresh();app.update()
+            assert node.left_tree.item('74','values')[5]=='70번' and node.right_tree.item('70','values')[5]=='74번'
+            assert wf.completion_report(s)['by_id']['SYNTH-74']['complete']
+            s.undo();app.refresh();app.update();assert node.left_tree.item('74','values')[5]==''
+            s.redo();app.refresh();app.update();assert node.right_tree.item('70','values')[5]=='74번'
+            node.destroy()
             assert not callbacks,callbacks;assert not errors.called,errors.call_args_list;assert not warnings.called,warnings.call_args_list
         finally:app.on_close();faulthandler.cancel_dump_traceback_later()
-    print('PASS after automatic same-ID join, three-way error badge, OFF/unknown exemption, original signal preservation, UI refresh and undo/redo')
+    print('PASS after automatic same-ID join, restored 74-to-70 marked-cable enclosure peers, three-way error badge, OFF/unknown exemption, original signal preservation, UI refresh and undo/redo')
 
 
 if __name__=='__main__':

@@ -6,6 +6,7 @@ chosen slots and required local splices, preserving every existing component.
 
 
 class ManualCoreAllocator(AfterAllocator):
+    reassign_excluded=False
     def __init__(self,app,source):
         super().__init__(app);self.source=tuple(source);self.load()
 
@@ -28,6 +29,7 @@ class ManualCoreAllocator(AfterAllocator):
         self.pairs={allocation_pair(s['node_id'],(s['cable1_id'],s['core1_index']),(s['cable2_id'],s['core2_index'])) for s in self.snapshot['splices']}
         self.occupied={s for _,a,b in self.pairs for s in (a,b)}
         self.fixed={tuple(json.loads(k)) for k in self.ctx['data']['fixed_slots']}
+        self.exclusions=defaultdict(list)
         for n in self.net.nodes.values():
             extra=json.loads(n.get('extra_json') or '{}')
             for name in ('autoSameNumberExcluded','assignmentExceptions'):
@@ -35,7 +37,7 @@ class ManualCoreAllocator(AfterAllocator):
                 if not isinstance(values,(dict,list)):continue
                 for key in values:
                     if isinstance(values,dict) and not values[key]:continue
-                    try:c,i=key.rsplit('::',1);self.fixed.add((c,int(i)))
+                    try:c,i=key.rsplit('::',1);self.exclusions[c,int(i)].append((n['id'],name))
                     except (ValueError,AttributeError):pass
         self.locked_nodes={n for n in self.net.nodes if node_locked(self.store,n)}
         self.drawing_locked=locked(self.store)
@@ -51,9 +53,14 @@ class ManualCoreAllocator(AfterAllocator):
         if self.existing.get(cable)==index:return False,'기존 연결 선번 유지'
         if cable in self.existing:return False,'이 케이블은 기존 선번 '+str(self.existing[cable])+'번 유지'
         if self.drawing_locked or {c['n1id'],c['n2id']}&self.locked_nodes:return False,'함체·케이블 잠금'
-        if slot in self.fixed:return False,'고정·예약·배정 예외 번호'
+        if slot in self.fixed:return False,'고정·예약: '+str(self.ctx['data']['fixed_slots'][plan_slot_key(slot)])+' · 후도면 작업실에서 고정 해제'
         if slot in self.occupied:return False,'기존 접속 사용 중'
         if plan_used(row):return False,'기존 코어ID·내역·신호·상태 사용 중'
+        excluded=self.exclusions.get(slot,())
+        if excluded:
+            if any(nid in self.locked_nodes for nid,name in excluded):return False,'배정 제외 기록이 있는 함체 잠금'
+            if not self.reassign_excluded:return False,'연결 해제·배정 예외 기록 · 케이블별 직접 배정에서 재사용 가능'
+            return True,'빈 번호 · 직접 배정 시 이전 연결 해제·배정 예외 기록 해제'
         return True,'빈 번호 · 클릭하여 선택'
 
     def capacity_row(self,cable,index):
@@ -120,7 +127,7 @@ class ManualCoreAllocator(AfterAllocator):
     @staticmethod
     def seal(p):
         return digest([p['source'],p['core_id'],p['token'],sorted(p['selected'].items()),p['route'],
-                       sorted(p['new'].items()),sorted(p['splices']),sorted(p['added']),sorted(p['removed'])])
+                       sorted(p['new'].items()),sorted(p['splices']),sorted(p['added']),sorted(p['removed']),p.get('exclusion_changes',[])])
 
     def validate_final(self,p):
         # Simulate only in memory, without triggers, history, or baseline writes.
@@ -180,7 +187,25 @@ class IncrementalCoreAllocator(ManualCoreAllocator):
     Only compatible, unique, free local pairs touching newly assigned slots
     are joined. Existing connections and route decisions are never replaced.
     """
+    reassign_excluded=True
     def make_route_service(self):return StoredAllocationRoutePlanner(self.app)
+
+    def exclusion_changes(self,slots):
+        """Only an explicitly selected empty number supersedes its old exclusions."""
+        keys={f'{c}::{n}' for c,n in slots};changes=[]
+        for node in self.snapshot['nodes']:
+            extra=json.loads(node.get('extra_json') or '{}');removed=[]
+            for field in ('autoSameNumberExcluded','assignmentExceptions'):
+                values=extra.get(field)
+                if not isinstance(values,(list,dict)):continue
+                matching=set(values)&keys
+                if not matching:continue
+                removed.extend((field,key) for key in sorted(matching))
+                extra[field]=[key for key in values if key not in matching] if isinstance(values,list) else {key:value for key,value in values.items() if key not in matching}
+            if removed:
+                if node_locked(self.store,node['id']):raise ValueError(node['name']+': 배정 제외 기록이 있는 함체 잠금')
+                changes.append(dict(node_id=node['id'],before=node['extra_json'],after=json.dumps(extra,ensure_ascii=False),removed=removed))
+        return changes
 
     def preview(self,selected):
         self.fresh();chosen={str(c):int(n) for c,n in selected.items()};new={}
@@ -193,13 +218,15 @@ class IncrementalCoreAllocator(ManualCoreAllocator):
             new[cable,index]=values
         if not new:raise ValueError('배정할 케이블의 빈 번호를 선택하세요.')
         net=Network(self.store.conn,resolve_rn_ports=True)
+        changes=self.exclusion_changes(new)
+        for change in changes:net.nodes[change['node_id']]=dict(net.nodes[change['node_id']],extra_json=change['after'])
         for slot,metadata in new.items():
             net.slots[slot]=dict(self.rows[slot],**dict(zip(PLAN_FIELDS,metadata)))
             net.by_id[self.core_id].add(slot)
         added={allocation_pair(n,a,b) for n,a,b in after_auto_pairs(self.store,net=net,touched_slots=set(new))}
         p=dict(source=self.source,core_id=self.core_id,token=self.stamp,selected=chosen,
                route=dict(cables=[c for c,n in new],nodes=[],endpoints=[],source='케이블별 코어배정'),
-               new=new,splices=self.pairs|added,added=added,removed=set())
+               new=new,splices=self.pairs|added,added=added,removed=set(),exclusion_changes=changes)
         p['seal']=self.seal(p);return p
 
     def apply(self,proposal):
@@ -211,13 +238,18 @@ class IncrementalCoreAllocator(ManualCoreAllocator):
         self.store.backup_to(backup)
         expected={slot:tuple(row[f] for f in PLAN_FIELDS) for slot,row in self.rows.items()};expected.update(p['new'])
         with self.store.action('케이블별 코어배정'):
+            for change in p['exclusion_changes']:
+                self.store.conn.execute('UPDATE nodes SET extra_json=? WHERE id=?',(change['after'],change['node_id']))
             for slot,metadata in p['new'].items():
                 self.store.conn.execute('UPDATE cores SET core_id=?,detail=?,status1=?,status2=?,signal=? WHERE cable_id=? AND core_index=?',metadata+slot)
             after_auto_apply(self.store,sorted(p['added']))
             actual=plan_snapshot(self.store.conn)
             if {(r['cable_id'],r['core_index']):tuple(r[f] for f in PLAN_FIELDS) for r in actual['cores']}!=expected:
                 raise ValueError('코어내역 검사가 실패하여 배정을 취소했습니다.')
-            for table in ('nodes','cables','ports','core_annotations','survey_rows'):
+            changed_extras={change['node_id']:change['after'] for change in p['exclusion_changes']}
+            expected_nodes=[dict(row,extra_json=changed_extras[row['id']]) if row['id'] in changed_extras else row for row in self.snapshot['nodes']]
+            if actual['nodes']!=expected_nodes:raise ValueError('선택 번호의 제외 기록 보존 검사가 실패하여 배정을 취소했습니다.')
+            for table in ('cables','ports','core_annotations','survey_rows'):
                 if actual[table]!=self.snapshot[table]:raise ValueError('기존 정보 보존 검사가 실패하여 배정을 취소했습니다.')
             pairs={allocation_pair(r['node_id'],(r['cable1_id'],r['core1_index']),(r['cable2_id'],r['core2_index'])) for r in actual['splices']}
             if pairs!=p['splices']:raise ValueError('접속 검사가 실패하여 배정을 취소했습니다.')
@@ -368,6 +400,7 @@ class ManualAllocationActions:
             slot=self.inspected;row=s.rows.get(slot,{})
             lines.append('\n확인 번호: '+plan_number_label(s.net,slot))
             lines.append('ID: '+str(row.get('core_id') or '(빈 번호)')+' / '+str(row.get('detail') or ''))
+            lines.append('배정 상태: '+s.capacity_row(*slot)['state']+' · '+s.availability(*slot)[1])
             cable=s.net.cables[slot[0]]
             for nid in (cable['n1id'],cable['n2id']):
                 peers=[peer for node,peer in s.net.links[slot] if node==nid]
@@ -427,6 +460,13 @@ class ManualAllocationActions:
     def review_text(self,p):
         net=self.service.net;lines=['코어ID: '+p['core_id'],'','이번에 배정할 케이블·번호']
         for cid in p['route']['cables']:lines.append(self.cable_title(cid)+' → '+str(p['selected'][cid])+'번'+(' (기존 유지)' if cid in self.service.existing else ' (새 배정)'))
+        if p.get('exclusion_changes'):
+            lines.extend(['','선택한 빈 번호의 이전 제외 기록 해제 (새 코어 배정에만 적용)'])
+            for change in p['exclusion_changes']:
+                for field,key in change['removed']:
+                    cable,index=key.rsplit('::',1)
+                    label='자동접속 제외' if field=='autoSameNumberExcluded' else '배정필요 예외'
+                    lines.append(net.nodes[change['node_id']]['name']+' · '+plan_number_label(net,(cable,int(index)))+' · '+label+' 해제')
         for title,pairs in (('추가할 함체 접속',p['added']),('철거·절단 케이블의 기존 접속 해체',p['removed'])):
             lines.extend(['',title])
             full=Network(self.store.conn) if p['removed'] else net
@@ -555,10 +595,10 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         ly=ttk.Scrollbar(ledger,orient='vertical',command=self.capacity_table.yview);ly.grid(row=0,column=1,sticky='ns')
         lx=ttk.Scrollbar(ledger,orient='horizontal',command=self.capacity_table.xview);lx.grid(row=1,column=0,sticky='ew')
         self.capacity_table.configure(yscrollcommand=ly.set,xscrollcommand=lx.set)
-        for tag,color in (('empty','#dcfce7'),('used','#f1f5f9'),('existing','#dbeafe'),('draft','#ffedd5')):self.capacity_table.tag_configure(tag,background=color)
+        for tag,color in (('empty','#dcfce7'),('blocked','#e2e8f0'),('used','#f1f5f9'),('existing','#dbeafe'),('draft','#ffedd5')):self.capacity_table.tag_configure(tag,background=color)
         self.capacity_table.bind('<ButtonRelease-1>',self.table_click)
         self.capacity_table.bind('<Return>',self.table_click)
-        self.hover=tk.StringVar(value='초록 빈 코어 · 파랑 기존 연결 · 주황 배정안 · 회색 사용 중. 빈 칸을 누르면 배정안을 선택합니다.')
+        self.hover=tk.StringVar(value='초록 배정 가능한 빈 코어 · 파랑 기존 연결 · 주황 배정안 · 회색 사용 중·잠금·예약. 빈 칸을 누르면 배정안을 선택합니다.')
         ttk.Label(left,textvariable=self.hover,wraplength=650).grid(row=2,column=0,columnspan=2,sticky='ew')
         ttk.Label(right,text='기존 구간 · 배정안 · 양쪽 접속',padding=2).pack(fill='x')
         self.details=field_readonly_text(right,6)
@@ -612,13 +652,14 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         for position,row in enumerate(shown):
             index=row['core_index'];allowed=row['available'];reason=row['reason']
             chosen=self.selected.get(cid)==index;existing=s.existing.get(cid)==index
-            tag='existing' if existing else 'draft' if chosen else 'empty' if row['empty'] else 'used'
-            fill={'existing':'#dbeafe','draft':'#ffedd5','empty':'#dcfce7','used':'#f1f5f9'}[tag]
+            tag='existing' if existing else 'draft' if chosen else 'blocked' if row['empty'] and not allowed else 'empty' if row['empty'] else 'used'
+            fill={'existing':'#dbeafe','draft':'#ffedd5','blocked':'#e2e8f0','empty':'#dcfce7','used':'#f1f5f9'}[tag]
             label='배정안' if chosen and not existing else row['state']
             subtitle=str(row['core_id'] or ('클릭하여 배정' if allowed else reason)).replace('\n',' ')
             x=(position%self._grid_columns)*cell;y=(position//self._grid_columns)*self.GRID_H
             self.sheet.create_rectangle(x+1,y+1,x+cell-1,y+self.GRID_H-1,fill=fill,outline='#f97316' if chosen and not existing else '#94a3b8',width=2 if chosen else 1,tags=('number:'+str(index),))
-            self.sheet.create_text(x+5,y+12,anchor='w',text=f'{index}번 {label.split(" · ")[0]}',font=('Malgun Gothic',9,'bold'),fill='#166534' if row['empty'] and not chosen else '#172033',tags=('number:'+str(index),'state:'+str(index)))
+            visible_label=label.split(' · ')[-1] if tag=='blocked' else label.split(' · ')[0]
+            self.sheet.create_text(x+5,y+12,anchor='w',text=f'{index}번 {visible_label}',font=('Malgun Gothic',9,'bold'),fill='#166534' if row['empty'] and allowed and not chosen else '#172033',tags=('number:'+str(index),'state:'+str(index)))
             limit=max(7,int((cell-12)/8));short=subtitle if len(subtitle)<=limit else subtitle[:limit-1]+'…'
             self.sheet.create_text(x+5,y+34,anchor='w',text=short,font=('Malgun Gothic',8),fill='#475569',tags=('number:'+str(index),))
             signal={'on':'ON','off':'OFF','unknown':'확인필요','':'확인필요'}.get(row['signal'],row['signal'])

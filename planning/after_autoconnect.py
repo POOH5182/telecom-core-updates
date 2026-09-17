@@ -1,10 +1,11 @@
 """After-only, journaled joins of unique matching IDs at physical facilities."""
 
-AFTER_AUTO_POLICY='after_same_id_v99'
+AFTER_AUTO_POLICY='after_same_id_v102'
 
 
-def after_auto_groups(net,node_ids=None):
+def after_auto_groups(net,node_ids=None,store=None):
     groups=defaultdict(lambda:defaultdict(list))
+    exclusions={}
     off_ids=after_resolved_off_ids(net.slots.values())
     def marked(cable):
         return bool(cable and (cable.get('status') in ('절단','철거','cut','remove') or any(net.nodes.get(n,{}).get('status') in ('철거','remove') for n in (cable['n1id'],cable['n2id']))))
@@ -24,9 +25,14 @@ def after_auto_groups(net,node_ids=None):
             # Unused OFF capacity is not an allocation candidate. Keep actual
             # connected OFF legs so their saved physical route remains visible.
             if (cid in off_ids or core_connection_exempt(row)) and not net.links.get(slot):continue
-            extra=json.loads(net.nodes[nid].get('extra_json') or '{}')
             if marked(cable):
-                if f'{slot[0]}::{slot[1]}' in extra.get('autoSameNumberExcluded',()) and not any(n==nid for n,p in net.links.get(slot,())):continue
+                # Use the same effective exclusions as pair validation. Raw
+                # deletion flags must not hide a later restored identity before
+                # it even reaches that validation (including cut-marked cables).
+                if nid not in exclusions:
+                    exclusions[nid]=after_auto_exclusions(store,nid,net.nodes[nid]) if store is not None else set(json.loads(net.nodes[nid].get('extra_json') or '{}').get('autoSameNumberExcluded') or ())
+                excluded=exclusions[nid]
+                if f'{slot[0]}::{slot[1]}' in excluded and not any(n==nid for n,p in net.links.get(slot,())):continue
                 # An already replaced, wholly detached historical cable is not
                 # a third live endpoint of the accepted replacement splice.
                 if not net.links.get(slot) and (nid,cid) in replacements:continue
@@ -39,7 +45,7 @@ def after_auto_conflicts(store,net=None):
     if completion_kind(store)!='after':return []
     if net is None:net=Network(store.conn,resolve_rn_ports=True)
     result=[]
-    for nid,groups in sorted(after_auto_groups(net).items()):
+    for nid,groups in sorted(after_auto_groups(net,store=store).items()):
         for cid,slots in sorted(groups.items()):
             if len(slots)<3:continue
             reason=f"{net.nodes[nid]['name']}: 코어ID {cid}가 {len(slots)}개 번호에 중복되어 자동접속할 수 없습니다. ("+' / '.join(net.title(s) for s in sorted(slots))+')'
@@ -77,7 +83,7 @@ def after_auto_exclusions(store,nid,node):
 def after_auto_pairs(store,node_ids=None,net=None,touched_slots=None,blocked=None):
     if completion_kind(store)!='after' or (locked(store) and blocked is None):return []
     if net is None:net=Network(store.conn,resolve_rn_ports=True)
-    groups=after_auto_groups(net,node_ids);occupied=defaultdict(list);existing_pairs=set()
+    groups=after_auto_groups(net,node_ids,store=store);occupied=defaultdict(list);existing_pairs=set()
     for sp in net.splices:
         pair=tuple(sorted((sp[f'cable{i}_id'],int(sp[f'core{i}_index'])) for i in (1,2)))
         existing_pairs.add((sp['node_id'],pair))

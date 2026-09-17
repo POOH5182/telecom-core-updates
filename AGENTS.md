@@ -764,3 +764,27 @@ that authorized scope for requested program updates without asking again.
   clean saved-name cells across open windows without overwriting dirty editors.
   Run check_core_worklist.py including Windows source override, filters, global
   name/RN repaint, drafts/stale/locks/history and CSV/print, plus the full pipeline.
+
+- V102 distinguishes physical fixed reservations from old disconnect/assignment
+  exclusions. An explicit incremental allocation to an empty, unconnected number
+  supersedes only that selected number's exclusions. Preview exact node changes,
+  remove its keys in memory before predicting local joins, seal/revalidate, and
+  commit exclusions/identity/splices together with backup and atomic undo.
+- Keep peer/unselected exclusions, node extras, baseline drawings, true fixed slots,
+  occupied numbers and all locks protected. Never sweep exclusions on open, during
+  reads or in automatic batch allocation. This narrows V96's exclusion preservation
+  only for empty numbers directly chosen by the user. Whole-route replacement keeps
+  its prior refusal. Show blocked empty capacity as grey reservation/lock with its
+  actual reason; never hide the suffix or color it as freely assignable.
+- Run expanded check_manual_allocation.py and check_map_allocation.py (Windows
+  scrolled 144C number 74, old exclusions, real reservation 68, review/cancel,
+  atomic apply/history and editor return), existing allocation/connection gates
+  and the full release workflow before publication.
+
+- V102 same-ID candidate grouping must use effective deletion exclusions before
+  filtering detached work-marked slots; applying them only during pair validation
+  loses restored slots too early. The v102 activation repairs existing eligible
+  pairs once with backup and an undo-surviving marker. Keep explicit disconnects,
+  unknown legacy exclusions, occupied/locked/ambiguous pairs and remote metadata.
+  Run check_after_autoconnect.py's marked 74-to-70 differing-name/unknown-signal
+  edit and v99 upgrade/reopen/history tests and Windows enclosure peer repaint.
