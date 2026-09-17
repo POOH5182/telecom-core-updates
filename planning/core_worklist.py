@@ -1,6 +1,28 @@
 """Read-only work classification from field evidence and after topology changes."""
 
 
+def work_list_items(app,items):
+    """Only real IDs or temporary IDs with an ON signal belong in work lists.
+
+    Use the same whole-ID signal as the displayed list, including RN ports.
+    Missing after allocations retain their field evidence for recovery. This
+    projection never erases accepted source rows, decisions or diagnostics.
+    """
+    current=core_id_overview(app.store)
+    basis=getattr(app,'_transfer_source_signals',{}) if app.scenario_kind()=='after' and app.scenario_path('before').exists() else {}
+    result={}
+    for key,item in items.items():
+        cid=str(item.get('core_id') or '').strip()
+        if not cid:continue
+        if cid.startswith('임시-'):
+            group=current.get(cid)
+            on=bool(group['counts'].get('on')) if group else basis.get(cid,core_signal_code(item.get('signal'))=='on')
+            if not on:continue
+            item={**item,'signal':'on'}
+        result[key]=item
+    return result
+
+
 def work_source_method(source,changed=False):
     states=set(source.get('source_states') or ())
     if states & {'절단','cut'}:return '절단절체'
@@ -85,6 +107,8 @@ def work_transfer_sources(app,items):
         conn=sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True);conn.row_factory=sqlite3.Row
         try:
             basis_net=Network(conn);basis=work_route_index(basis_net)
+            app._transfer_source_signals={cid:any(core_signal_code(basis_net.slots[s].get('signal'))=='on' for s in slots)
+                                          for cid,slots in basis_net.by_id.items()}
             for cid,row in basis.items():
                 original=basis_net.by_id[cid]
                 try:

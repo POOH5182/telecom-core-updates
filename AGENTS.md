@@ -838,3 +838,15 @@ that authorized scope for requested program updates without asking again.
   synthetic three-monitor negative coordinates and real native/Tk centering, the
   updated owner-centered smoke checks, and the complete release workflow. Do not
   claim validation on three physical displays from the single-display CI runner.
+
+- V106 work-list eligibility is a read-only projection in core_worklist.py:
+  keep real nonempty IDs regardless of signal, and temporary IDs only when any
+  current same-ID cable or RN port is ON. Blank IDs never qualify through names,
+  status or signal alone. For missing after allocations, use field ON evidence
+  (including remote segments/ports), retaining real-ID missing work targets.
+  Filter Workflow.report rows and its pending counts together so lists, progress,
+  exports and totals agree. Do not rewrite captured/accepted evidence, decisions,
+  signatures, raw diagnostics, completion policy or physical connections.
+  Run check_work_eligibility.py (legacy evidence, missing allocations, any-ON,
+  undo/reopen, real Windows field/after lists, CSV and counts), classification and
+  work-list gates plus the complete Windows publishing workflow.
