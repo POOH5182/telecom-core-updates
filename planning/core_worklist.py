@@ -1,6 +1,60 @@
 """Read-only work classification from field evidence and after topology changes."""
 
 
+def worklist_clipboard(rows,headings=None):
+    """Excel-compatible TSV preserving Unicode, blank cells and multiline names."""
+    import csv
+    import io
+    output=io.StringIO(newline='');writer=csv.writer(output,delimiter='\t',lineterminator='\n')
+    if headings is not None:writer.writerow(headings)
+    writer.writerows(rows)
+    return output.getvalue()
+
+
+class CoreWorklistCopy:
+    def __init__(self,dialog):
+        self.dialog=dialog;self.tree=dialog.tree;self.column='detail';self.notice=tk.StringVar()
+        self.bar=bar=ttk.Frame(dialog,padding=(8,0,8,4));bar.pack(fill='x',before=dialog.tree.master)
+        for text,command in (('코어내역 복사',lambda:self.copy(column='detail')),('코어ID 복사',lambda:self.copy(column='id')),('목록 전체 복사',lambda:self.copy(all_rows=True))):
+            ttk.Button(bar,text=text,command=command).pack(side='left',padx=3)
+        ttk.Label(bar,text='Ctrl+C: 선택 칸 · 우클릭: 복사 항목',foreground='#1769aa').pack(side='left',padx=8)
+        ttk.Label(bar,textvariable=self.notice).pack(side='right',padx=4)
+        self.menu=tk.Menu(dialog,tearoff=False)
+        for text,command in (('선택 칸 복사',self.copy),('코어ID 복사',lambda:self.copy(column='id')),('코어내역 복사',lambda:self.copy(column='detail')),('선택 행 전체 복사',lambda:self.copy(row=True)),('목록 전체 복사',lambda:self.copy(all_rows=True))):
+            self.menu.add_command(label=text,command=command)
+        self.tree.bind('<ButtonPress-1>',self.remember_cell,add='+');self.tree.bind('<Button-3>',self.context_menu)
+        for key in ('<Control-c>','<Control-C>'):self.tree.bind(key,self.copy)
+
+    def remember_cell(self,event):
+        iid=self.tree.identify_row(event.y);column=self.tree.identify_column(event.x)
+        if not iid or not column or column=='#0':return None
+        columns=self.tree['columns'];index=int(column[1:])-1
+        if index>=len(columns):return None
+        self.column=columns[index];return iid
+
+    def context_menu(self,event):
+        iid=self.remember_cell(event)
+        if iid is None:return 'break'
+        self.tree.selection_set(iid);self.tree.focus(iid)
+        previous=self.dialog.grab_current()
+        try:self.menu.tk_popup(event.x_root,event.y_root)
+        finally:
+            self.menu.grab_release()
+            if previous is not None and previous.winfo_exists():previous.grab_set()
+        return 'break'
+
+    def copy(self,event=None,column=None,row=False,all_rows=False):
+        selected=self.tree.get_children() if all_rows else self.tree.selection()
+        if not selected:self.notice.set('복사할 항목을 선택하세요.');return 'break'
+        if all_rows or row:
+            headings=[self.tree.heading_text(c) for c in self.tree['columns']] if all_rows else None
+            text=worklist_clipboard([self.tree.item(iid,'values') for iid in selected],headings)
+        else:text=self.tree.set(selected[0],column or self.column)
+        self.dialog.clipboard_clear();self.dialog.clipboard_append(text)
+        self.notice.set(f'{len(selected)}행 복사 완료' if all_rows or row else '복사 완료')
+        return 'break'
+
+
 def work_list_items(app,items):
     """Only real IDs or temporary IDs with an ON signal belong in work lists.
 

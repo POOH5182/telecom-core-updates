@@ -77,13 +77,13 @@ class DrawingFindDialog(RememberedToplevel):
     def __init__(self,app,parent=None):
         super().__init__(parent or app);self.app=app;self.store=app.store;self.generation=getattr(self.store,'_view_generation',0)
         self.title('통합 찾기 · Ctrl+F');self.geometry('1120x740');self.minsize(850,560)
-        self._previous_grab=self.grab_current();self.transient(parent or app);self.grab_set();self.results=[];self.revision=self.store.data_revision()
+        self.transient(parent or app);self.results=[];self.revision=self.store.data_revision();self._closed=False
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         self.category=tk.StringVar(value='전체');scope=ttk.Combobox(bar,textvariable=self.category,values=('전체','코어ID','함체ID','케이블ID','RNID','시설명'),state='readonly',width=12);scope.pack(side='left')
         self.query=tk.StringVar();self.entry=ttk.Entry(bar,textvariable=self.query,width=48);self.entry.pack(side='left',fill='x',expand=True,padx=6)
         self.entry.bind('<Return>',self.search);scope.bind('<<ComboboxSelected>>',self.search)
         ttk.Button(bar,text='찾기',command=self.search).pack(side='left')
-        ttk.Button(bar,text='도면 보기 / 닫기',command=self.destroy).pack(side='right',padx=6)
+        ttk.Button(bar,text='닫기',command=self.destroy).pack(side='right',padx=6)
         ttk.Label(self,text='ID 또는 이름 일부를 입력하고 Enter · 결과를 클릭하면 이동·선택 · 코어ID는 서로 끊어진 구간도 모두 표시합니다.',padding=(8,0,8,6)).pack(fill='x')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
         self.tree=SortableTreeview(frame,columns=('kind','id','title','location'),show='headings',height=8)
@@ -99,13 +99,24 @@ class DrawingFindDialog(RememberedToplevel):
         frame.rowconfigure(0,weight=1);frame.columnconfigure(0,weight=1)
         sy=ttk.Scrollbar(frame,orient='vertical',command=self.diagram.yview);sy.grid(row=0,column=1,sticky='ns')
         sx=ttk.Scrollbar(frame,orient='horizontal',command=self.diagram.xview);sx.grid(row=1,column=0,sticky='ew');self.diagram.configure(xscrollcommand=sx.set,yscrollcommand=sy.set)
-        self.bind('<Escape>',lambda e:self.destroy());self.protocol('WM_DELETE_WINDOW',self.destroy);self.after_idle(self.focus_query)
+        self.bind('<Escape>',self.close_notice);self.protocol('WM_DELETE_WINDOW',self.destroy);self._focus_job=self.after_idle(self.focus_query)
 
-    def focus_query(self):self.lift();self.entry.focus_force();self.entry.selection_range(0,'end')
+    def focus_query(self):
+        if self._focus_job is not None:
+            try:self.after_cancel(self._focus_job)
+            except tk.TclError:pass
+        self._focus_job=None
+        if not self._closed:self.lift();self.entry.focus_force();self.entry.selection_range(0,'end')
+
+    def close_notice(self,event=None):self.destroy();return 'break'
+
+    def clear_trace(self):
+        if getattr(self.app,'highlight_owner',None) is self:self.app.stop_highlight_blink(clear=True)
 
     def current(self):return self.app.store is self.store and getattr(self.store,'_view_generation',0)==self.generation
 
     def search(self,event=None,auto=True):
+        self.clear_trace()
         if not self.current():self.info.set('도면이 바뀌었습니다. Ctrl+F로 찾기를 다시 여세요.');return 'break'
         self.results=drawing_search(self.store,self.query.get(),self.category.get());self.revision=self.store.data_revision()
         self.tree.delete(*self.tree.get_children());self.diagram.delete('all')
@@ -119,22 +130,115 @@ class DrawingFindDialog(RememberedToplevel):
     def reveal(self,event=None):
         selected=self.tree.selection()
         if not selected:return 'break'
-        if not self.current():self.info.set('도면이 바뀌었습니다. Ctrl+F로 찾기를 다시 여세요.');return 'break'
+        if not self.current():self.clear_trace();self.info.set('도면이 바뀌었습니다. Ctrl+F로 찾기를 다시 여세요.');return 'break'
         if self.revision!=self.store.data_revision():
             self.search(auto=False);self.info.set('도면이 수정되어 검색 결과를 갱신했습니다. 결과를 다시 선택하세요.');return 'break'
         row=self.results[int(selected[0])];trace=reveal_search_result(self.app,row,owner=self)
-        if trace is None:self.info.set('해당 항목이 없어졌습니다. 다시 검색하세요.');return 'break'
+        if trace is None:self.clear_trace();self.info.set('해당 항목이 없어졌습니다. 다시 검색하세요.');return 'break'
         namespace=type(self.app).__init__.__globals__;namespace['draw_trace_diagram'](self.diagram,trace)
         if row.get('core_id'):
             self.info.set(f"코어ID {row['core_id']} · 경로 {len(trace['groups'])}개 전체 표시 · 케이블 {len(trace['highlight'])}개 선택 · "+(trace.get('summary') or '주황색 코어번호 표시')+(' · '+' / '.join(trace['issues']) if trace['issues'] else ''))
-        else:self.info.set(row['kind']+' '+row['identifier']+' · 위치 이동·선택 완료. 도면 보기 / 닫기를 누르면 선택 상태로 작업할 수 있습니다.')
+        else:self.info.set(row['kind']+' '+row['identifier']+' · 위치 이동·선택 완료. 찾기 창을 열어둔 채 도면을 움직일 수 있습니다.')
         return 'break'
 
     def destroy(self):
-        # Preserve the chosen objects and trace when returning to the drawing.
-        if getattr(self.app,'highlight_owner',None) is self:self.app.highlight_owner=None
-        previous=self._previous_grab;super().destroy()
+        if self._closed:return
+        self._closed=True;self.clear_trace()
+        if self._focus_job is not None:
+            try:self.after_cancel(self._focus_job)
+            except tk.TclError:pass
+            self._focus_job=None
+        focus=self.focus_get();return_focus=focus is not None and focus.winfo_toplevel() is self
+        if getattr(self.app,'find_dialog',None) is self:self.app.find_dialog=None
+        super().destroy()
         try:
-            if previous is not None and previous.winfo_exists():previous.grab_set()
-            else:self.app.lift();self.app.canvas.focus_set()
+            if return_focus and self.app.grab_current() is None:self.app.canvas.focus_set()
         except tk.TclError:pass
+
+
+def cable_core_matches(rows,query):
+    """Return stable physical row IDs, preferring exact IDs over partial ones."""
+    def normalized(value):
+        value=str(value or '').strip().casefold()
+        if value.startswith('임시코어') and value[4:].strip().isdigit():value='임시-'+value[4:].strip()
+        return value
+    query=normalized(query)
+    if not query:return []
+    matches=[]
+    for order,(iid,cid) in enumerate(rows):
+        cid=normalized(cid)
+        if query in cid:matches.append((0 if query==cid else 1 if cid.startswith(query) else 2,order,iid))
+    return [iid for _,_,iid in sorted(matches)]
+
+
+class CableCoreFindBar(ttk.Frame):
+    """Find inside the active cable table without reopening or saving the editor."""
+    def __init__(self,editor):
+        super().__init__(editor,padding=(12,4));self.editor=editor;self._job=None;self._closed=False;self._signature=None
+        self.query=tk.StringVar();self.info=tk.StringVar(value='코어ID 입력 · Enter: 다음 결과')
+        ttk.Label(self,text='케이블 내 코어ID').pack(side='left')
+        self.entry=ttk.Entry(self,textvariable=self.query,width=30);self.entry.pack(side='left',padx=6)
+        ttk.Button(self,text='이전',command=lambda:self.search(-1)).pack(side='left')
+        ttk.Button(self,text='찾기 / 다음',command=self.search).pack(side='left',padx=4)
+        ttk.Button(self,text='닫기',command=self.close_notice).pack(side='right')
+        ttk.Label(self,textvariable=self.info).pack(side='left',padx=8)
+        self.entry.bind('<Return>',lambda e:self.search());self.entry.bind('<Shift-Return>',lambda e:self.search(-1))
+        self.entry.bind('<Escape>',self.close_notice)
+        # Spaces belong to this query; never trigger the cable header's Space save.
+        self.entry.bind('<KeyPress-space>',lambda e:self.insert_space())
+        self._trace=self.query.trace_add('write',self.queue_search)
+
+    def open(self):
+        self.pack(fill='x',before=self.editor.notebook);self.entry.focus_force();self.entry.selection_range(0,'end')
+
+    def enable_search(self):
+        # Cable locks protect changes, while finding/copying remains available.
+        for widget in self.winfo_children():
+            if isinstance(widget,(ttk.Entry,ttk.Button)):widget.configure(state='normal')
+
+    def insert_space(self):
+        if self.entry.selection_present():self.entry.delete('sel.first','sel.last')
+        self.entry.insert('insert',' ');return 'break'
+
+    def queue_search(self,*args):
+        self.cancel_search();self._signature=None;self._job=self.after(180,lambda:self.search(0))
+
+    def cancel_search(self):
+        if self._job is not None:
+            try:self.after_cancel(self._job)
+            except tk.TclError:pass
+            self._job=None
+
+    def search(self,direction=1):
+        self.cancel_search();editor=self.editor;app=top_app(editor)
+        if app is None or app.store is not editor.store or getattr(editor.store,'_view_generation',0)!=editor._generation or not editor.store.cable(editor.cable_key):
+            self.info.set('케이블이 바뀌었습니다. 편집창을 다시 여세요.');return 'break'
+        tree=editor.identity_tree if editor.notebook.select()==str(editor.identity_tab) else editor.tree
+        matches=cable_core_matches([(iid,tree.set(iid,'core_id')) for iid in tree.get_children()],self.query.get())
+        if not matches:
+            self._signature=None;self.info.set('이 케이블에 일치하는 코어ID가 없습니다.' if self.query.get().strip() else '코어ID 입력 · Enter: 다음 결과');return 'break'
+        signature=(str(tree),self.query.get(),tuple(matches));selected=tree.selection();current=selected[0] if selected else None
+        pos=(matches.index(current)+direction)%len(matches) if signature==self._signature and current in matches else 0
+        iid=matches[pos]
+        if tree is editor.tree and current!=iid and editor.edit_vars[2].get()!=getattr(editor,'_signal_original',editor.edit_vars[2].get()):
+            self.info.set('입력 중인 신호를 적용하거나 원래 값으로 되돌린 뒤 찾으세요.');return 'break'
+        self._signature=signature
+        if current!=iid:tree.selection_set(iid)
+        tree.focus(iid);tree.see(iid);tree.xview_moveto(0)
+        self.info.set(f'{pos+1}/{len(matches)} · {iid}번 코어');editor.refresh_completion_reason(tree)
+        return 'break'
+
+    def close_notice(self,event=None):
+        self.cancel_search();self.pack_forget()
+        tree=self.editor.identity_tree if self.editor.notebook.select()==str(self.editor.identity_tab) else self.editor.tree
+        tree.focus_set();return 'break'
+
+    def destroy(self):
+        if self._closed:return
+        self._closed=True;self.cancel_search();self.query.trace_remove('write',self._trace);super().destroy()
+
+
+def open_cable_find(editor):
+    bar=getattr(editor,'core_find',None)
+    if bar is None or not bar.winfo_exists():bar=CableCoreFindBar(editor);editor.core_find=bar
+    bar.open();return 'break'

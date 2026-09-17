@@ -1,11 +1,13 @@
 """Same-ID work-list signals and atomic whole-drawing name editing."""
 import csv
+import io
 import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 from check_after_plan import code,wf
 
 
@@ -33,6 +35,12 @@ class WorklistTests(unittest.TestCase):
     def tearDown(self):self.s.close();self.temp.cleanup()
     def snapshot(self):return wf.plan_snapshot(self.s.conn),wf.state(self.s)
     def rename(self,name):return self.s.commit_core_name(self.s.preview_core_name('SYNTH-A'),name)
+
+    def test_clipboard_tsv_preserves_multiline_unicode_tabs_and_empty_cells(self):
+        rows=[['절단절체','ON','001234','한글\t이름\n두 번째 줄','','메모 "원문"',''],['코어절체','OFF','임시코어7','','구분','','경로']]
+        headings=['작업방법','신호','코어ID','코어명','구분','확인내용','경로']
+        self.assertEqual(list(csv.reader(io.StringIO(wf.worklist_clipboard(rows,headings)),delimiter='\t')),[headings,*rows])
+        self.assertEqual(list(csv.reader(io.StringIO(wf.worklist_clipboard(rows)),delimiter='\t')),rows)
 
     def test_signal_whole_id_matrix_ports_markers_anonymous_and_no_writes(self):
         s=self.s;before=self.snapshot();history=s.history_rows()
@@ -106,7 +114,29 @@ def windows_ui():
                 def choose(cid):
                     iid=next(i for i,key in dialog.row_meta.items() if key[0]==cid)
                     dialog.tree.selection_set(iid);dialog.tree.focus(iid);dialog.pick_name();app.update();return iid
-                choose('SYNTH-A');assert '4개 위치' in dialog.name_scope.get()
+                selected=choose('SYNTH-A');assert '4개 위치' in dialog.name_scope.get()
+                copy=dialog.copy_actions;tree=dialog.tree;values=tree.item(selected,'values')
+                before=wf.plan_snapshot(s.conn);history=s.history_rows();original_name=dialog.name_var.get()
+                dialog.name_var.set('복사 중 보존할 초안')
+                copy.copy(column='detail');assert dialog.clipboard_get()==values[3]
+                copy.copy(column='id');assert dialog.clipboard_get()=='SYNTH-A'
+                copy.copy(row=True);assert list(csv.reader(io.StringIO(dialog.clipboard_get()),delimiter='\t'))==[list(values)]
+                # Actual cell click and Ctrl+C, without a global binding swallowing Entry copy.
+                dialog.lift();tree.focus_force();app.update();x,y,w,h=tree.bbox(selected,'detail')
+                tree.event_generate('<ButtonPress-1>',x=x+10,y=y+h//2);tree.event_generate('<ButtonRelease-1>',x=x+10,y=y+h//2);app.update()
+                tree.event_generate('<Control-c>');app.update();assert dialog.clipboard_get()==values[3]
+                dialog.name_entry.focus_force();dialog.name_entry.selection_range(0,'end');app.update()
+                dialog.name_entry.event_generate('<Control-c>');app.update();assert dialog.clipboard_get()=='복사 중 보존할 초안'
+                # Context selection maps the physical row/cell and restores any existing grab.
+                x,y,w,h=tree.bbox(selected,'id');event=SimpleNamespace(x=x+10,y=y+h//2,x_root=tree.winfo_rootx()+x+10,y_root=tree.winfo_rooty()+y+h//2)
+                previous=dialog.grab_current()
+                with patch.object(copy.menu,'tk_popup') as popup:copy.context_menu(event);popup.assert_called_once()
+                copy.menu.invoke(1);assert dialog.clipboard_get()=='SYNTH-A' and copy.column=='id'
+                assert dialog.grab_current()==previous
+                tree.selection_remove(*tree.selection());copy.copy();assert dialog.clipboard_get()=='SYNTH-A' and '선택' in copy.notice.get()
+                choose('SYNTH-A');assert dialog.name_var.get()=='복사 중 보존할 초안'
+                assert wf.plan_snapshot(s.conn)==before and s.history_rows()==history
+                dialog.name_var.set(original_name)
                 first=code['CableDialog'](app,s,cables[0]);other=code['CableDialog'](app,s,cables[1]);allcores=code['AllCoreDialog'](app,s);app.update()
                 other.identity_tree.item('4',values=(4,'SYNTH-A','저장 전 내역'));other.identity_undo_stack.append({4:('SYNTH-A','다른 이름')})
                 allcores.vars[1].set('전체표 저장 전 이름')
@@ -134,6 +164,10 @@ def windows_ui():
                 assert all(r['detail']=='보존할 초안' for r in s.all_core_rows('SYNTH-A'))
                 # Sorted selection and temporary display IDs map back to the exact stored ID.
                 dialog.kind.set('신호있음');dialog.reload();dialog.tree.cycle_sort('id');app.update();choose('임시-999')
+                copy.copy(all_rows=True)
+                copied=list(csv.reader(io.StringIO(dialog.clipboard_get()),delimiter='\t'))
+                assert copied==[[tree.heading_text(c) for c in tree['columns']]]+[list(tree.item(i,'values')) for i in tree.get_children()]
+                assert len(copied)>2 and all('▲' not in h and '▼' not in h for h in copied[0])
                 dialog.name_var.set('임시 이름 변경');dialog.name_button.invoke();app.update()
                 assert s.core(cables[0],5)['detail']=='임시 이름 변경';assert s.core(cables[0],1)['detail']=='보존할 초안'
                 dialog.kind.set('코어연결필요');dialog.reload();choose('SYNTH-A')
@@ -145,12 +179,14 @@ def windows_ui():
                 with patch.object(code['webbrowser'],'open'):dialog.print_view()
                 printed=next((Path(temp)/'print').glob('*.html')).read_text(encoding='utf-8');assert '보존할 초안' in printed and '<td>ON</td>' in printed
                 dialog.geometry('950x650');app.update();assert dialog.name_button.winfo_rootx()+dialog.name_button.winfo_width()<=dialog.winfo_rootx()+dialog.winfo_width()
+                for widget in copy.bar.winfo_children():assert widget.winfo_rootx()+widget.winfo_width()<=dialog.winfo_rootx()+dialog.winfo_width()
                 s.set_node_locked(nodes[2],True);app.refresh();app.update();assert 'disabled' in dialog.name_button.state()
+                before=wf.plan_snapshot(s.conn);copy.copy(column='id');assert dialog.clipboard_get()=='SYNTH-A' and wf.plan_snapshot(s.conn)==before
                 s.set_node_locked(nodes[2],False);app.refresh();app.update();assert 'disabled' not in dialog.name_button.state()
                 s._view_generation+=1;dialog.apply_name();assert not errors,errors
                 first.destroy();other.destroy();allcores.destroy();dialog.destroy()
         finally:app.on_close()
-    print('PASS Windows work-list whole-ID ON, source override, filters, sorted/temp ID name editing, RN/global repaint, drafts/stale/locks, undo/redo, CSV/print and narrow layout')
+    print('PASS Windows work-list whole-ID ON, filters, names, drafts/locks/history, cell Ctrl+C, Entry copy, context menu, filtered sorted TSV, CSV/print and narrow layout')
 
 
 if __name__=='__main__':

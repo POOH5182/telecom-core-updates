@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import sys
+import time
 import unittest
 from unittest.mock import patch
 
@@ -97,9 +98,73 @@ class RouteFindTests(unittest.TestCase):
         s.set_hamche_details(self.a,'12','001-A');duplicates=wf.drawing_search(s,'001-A')
         self.assertEqual({r['node_id'] for r in duplicates},{self.h,self.a})
 
+    def test_cable_row_search_prefers_exact_and_keeps_physical_sorted_indices(self):
+        rows=[('99','1234'),('74','00123'),('110','123'),('3','임시코어007'),('1','123'),('2','')]
+        self.assertEqual(wf.cable_core_matches(rows,'123'),['110','1','99','74'])
+        self.assertEqual(wf.cable_core_matches(rows,'00123'),['74'])
+        self.assertEqual(wf.cable_core_matches(rows,'임시-007'),['3'])
+        self.assertEqual(wf.cable_core_matches(rows,'임시코어 007'),['3'])
+        self.assertEqual(wf.cable_core_matches(rows,'  '),[]);self.assertEqual(wf.cable_core_matches(rows,'%'),[])
+
+
+def pump(app,seconds=.25):
+    until=time.monotonic()+seconds
+    while time.monotonic()<until:app.update();time.sleep(.01)
+
+
+def cable_find_ui(app):
+    s=app.store;a=s.add_node('합성 144C 시작',500,1800);b=s.add_node('합성 144C 끝',900,1800)
+    cable=s.add_cable(a,b,'FIND-144','144C','기설')
+    for number,cid in ((74,'LOCAL-0074'),(110,'LOCAL-0074'),(99,'LOCAL-0074-OTHER'),(3,'임시-7007')):
+        s.update_core(cable,number,(cid,'합성 검색 내역','','','unknown'))
+    app.refresh();editor=code['open_detail_dialog'](app,s,'cable',cable);app.update()
+    editor.focus_core(1);editor.lot_var.set('검색 중 보존할 입력');app.update()
+    snapshot=wf.plan_snapshot(s.conn);history=s.history_rows()
+    editor.tree.event_generate('<Control-f>');app.update();bar=editor.core_find
+    assert bar.winfo_ismapped() and app.find_dialog is None
+    bar.query.set('LOCAL-0074');pump(app)
+    assert editor.tree.selection()==('74',) and editor.tree.bbox('74'),editor.tree.selection()
+    assert editor.tree.set('74','detail')=='합성 검색 내역'
+    bar.entry.event_generate('<Return>');app.update();assert editor.tree.selection()==('110',)
+    bar.entry.event_generate('<Shift-Return>');app.update();assert editor.tree.selection()==('74',)
+    editor.tree.cycle_sort('number');editor.tree.cycle_sort('number');app.update()
+    bar.query.set('임시코어7007');pump(app);assert editor.tree.selection()==('3',)
+    bar.query.set('PATH-ID');pump(app);assert '없습니다' in bar.info.get() and editor.tree.selection()==('3',)
+    # Searching does not discard a pending signal edit or apply it implicitly.
+    editor.edit_vars[2].set('ON');bar.query.set('LOCAL-0074');pump(app)
+    assert editor.tree.selection()==('3',) and editor.edit_vars[2].get()=='ON'
+    assert '입력 중인 신호' in bar.info.get();editor.edit_vars[2].set(editor._signal_original)
+    bar.search();app.update();assert editor.tree.selection()==('110',) # descending physical order
+    # The ID editor searches displayed draft IDs without committing to SQLite.
+    editor.notebook.select(editor.identity_tab);editor.identity_tree.selection_set('74');editor.identity_tree.see('74');app.update()
+    editor.begin_identity_edit();app.update();inline=editor.identity_editor
+    assert inline is not None
+    inline.delete(0,'end');inline.insert(0,'DRAFT-0074');inline.event_generate('<Control-f>');pump(app)
+    assert editor.core_find is bar
+    bar.query.set('DRAFT-0074');pump(app)
+    assert editor.notebook.select()==str(editor.identity_tab) and editor.identity_tree.selection()==('74',)
+    assert editor.identity_tree.bbox('74') and s.core(cable,74)['core_id']=='LOCAL-0074'
+    # Space in the find entry never invokes cable-header Save.
+    with patch.object(editor,'save_header',side_effect=AssertionError('Search saved the header')):
+        bar.entry.event_generate('<KeyPress-space>');bar.entry.event_generate('<KeyRelease-space>');app.update()
+    assert editor.lot_var.get()=='검색 중 보존할 입력'
+    assert wf.plan_snapshot(s.conn)==snapshot and s.history_rows()==history
+    s.set_node_locked(a,True);s.set_node_locked(b,True);app.refresh();app.update()
+    bar.entry.focus_force();app.update();assert not bar.entry.instate(('readonly',)) and not bar.entry.instate(('disabled',))
+    bar.query.set('DRAFT-0074');pump(app);assert editor.identity_tree.selection()==('74',)
+    assert s.core(cable,74)['core_id']=='LOCAL-0074'
+    bar.entry.event_generate('<Escape>');app.update();assert editor.winfo_exists() and not bar.winfo_ismapped()
+    editor.tree.focus_force();editor.tree.event_generate('<Control-f>');app.update();assert editor.core_find is bar
+    # A pending debounce is cancelled when the whole cable editor closes.
+    bar.query.set('LOCAL');editor.destroy();pump(app,.4)
+    assert app.highlight_blink_job is None
+    print('PASS Windows cable-local Ctrl+F, live 144C scroll, exact/duplicate IDs, sorted rows, temporary aliases, drafts, no-match, Escape and timer cleanup')
+
 
 def windows_ui():
     if sys.platform!='win32':return
+    import faulthandler
+    faulthandler.dump_traceback_later(60,exit=True)
     with tempfile.TemporaryDirectory() as temp:
         os.environ['TELECOM_APP_HOME']=temp;errors=[]
         with patch.object(code['messagebox'],'showerror',side_effect=lambda *a,**k:errors.append(str(a))), \
@@ -141,17 +206,39 @@ def windows_ui():
                 find.query.set('PATH-ID');find.search();app.update();assert app.selected=={left,right,separate}
                 assert app.highlight_cables=={left,right,separate};assert separate in app.highlight_core_labels
                 assert '경로 2개 전체 표시' in find.info.get();assert find.diagram.find_all()
+                assert app.grab_current() is None
+                # Real canvas bindings pan while Find remains open, without moving facilities.
+                drawing=wf.plan_snapshot(s.conn);old_view=app.canvas.xview()
+                app.canvas.event_generate('<ButtonPress-3>',x=500,y=80)
+                app.canvas.event_generate('<B3-Motion>',x=370,y=80)
+                app.canvas.event_generate('<ButtonRelease-3>',x=370,y=80);app.update()
+                assert app.canvas.xview()!=old_view and find.winfo_exists()
+                assert wf.plan_snapshot(s.conn)==drawing
                 # Ctrl+F focuses the same dialog even inside its entry.
                 find.entry.event_generate('<Control-f>');app.update();assert app.find_dialog is find
-                find.destroy();assert app.selected=={left,right,separate};assert app.highlight_cables=={left,right,separate}
+                find.tk.call(find.protocol('WM_DELETE_WINDOW'));pump(app,.4)
+                assert app.selected=={left,right,separate} and not app.highlight_cables and app.highlight_blink_job is None
+                assert not app.highlight_core_labels and not app.canvas.find_withtag('core_path_number')
+                app.open_find();find=app.find_dialog;find.query.set('PATH-ID');find.search();app.update()
+                assert app.highlight_owner is find
+                find.query.set('NO-SUCH-ID');find.search();app.update();assert not app.highlight_cables and app.highlight_blink_job is None
+                find.query.set('PATH-ID');find.search();app.update();find.entry.focus_force();app.update()
+                find.entry.event_generate('<Escape>');pump(app,.4);assert app.find_dialog is None and app.highlight_blink_job is None
+                # Closing an old search must not clear a newer editor's highlight or modal grab.
+                app.open_find();find=app.find_dialog;app.update();other=wf.RememberedToplevel(app);other.grab_set()
+                app.start_highlight_blink({left},owner=other);find.destroy();app.update()
+                assert app.highlight_owner is other and app.grab_current() is other
+                app.stop_highlight_blink(clear=True);other.destroy()
                 # Search is also reachable from a facility popup's read-only entry.
                 node=code['NodeDialog'](app,s,h);app.update();node.name_entry.focus_force();app.update()
                 node.name_entry.event_generate('<Control-f>');app.update();find=app.find_dialog;assert find.winfo_exists()
                 find.query.set('H-001');find.search();app.update();s.set_hamche_details(h,'12','H-CHANGED')
                 find.reveal();assert '다시 선택' in find.info.get();find.destroy();node.destroy()
+                cable_find_ui(app)
                 assert not errors,errors
             finally:app.on_close()
-    print('PASS Windows directional waiting confirmation, real Ctrl+F from canvas/entry/popup, ID selection, complete disconnected routes and stale results')
+    faulthandler.cancel_dump_traceback_later()
+    print('PASS Windows directional review, modeless Ctrl+F panning, X/Escape/no-match trace cleanup, ownership/grab preservation, complete disconnected routes and stale results')
 
 
 if __name__=='__main__':

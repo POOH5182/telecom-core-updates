@@ -850,3 +850,25 @@ that authorized scope for requested program updates without asking again.
   Run check_work_eligibility.py (legacy evidence, missing allocations, any-ON,
   undo/reopen, real Windows field/after lists, CSV and counts), classification and
   work-list gates plus the complete Windows publishing workflow.
+
+- V107 Ctrl+F from the main drawing/facility windows uses a modeless
+  DrawingFindDialog. Closing X/button/Escape or clearing results cancels only
+  that search's owned highlight timer/labels; never leave an orphaned blink or
+  clear a newer editor's route. Preserve existing modal grabs without taking or
+  restoring a search grab. Main-canvas panning remains available during search.
+- Ctrl+F from CableDialog descendants instead opens its reusable CableCoreFindBar
+  in navigation.py. Search the active tab's displayed IDs (including unsaved ID
+  drafts and temporary aliases), prefer exact matches, and navigate stable row
+  IDs through sorting. Preserve pending header/identity/signal inputs, locking,
+  context, existing editor lifecycle and SQLite data. Searching cannot save.
+  Cancel debounce/focus timers on close; Space in the search entry is literal.
+  Run check_routes_find.py's Windows real shortcuts, panning, close/no-match
+  cleanup, competing owner/grab, 144C scroll, duplicates/sort, drafts and locked
+  cable tests, plus existing route/connection gates and the full release pipeline.
+- V107 CoreWorklistCopy reads displayed cells and stable Treeview row IDs only.
+  Ctrl+C stays scoped to the results table, preserving normal Entry copy and
+  unsaved name drafts. Whole-list TSV follows current filter/sort, uses plain
+  heading_text labels and CSV quoting for embedded tabs/newlines. Keep copy
+  usable while locked. Work classification remains field-to-after comparison.
+  Run check_core_worklist.py's clipboard, context menu, narrow layout, draft,
+  lock and nonmutation checks with the complete release workflow.
