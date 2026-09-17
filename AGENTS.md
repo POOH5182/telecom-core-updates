@@ -788,3 +788,14 @@ that authorized scope for requested program updates without asking again.
   unknown legacy exclusions, occupied/locked/ambiguous pairs and remote metadata.
   Run check_after_autoconnect.py's marked 74-to-70 differing-name/unknown-signal
   edit and v99 upgrade/reopen/history tests and Windows enclosure peer repaint.
+
+- V103 CableDialog's status column derives pending/error markers from the same
+  core_completion_brief as the connection panel, never from drawing-badge indices
+  that omit cut/removed cables. Keep existing annotations and exemption/accepted
+  completion rules; this read-only display must not change topology or progress.
+  Whole-cable clipboard export must use the same cell text. Refresh on connection,
+  disconnect, undo and redo without discarding header or identity-sheet drafts.
+- Run check_completion.py including the split 99/3 path with a marked 36C cable,
+  empty/OFF/cancel/exception negatives and Windows actual row-3 marker, panel,
+  sort/copy, completion/disconnect/history and draft preservation gates. Keep the
+  complete Windows release suite and public updater verification.

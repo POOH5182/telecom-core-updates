@@ -4,9 +4,27 @@ from pathlib import Path
 import tempfile
 import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from check_field_survey import code,wf
+
+
+def status_row_fixture(s):
+    s.conn.execute("INSERT INTO meta VALUES('active_scenario','after') ON CONFLICT(key) DO UPDATE SET value='after'");s.conn.commit()
+    nodes=[s.add_node('합성 상태 시설 '+str(i),i*200,200) for i in range(4)]
+    cables=[s.add_cable(nodes[i],nodes[i+1],'STATUS-'+str(i),'36C' if i==2 else '144C','절단' if i==2 else '신설') for i in range(3)]
+    with s.action('합성 분리된 99번과 3번'):
+        for cable,index in ((cables[0],99),(cables[2],3)):
+            s.conn.execute("UPDATE cores SET core_id='SYNTH-ROW',detail='상태 표시 확인',signal='on' WHERE cable_id=? AND core_index=?",(cable,index))
+    return nodes,cables
+
+
+def join_status_fixture(s,nodes,cables):
+    with s.action('합성 중간 구간 연결'):
+        s.conn.execute("UPDATE cores SET core_id='SYNTH-ROW',detail='상태 표시 확인',signal='on' WHERE cable_id=? AND core_index=74",(cables[1],))
+        s.connect(nodes[1],(cables[0],99),(cables[1],74))
+        s.connect(nodes[2],(cables[1],74),(cables[2],3))
 
 
 class CompletionTests(unittest.TestCase):
@@ -23,6 +41,29 @@ class CompletionTests(unittest.TestCase):
     def connect(self,index):self.store.connect(self.h,(self.left,index),(self.right,index),temporary=True)
     def report(self):return self.store.drawing_connection_progress()
     def snapshot(self):return wf.plan_snapshot(self.store.conn),self.store.data_revision(),self.store.history_rows()
+
+    def test_cut_core3_row_uses_actual_completion_even_when_badge_hidden(self):
+        s=self.store;nodes,cables=status_row_fixture(s);slot=(cables[2],3)
+        view=SimpleNamespace(store=s);text=lambda:code['CableDialog'].status_annotation(view,s.core(*slot))
+        self.assertEqual(wf.core_completion_brief(s,slot)[0],'미완료')
+        self.assertNotIn(3,s.cable_core_warning_summary()[cables[2]]['incomplete_indices'])
+        before=self.snapshot();self.assertIn('[미완료코어]',text());self.assertEqual(self.snapshot(),before)
+        join_status_fixture(s,nodes,cables);self.assertNotIn('[미완료코어]',text())
+        self.assertTrue(wf.completion_report(s)['by_id']['SYNTH-ROW']['complete'])
+        s.undo();self.assertIn('[미완료코어]',text());s.redo();self.assertNotIn('[미완료코어]',text())
+        s.disconnect(nodes[2],cables[2],3);self.assertIn('[미완료코어]',text())
+        path=s.path;s.close();self.store=code['Store'](path);view.store=self.store;s=self.store
+        self.assertIn('[미완료코어]',text())
+
+    def test_row_display_keeps_manual_labels_and_excludes_empty_off_cancel_accepted(self):
+        self.stage('after');s=self.store;view=SimpleNamespace(store=s)
+        self.core(1,'LIVE','on');wf.save_annotations(s,(self.left,1),['정상'],'메모 유지')
+        self.core(2,'OFF','off');self.core(3,'CANCEL','on','cancel');self.core(4,'ACCEPTED','on','exception')
+        self.core(5,'임시-505','unknown');self.core(6,'','on')
+        before=self.snapshot();text=lambda i:code['CableDialog'].status_annotation(view,s.core(self.left,i))
+        self.assertIn('[미완료코어]',text(1));self.assertIn('정상',text(1));self.assertIn('[미완료코어]',text(6))
+        for i in (2,3,4,5,12):self.assertNotIn('[미완료코어]',text(i),i)
+        self.assertIn('[완료]',text(4));self.assertEqual(text(12),'');self.assertEqual(self.snapshot(),before)
 
     def test_legacy_temporary_completed_badge_requires_complete_path(self):
         s=self.store;self.core(1,'임시-100');self.connect(1)
@@ -317,9 +358,48 @@ def windows_signal_ui():
     print('PASS Windows same-ID whole signal/local signal, both tabs, draft preservation, edit/undo/redo, conflict, sorting and narrow layout')
 
 
+def windows_row_status_ui():
+    if sys.platform!='win32':return
+    with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,TELECOM_APP_HOME=temp), \
+         patch.object(code['messagebox'],'showinfo'),patch.object(code['messagebox'],'showerror') as error, \
+         patch.object(code['messagebox'],'showwarning') as warning,patch.object(code['messagebox'],'askyesno',return_value=True):
+        app=code['App']();errors=[];app.report_callback_exception=lambda *args:errors.append(args)
+        try:
+            s=app.store;nodes,cables=status_row_fixture(s);app.refresh();app.update()
+            s.backup_to(app.scenario_path('before'));baseline=app.scenario_path('before').read_bytes()
+            original=wf.plan_snapshot(s.conn);history=s.history_rows()
+            dialog=code['CableDialog'](app,s,cables[2]);dialog.focus_core(3);app.update()
+            assert '미완료' in dialog.completion_title.get()
+            assert '[미완료코어]' in dialog.tree.item('3','values')[0]
+            assert dialog.tree.item('4','values')[0]==''
+            assert wf.plan_snapshot(s.conn)==original and s.history_rows()==history
+            dialog.tree.cycle_sort('number');dialog.tree.cycle_sort('number');app.update()
+            assert '[미완료코어]' in dialog.tree.item('3','values')[0]
+            dialog.copy_status_cell(column='annotations');assert '[미완료코어]' in dialog.clipboard_get()
+            dialog.copy_details();assert '[미완료코어]' in dialog.clipboard_get().splitlines()[3].split('\t')[1]
+            dialog.lot_var.set('저장 전 LOT');dialog.identity_tree.item('3',values=(3,'SYNTH-ROW','저장 전 코어명'))
+            dialog.identity_undo_stack.append({3:('SYNTH-ROW','상태 표시 확인')})
+            join_status_fixture(s,nodes,cables);app.refresh();app.update()
+            assert '연결완료' in dialog.completion_title.get()
+            assert '[미완료코어]' not in dialog.tree.item('3','values')[0]
+            assert dialog.lot_var.get()=='저장 전 LOT' and dialog.identity_tree.item('3','values')[2]=='저장 전 코어명'
+            assert len(dialog.identity_undo_stack)==1
+            s.undo();app.refresh();app.update();assert '[미완료코어]' in dialog.tree.item('3','values')[0]
+            s.redo();app.refresh();app.update();assert '[미완료코어]' not in dialog.tree.item('3','values')[0]
+            s.disconnect(nodes[2],cables[2],3);app.refresh();app.update()
+            assert '[미완료코어]' in dialog.tree.item('3','values')[0]
+            assert app.scenario_path('before').read_bytes()==baseline
+            dialog.geometry('1100x700');app.update();dialog.tree.see('3');app.update()
+            assert dialog.tree.bbox('3','annotations') and dialog.tree.column('annotations','width')>=100
+            dialog.destroy();assert not errors and not error.called and not warning.called,(errors,error.call_args_list,warning.call_args_list)
+        finally:app.on_close()
+    print('PASS Windows cut core 3 row incomplete marker, panel consistency, sorted selection/copy, connect/disconnect/undo/redo, drafts and baseline preservation')
+
+
 if __name__=='__main__':
     result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(CompletionTests))
     if not result.wasSuccessful():raise SystemExit(1)
     windows_ui()
     windows_signal_ui()
+    windows_row_status_ui()
     print('PASS before/after mandatory-core matrix, exact exclusions, temporary signals, missing-ID slots, topology and persistence')
