@@ -88,7 +88,7 @@ def windows_ui():
                     if pid.value==os.getpid():
                         title=ctypes.create_unicode_buffer(256);name=ctypes.create_unicode_buffer(256)
                         api.GetWindowTextW(hwnd,title,256);api.GetClassNameW(hwnd,name,256)
-                        print('Native window',hwnd,repr(title.value),name.value,flush=True)
+                        print('Native window',hwnd,ascii(title.value),name.value,flush=True)
                         if name.value=='#32770':
                             button=api.GetDlgItem(hwnd,1)
                             print('Native OK button',button,flush=True)
