@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -11,6 +12,12 @@ import urllib.request
 from telecom_updater import validate_package
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class GitHubRequestError(RuntimeError):
+    def __init__(self, method, status, detail):
+        self.status = status
+        super().__init__(f'GitHub {method} failed ({status}): {detail}')
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -48,7 +55,7 @@ class GitHub:
                 return None
             # Do not emit token-bearing request headers or temporary upload URLs.
             detail = exc.read().decode('utf-8', errors='replace')[:1500]
-            raise RuntimeError(f'GitHub {method} failed ({exc.code}): {detail}') from None
+            raise GitHubRequestError(method, exc.code, detail) from None
 
 
 def release_number(release):
@@ -112,6 +119,23 @@ def publish(api, manifest, expected, commit, notes):
     return published
 
 
+def publish_with_retry(api, manifest, expected, commit, notes, sleep=time.sleep):
+    # Reconcile the whole draft after an ambiguous network result. Retrying an
+    # upload POST alone can duplicate an asset that GitHub already accepted.
+    delays = (5, 15, 30, 45)
+    for attempt in range(len(delays) + 1):
+        try:
+            return publish(api, manifest, expected, commit, notes)
+        except (GitHubRequestError, urllib.error.URLError, TimeoutError) as error:
+            if isinstance(error, GitHubRequestError) and error.status not in (408, 429, 500, 502, 503, 504):
+                raise
+            if attempt == len(delays):
+                raise
+            delay = delays[attempt]
+            print(f'Temporary GitHub failure; rechecking verified draft assets in {delay}s ({attempt + 1}/{len(delays)}).', flush=True)
+            sleep(delay)
+
+
 def main():
     directory = ROOT / 'dist'
     manifest_bytes = (directory / 'latest.json').read_bytes()
@@ -119,7 +143,7 @@ def main():
     archive = (directory / manifest['package']).read_bytes()
     validate_package(archive, manifest)
     api = GitHub(os.environ['GITHUB_REPOSITORY'], os.environ['GH_TOKEN'])
-    release = publish(api, manifest, {manifest['package']: archive, 'latest.json': manifest_bytes},
+    release = publish_with_retry(api, manifest, {manifest['package']: archive, 'latest.json': manifest_bytes},
                       os.environ['GITHUB_SHA'], (ROOT / 'RELEASE_NOTES.md').read_text(encoding='utf-8'))
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as output:
