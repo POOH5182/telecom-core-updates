@@ -799,3 +799,20 @@ that authorized scope for requested program updates without asking again.
   empty/OFF/cancel/exception negatives and Windows actual row-3 marker, panel,
   sort/copy, completion/disconnect/history and draft preservation gates. Keep the
   complete Windows release suite and public updater verification.
+
+- V104 work classification is owned by planning/core_worklist.py. Use field
+  before.sqlite3 as the after work-method basis: any cut cable wins, otherwise
+  removed cable/facility or changed numbers/peers/routes/RN ports is core transfer.
+  Preserve field/accepted work targets even when after cables are deleted/retyped.
+- Compare canonical physical footprints, including neutral transit in one-real-ID
+  components. Handoff ID filling, names/signals, drawing positions and reversed
+  storage of an identical splice must not create transfers. Preserve missing
+  work targets; classify existing IDs only, not brand-new services as transfers.
+- CoreCheckDialog defaults to all work including completed rows; its remaining
+  connection filter stays separate. All categories/exports use the same field
+  methods, and WorkRequiredDialog shares supplemental transfer targets. Keep
+  connection completion policy, source snapshots, drafts and saved exclusions/
+  endpoint approvals unchanged. Reads must not write, join, save or add history.
+  Run check_work_classification.py's field-to-after retention, cut priority,
+  existing-number/peer/route/port changes, neutral negatives, history/reopen and
+  real Windows list/filter/draft/export gates plus the full release workflow.
