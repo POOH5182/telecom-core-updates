@@ -949,3 +949,13 @@ that authorized scope for requested program updates without asking again.
   defaults/all/empty/narrow layouts, action callbacks, unsaved cable inputs,
   disk failure and restart/project persistence checks; inspect its synthetic
   screenshots and run the existing complete Windows release workflow.
+
+- V112 supersedes V111's fixed lower utility toolbar: show only the configured
+  drawing toolbar and right-edge gear, with no duplicate row, separator or gap
+  before the canvas. Keep saved V111 action IDs, selection and order unchanged.
+  Utility actions stay selectable through the catalog; the file menu belongs to
+  App so rebuilding/removing its optional button cannot destroy the menu. The
+  optional advanced panel opens only through its selected action or explicit API.
+- Adapt existing identity/save/desktop gates to the selected toolbar actions.
+  Check exact toolbar-to-canvas adjacency, empty/all/restarted layouts and the
+  existing complete Windows suite; inspect the synthetic single-toolbar image.

@@ -64,6 +64,7 @@ class DrawingTools:
             else:
                 button=ttk.Button(self.bar,text=row['label'],command=row['command'],style='Danger.TButton' if key=='delete' else 'Tool.TButton')
             self.buttons[key]=self.bar.add(button)
+            if key=='files':button.bind('<Down>',lambda e,command=row['command']:command())
             if row.get('mode'):self.app.mode_buttons[row['mode']]=button
             if row.get('tip'):Tooltip(button,row['tip'])
         self.sync()

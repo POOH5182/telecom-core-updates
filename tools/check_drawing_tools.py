@@ -52,6 +52,9 @@ def check_right_edge(app):
     assert gear.winfo_ismapped() and gear.cget('image')
     assert abs(app.winfo_rootx()+app.winfo_width()-(gear.winfo_rootx()+gear.winfo_width())-12)<=2
     assert gear.winfo_rooty()==app.drawing_toolbar_frame.winfo_rooty()+5
+    assert not hasattr(app,'utility_toolbar'), 'Only the configured toolbar may remain'
+    if not app.advanced_tools_visible:
+        assert app.canvas_frame.winfo_y()==app.drawing_toolbar_frame.winfo_y()+app.drawing_toolbar_frame.winfo_height(), 'No duplicate row, separator or empty gap below the configured toolbar'
     for widget in app.drawing_toolbar.controls:
         assert widget.winfo_ismapped()
         assert widget.winfo_rootx()+widget.winfo_width()<=gear.winfo_rootx()
@@ -75,7 +78,7 @@ def windows_ui():
             app.geometry('1450x900+0+0');app.update()
             if '--emit-screenshots' in sys.argv:
                 from check_desktop_design import screenshot
-                Path('dist').mkdir(exist_ok=True);screenshot(app,Path('dist')/'v111-toolbar-gear.png')
+                Path('dist').mkdir(exist_ok=True);screenshot(app,Path('dist')/'v112-single-toolbar.png')
             baseline=(wf.plan_snapshot(s.conn),s.history_rows(),s.data_revision())
             draft=code['CableDialog'](app,s,cable);app.update();draft.id_var.set('Unsaved cable name');draft.lot_var.set('Unsaved LOT')
             app.set_mode('hamche');app.selected={a};mode=app.mode;view=app.view_scale
@@ -93,7 +96,7 @@ def windows_ui():
             editor.select('core_worklist');editor.top_button.invoke()
             editor.down_button.invoke();assert editor.order[1]=='core_worklist'
             editor.up_button.invoke();assert editor.order[0]=='core_worklist'
-            if '--emit-screenshots' in sys.argv:screenshot(editor,Path('dist')/'v111-tool-editor.png')
+            if '--emit-screenshots' in sys.argv:screenshot(editor,Path('dist')/'v112-tool-editor.png')
             editor.apply_button.invoke();app.update()
             print('TOOLS: saved order, live buttons and cable drafts',flush=True)
             selected_config=copy.deepcopy(tools.config);saved=tools.path.read_bytes()
@@ -104,7 +107,7 @@ def windows_ui():
             assert (wf.plan_snapshot(s.conn),s.history_rows(),s.data_revision())==baseline
             tools.buttons['mode_select'].invoke();assert app.mode=='select'
             tools.buttons['all_tools'].invoke();app.update();assert app.advanced_tools_visible and '접기' in tools.buttons['all_tools'].cget('text')
-            app.tools_toggle_button.invoke();app.update();assert not app.advanced_tools_visible and '펼치기' in tools.buttons['all_tools'].cget('text')
+            tools.buttons['all_tools'].invoke();app.update();assert not app.advanced_tools_visible and '펼치기' in tools.buttons['all_tools'].cget('text')
             with patch.object(app,'error_core_count',return_value=3):app.refresh_error_core_button()
             assert '(3개)' in tools.buttons['core_errors'].cget('text') and tools.buttons['core_errors'].cget('bg')=='#d32f2f'
             app.refresh_error_core_button()

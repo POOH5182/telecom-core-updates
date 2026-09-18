@@ -68,7 +68,8 @@ def inspect_layout(app):
     for width,height in ((1450,900),(1000,700)):
         app.geometry(f'{width}x{height}+0+0')
         for _ in range(3):app.update()
-        for toolbar in (app.drawing_toolbar,app.utility_toolbar):
+        assert not hasattr(app,'utility_toolbar')
+        for toolbar in (app.drawing_toolbar,):
             assert toolbar.winfo_width()<=app.winfo_width()
             for control in toolbar.controls:
                 assert control.winfo_ismapped()
@@ -105,8 +106,10 @@ def main():
             app.metrics_details_button.invoke();app.update();assert not app.work_progress_note.winfo_ismapped()
             app.mode_buttons['hamche'].invoke();assert app.mode=='hamche';assert app.mode_buttons['hamche'].cget('style')=='Active.Tool.TButton'
             app.mode_buttons['select'].invoke();assert app.mode=='select'
-            app.tools_toggle_button.invoke();app.update();assert app.advanced_tools_frame.winfo_ismapped()
-            app.tools_toggle_button.invoke();app.update();assert not app.advanced_tools_frame.winfo_ismapped()
+            config=dict(app.drawing_tools.config,enabled=app.drawing_tools.config['enabled']+['all_tools'])
+            app.drawing_tools.apply(config);app.update()
+            app.drawing_tools.buttons['all_tools'].invoke();app.update();assert app.advanced_tools_frame.winfo_ismapped()
+            app.drawing_tools.buttons['all_tools'].invoke();app.update();assert not app.advanced_tools_frame.winfo_ismapped()
             screenshot(app,Path('dist')/'v89-desktop.png')
             print('DESIGN: cable selection and drafts',flush=True)
             dialog=code['CableDialog'](app,s,cables[0]);app.update()

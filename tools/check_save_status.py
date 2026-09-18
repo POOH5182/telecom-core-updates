@@ -122,7 +122,7 @@ def windows_ui():
             assert app._save_dialog is None and not app._saving_now
         try:
             fixture.new_drawing(app,c,'Save UI');app.deiconify();app.geometry('1000x760+30+40');app.update()
-            assert not app.advanced_tools_visible and app.after_identity_button.winfo_viewable()
+            assert not app.advanced_tools_visible and app.drawing_tools.edit_button.winfo_viewable()
             s=app.store;s.add_node('Saved locally',0,0)
             before=app.scenario_path(app.scenario_kind())
             old=before.read_bytes() if before.exists() else None
