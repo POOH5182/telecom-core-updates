@@ -1,5 +1,6 @@
 """Real Windows gestures and clipboard round trips for work-list range copy."""
 import csv
+import ctypes
 import faulthandler
 import io
 import os
@@ -8,6 +9,24 @@ import sys
 import tempfile
 from unittest.mock import patch
 from check_core_worklist import code,wf,fixture
+
+
+def excel_clipboard():
+    """Read CF_UNICODETEXT as Excel does, outside Tk's STRING chunk decoder."""
+    user32=ctypes.WinDLL('user32',use_last_error=True)
+    kernel32=ctypes.WinDLL('kernel32',use_last_error=True)
+    user32.GetClipboardData.argtypes=[ctypes.c_uint];user32.GetClipboardData.restype=ctypes.c_void_p
+    kernel32.GlobalLock.argtypes=[ctypes.c_void_p];kernel32.GlobalLock.restype=ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes=[ctypes.c_void_p]
+    if not user32.OpenClipboard(None):raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        handle=user32.GetClipboardData(13)
+        if not handle:raise ctypes.WinError(ctypes.get_last_error())
+        pointer=kernel32.GlobalLock(handle)
+        if not pointer:raise ctypes.WinError(ctypes.get_last_error())
+        try:return ctypes.wstring_at(pointer).replace('\r\n','\n')
+        finally:kernel32.GlobalUnlock(handle)
+    finally:user32.CloseClipboard()
 
 
 def windows_ui():
@@ -54,7 +73,7 @@ def windows_ui():
                 next(w for w in row.winfo_children() if str(w.winfo_class())=='TRadiobutton' and str(w.cget('value'))==value).invoke();app.update()
             def copied():
                 tree.focus_force();app.update();tree.event_generate('<Control-c>');app.update()
-                return list(csv.reader(io.StringIO(dialog.clipboard_get()),delimiter='\t'))
+                return list(csv.reader(io.StringIO(excel_clipboard()),delimiter='\t'))
             def values(rows,columns):return [[tree.set(i,c) for c in columns] for i in rows]
             def assert_copy(rows,columns):
                 actual=copied();expected=values(rows,columns)
@@ -87,7 +106,7 @@ def windows_ui():
             assert copy.selected_rows==rows and copy.selected_columns==cols,(copy.selected_columns,errors)
             assert_copy(rows,cols)
             copy.copy(all_rows=True)
-            assert list(csv.reader(io.StringIO(dialog.clipboard_get()),delimiter='\t'))==[[tree.heading_text(c) for c in cols]]+values(rows,cols)
+            assert list(csv.reader(io.StringIO(excel_clipboard()),delimiter='\t'))==[[tree.heading_text(c) for c in cols]]+values(rows,cols)
             print('RANGE: scroll edges, offscreen rows, horizontal scrolling and menu retention',flush=True)
             mode('cells');tree.yview_moveto(0);tree.xview_moveto(0);app.update()
             start=rows[0];send('<ButtonPress-1>',point(start,'id'))
