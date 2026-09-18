@@ -1,5 +1,6 @@
 """Custom toolbar persistence and actual Windows check/reorder/action controls."""
 import copy
+import faulthandler
 import json
 import os
 from pathlib import Path
@@ -59,11 +60,13 @@ def check_right_edge(app):
 
 def windows_ui():
     if sys.platform!='win32':return
+    faulthandler.dump_traceback_later(120,exit=True)
     with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,TELECOM_APP_HOME=temp), \
          patch.object(code['messagebox'],'showinfo'),patch.object(code['messagebox'],'showwarning'), \
          patch.object(code['messagebox'],'showerror') as error:
         app=code['App']();errors=[];app.report_callback_exception=lambda *args:errors.append(args)
         try:
+            print('TOOLS: right-edge gear and editor draft',flush=True)
             s=app.store;a=s.add_node('Synthetic A',100,100);b=s.add_node('Synthetic B',400,100)
             cable=s.add_cable(a,b,'SYNTH-CABLE','12C','기설');app.refresh();app.update()
             tools=app.drawing_tools;assert len(tools.config['enabled'])==10
@@ -92,6 +95,7 @@ def windows_ui():
             editor.up_button.invoke();assert editor.order[0]=='core_worklist'
             if '--emit-screenshots' in sys.argv:screenshot(editor,Path('dist')/'v111-tool-editor.png')
             editor.apply_button.invoke();app.update()
+            print('TOOLS: saved order, live buttons and cable drafts',flush=True)
             selected_config=copy.deepcopy(tools.config);saved=tools.path.read_bytes()
             assert list(tools.buttons)==['core_worklist','mode_select','mode_hamche','files','all_tools','core_errors']
             assert 'mode_rn' not in tools.buttons and app.mode_buttons['hamche'].cget('style')=='Active.Tool.TButton'
@@ -104,11 +108,15 @@ def windows_ui():
             with patch.object(app,'error_core_count',return_value=3):app.refresh_error_core_button()
             assert '(3개)' in tools.buttons['core_errors'].cget('text') and tools.buttons['core_errors'].cget('bg')=='#d32f2f'
             app.refresh_error_core_button()
-            tools.buttons['files'].invoke();app.update();app.file_menu.unpost();app.file_menu.grab_release()
+            # Native Windows popup menus run a nested input loop. Assert the
+            # real toolbar callback's anchor/menu without waiting for a person.
+            with patch.object(wf,'desktop_popup_menu') as popup:
+                tools.buttons['files'].invoke();popup.assert_called_once_with(tools.buttons['files'],app.file_menu)
             tools.buttons['core_worklist'].invoke();app.update()
             opened=[w for w in app.winfo_children() if isinstance(w,code['CoreCheckDialog'])]
             assert len(opened)==1;opened[0].destroy()
 
+            print('TOOLS: cancellation, disk failure and all/empty layouts',flush=True)
             tools.edit_button.invoke();app.update();editor=tools.dialog;editor.reset_button.invoke();editor.cancel()
             assert tools.config==selected_config and tools.path.read_bytes()==saved
             tools.edit_button.invoke();app.update();editor=tools.dialog;editor.set_all(False)
@@ -129,6 +137,7 @@ def windows_ui():
             assert not errors and not error.called,(errors,error.call_args)
         finally:app.on_close()
         # A real second App instance reads the persisted ordering and selection.
+        print('TOOLS: restart and project switch',flush=True)
         app=code['App']();app.report_callback_exception=lambda *args:errors.append(args)
         try:
             app.update();assert app.drawing_tools.config==selected_config;check_right_edge(app)
@@ -137,6 +146,7 @@ def windows_ui():
             assert app.drawing_tools.config==selected_config;check_right_edge(app)
             assert not errors and not error.called,(errors,error.call_args)
         finally:app.on_close()
+    faulthandler.cancel_dump_traceback_later()
     print('PASS Windows right-edge gear, checkbox/order/apply/cancel/reset, narrow/all/empty layouts, live actions, draft/data preservation, atomic failure and restart/project persistence')
 
 
