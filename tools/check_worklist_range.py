@@ -42,7 +42,7 @@ def windows_ui():
                 target=tree.winfo_containing(tree.winfo_rootx()+x,tree.winfo_rooty()+y)
                 if target not in copy._labels:target=tree
                 tx=x+tree.winfo_rootx()-target.winfo_rootx();ty=y+tree.winfo_rooty()-target.winfo_rooty()
-                stamp+=500
+                stamp+=1000
                 target.event_generate(sequence,x=tx,y=ty,state=state,time=stamp)
                 app.update()
             def drag(a,b):
@@ -57,7 +57,9 @@ def windows_ui():
                 return list(csv.reader(io.StringIO(dialog.clipboard_get()),delimiter='\t'))
             def values(rows,columns):return [[tree.set(i,c) for c in columns] for i in rows]
             def assert_copy(rows,columns):
-                assert copied()==values(rows,columns),(copied(),values(rows,columns))
+                actual=copied();expected=values(rows,columns)
+                assert actual==expected,dict(actual=actual[:5],expected=expected[:5],sizes=(len(actual),len(expected)),
+                                            selected=(copy.selected_rows[:5],copy.selected_columns),notice=copy.notice.get(),errors=errors)
             rows=tree.get_children();cols=tuple(tree['columns']);assert len(rows)>80
             print('RANGE: rectangles, reverse drag, actual overlay clicks, Shift and TSV escaping',flush=True)
             drag(point(rows[0],'id'),point(rows[3],'detail'));assert_copy(rows[:4],('id','detail'))
@@ -72,6 +74,8 @@ def windows_ui():
             assert len(escaped)==2
             tree.see(escaped[0]);app.update();drag(point(escaped[0],'id'),point(escaped[-1],'detail'))
             assert_copy(escaped,('id','detail'))
+            for iid in escaped:
+                click(point(iid,'detail'));assert_copy((iid,),('detail',))
             print('RANGE: whole rows, whole columns, heading gestures and all selection',flush=True)
             tree.yview_moveto(0);app.update();mode('rows')
             drag(point(rows[1],'id'),point(rows[4],'detail'));assert_copy(rows[1:5],cols)
@@ -79,7 +83,9 @@ def windows_ui():
             x1=point(rows[0],'id')[0];x2=point(rows[0],'category')[0]
             drag((x1,copy.body_top()//2),(x2,copy.body_top()//2));assert_copy(rows,('id','detail','category'))
             assert tree.sort_column is None
-            tree.event_generate('<Control-a>');app.update();assert_copy(rows,cols)
+            tree.focus_force();app.update();tree.event_generate('<Control-a>');app.update()
+            assert copy.selected_rows==rows and copy.selected_columns==cols,(copy.selected_columns,errors)
+            assert_copy(rows,cols)
             copy.copy(all_rows=True)
             assert list(csv.reader(io.StringIO(dialog.clipboard_get()),delimiter='\t'))==[[tree.heading_text(c) for c in cols]]+values(rows,cols)
             print('RANGE: scroll edges, offscreen rows, horizontal scrolling and menu retention',flush=True)

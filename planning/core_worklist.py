@@ -247,7 +247,7 @@ class CoreWorklistCopy:
         if not selected:self.notice.set('복사할 항목을 선택하세요.');return 'break'
         chosen=columns if all_rows or row else (column,) if column else self.selected_columns or (self.column,)
         values=[[self.tree.set(i,c) for c in chosen] for i in selected]
-        if len(selected)==len(chosen)==1 and not all_rows and not row:text=values[0][0]
+        if len(selected)==len(chosen)==1 and not all_rows and not row:text=worklist_clipboard(values).removesuffix('\n')
         else:text=worklist_clipboard(values,[self.tree.heading_text(c) for c in chosen] if all_rows else None)
         self.dialog.clipboard_clear();self.dialog.clipboard_append(text)
         self.notice.set(f'{len(selected)}행 × {len(chosen)}열 복사 완료');return 'break'
