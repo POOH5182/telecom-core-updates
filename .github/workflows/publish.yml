@@ -39,6 +39,8 @@ jobs:
         run: python -m unittest discover -s tools -p "test_*.py" -v
       - name: 배포할 프로그램 준비
         run: python tools/materialize_release.py
+      - name: 오른쪽 도구편집 톱니·체크·순서·재실행·입력 보존 검증
+        run: python tools/check_drawing_tools.py --emit-screenshots
       - name: 누락 코어 끊김·예외·해지 사유·삭제 기록·집계 검증
         run: python tools/check_missing_work_status.py
       - name: 현장 끝단 신호·임시ID 변경·중복 작업 제거·실제 연결 완료 검증

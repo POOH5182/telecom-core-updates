@@ -77,6 +77,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM CONNECTION HIGHLIGHT\n' + (ROOT / 'planning' / 'connection_highlight.py').read_text(encoding='utf-8')
         if version >= 89:
             baseline += '\n\n# BEGIN TELECOM DESKTOP THEME\n' + (ROOT / 'planning' / 'desktop_theme.py').read_text(encoding='utf-8')
+        if version >= 111:
+            baseline += '\n\n# BEGIN TELECOM DRAWING TOOLS\n' + (ROOT / 'planning' / 'drawing_tools.py').read_text(encoding='utf-8')
         if version >= 90:
             baseline += '\n\n# BEGIN TELECOM AUTO ALLOCATION\n' + (ROOT / 'planning' / 'auto_allocation.py').read_text(encoding='utf-8')
         if version >= 92:

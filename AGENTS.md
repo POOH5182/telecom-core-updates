@@ -930,3 +930,22 @@ that authorized scope for requested program updates without asking again.
   recovery, clear-state negatives, history pruning/reopen, temporary ID changes,
   undo/redo and actual Windows lists, filters, totals, clipboard/CSV/print; run
   the existing work/planning/connection gates and full release workflow.
+
+- V111 planning/drawing_tools.py owns custom top-toolbar preferences. The gear
+  button is a separate, always-visible right-packed sibling of FlowToolbar;
+  it must stay at the right edge through wrapping and an empty selection. Draw
+  its native icon without relying on an installed emoji font. Keep existing
+  stages, save/lock controls and lower utility/advanced tools accessible.
+- App.drawing_tool_catalog exposes stable action IDs with callbacks to existing
+  commands/current Store. Checkboxes and ordering remain a private editor draft
+  until Apply. Cancel/Escape/X and reset-then-cancel cannot save or change the
+  live toolbar. Preserve mode, selection, topology, history and editor drafts.
+- Save only local/account data/drawing_tools.json using atomic replacement,
+  separate from SQLite/scenario/cloud drawing bundles. Preserve explicit empty
+  choices, drop stale/duplicate IDs, and append new catalog actions unchecked.
+  A failed preference write must retain the old file and live toolbar. Keep
+  live mode styles, error counts and advanced-tools toggle text in sync.
+- Run check_drawing_tools.py's Windows actual gear/check/reorder/apply/cancel,
+  defaults/all/empty/narrow layouts, action callbacks, unsaved cable inputs,
+  disk failure and restart/project persistence checks; inspect its synthetic
+  screenshots and run the existing complete Windows release workflow.
