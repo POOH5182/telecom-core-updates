@@ -990,3 +990,10 @@ that authorized scope for requested program updates without asking again.
   exchange, shared views, drafts, polling, undo/redo, lock, resize, temporary-ID
   search and cleanup gate, inspect the synthetic screenshot, then complete the
   existing Windows suite and public release/manifest/launcher verification.
+
+- V115 reserves the core-layout bottom action controls and notice before packing
+  the scrollable ledger. Assert both horizontal and vertical client containment,
+  mapped controls and actual compact-window Apply clicks; inspecting only x
+  bounds misses buttons packed below the visible screen. Preview table selection
+  and colors follow the projected source/target, without retargeting the sealed
+  edit. Inspect full and compact synthetic screenshots before reporting delivery.

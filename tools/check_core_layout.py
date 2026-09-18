@@ -166,11 +166,13 @@ def windows_ui():
             dialog.target_entry.insert(0,'3');app.update();dialog.review_button.invoke();app.update()
             assert dialog.preview and dialog.preview['kind']=='교환' and '미리보기' in dialog.summary.get()
             assert dialog.display_model()['slots'][c[1],3]['core_id']=='SYNTH-X'
+            assert dialog.tree.selection()==('3',) and dialog.tree.item('3','tags')==('source',)
+            assert dialog.tree.item('7','tags')==('target',)
             assert {slot for shape in dialog.scene['cells'] for slot in (shape['slot'],) if shape['fill']=='#dbeafe'}
             assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==before
             if '--emit-screenshots' in sys.argv:
                 from check_desktop_design import screenshot
-                Path('dist').mkdir(exist_ok=True);dialog.fit();app.update();screenshot(dialog,Path('dist')/'v114-live-core-layout.png')
+                Path('dist').mkdir(exist_ok=True);dialog.fit();app.update();screenshot(dialog,Path('dist')/'v115-live-core-layout.png')
             dialog.cancel_button.invoke();assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==before
             print('LAYOUT: actual apply, shared open views, undo/redo and automatic polling',flush=True)
             cable=code['CableDialog'](app,s,c[1]);cable.lot_var.set('Uncommitted LOT');app.update()
@@ -199,6 +201,17 @@ def windows_ui():
             assert dialog.apply_button.winfo_rootx()+dialog.apply_button.winfo_width()<=dialog.winfo_rootx()+dialog.winfo_width()
             assert dialog.review_button.winfo_rootx()+dialog.review_button.winfo_width()<=dialog.winfo_rootx()+dialog.winfo_width()
             assert dialog.canvas.winfo_width()>350
+            for control in (dialog.apply_button,dialog.cancel_button,dialog.review_button,dialog.target_entry,dialog.notice_label):
+                assert control.winfo_ismapped(),str(control)
+                assert control.winfo_rooty()+control.winfo_height()<=dialog.winfo_rooty()+dialog.winfo_height(),(str(control),control.winfo_rooty(),dialog.winfo_height())
+            assert dialog.tree.winfo_height()>=50
+            dialog.select_slot((c[1],3));dialog.target.set('6');dialog.review();app.update();assert dialog.preview
+            if '--emit-screenshots' in sys.argv:screenshot(dialog,Path('dist')/'v115-compact-core-layout.png')
+            # Click the actual visible Apply button in the compact client area.
+            before=s.core(c[1],3)['core_id'];button=dialog.apply_button
+            button.event_generate('<ButtonPress-1>',x=button.winfo_width()//2,y=button.winfo_height()//2)
+            button.event_generate('<ButtonRelease-1>',x=button.winfo_width()//2,y=button.winfo_height()//2);app.update()
+            assert s.core(c[1],6)['core_id']==before
             s._view_generation+=1;dialog.refresh_shared_rows();app.update();assert not dialog.winfo_exists() and dialog._watch is None
             assert not errors,errors;assert not error.called,error.call_args
             cable.destroy();work.destroy()

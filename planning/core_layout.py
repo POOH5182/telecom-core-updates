@@ -300,7 +300,7 @@ class CoreLayoutDialog(RememberedToplevel):
         self.canvas.bind('<ButtonPress-1>',self.press);self.canvas.bind('<B1-Motion>',self.motion);self.canvas.bind('<ButtonRelease-1>',self.release)
         self.canvas.bind('<Control-z>',lambda e:self.history(False));self.canvas.bind('<Control-y>',lambda e:self.history(True))
         side=ttk.Frame(self.panes,padding=8,width=440);self.side=side;self.panes.add(side,weight=1)
-        ttk.Label(side,text='선택 케이블 · 전체 번호',style='Title.TLabel').pack(anchor='w')
+        heading=ttk.Label(side,text='선택 케이블 · 전체 번호',style='Title.TLabel');heading.pack(anchor='w')
         self.cable_combo=ttk.Combobox(side,textvariable=self.cable_choice,state='readonly',width=44);self.cable_combo.pack(fill='x',pady=(5,3));self.cable_combo.bind('<<ComboboxSelected>>',self.choose_cable)
         ttk.Label(side,textvariable=self.info,wraplength=410,foreground='#1769aa').pack(fill='x',pady=4)
         ledger=ttk.Frame(side);ledger.pack(fill='both',expand=True);ledger.rowconfigure(0,weight=1);ledger.columnconfigure(0,weight=1)
@@ -312,17 +312,22 @@ class CoreLayoutDialog(RememberedToplevel):
         self.tree.tag_configure('source',background='#dbeafe');self.tree.tag_configure('target',background='#ffedd5')
         self.tree.bind('<<TreeviewSelect>>',self.pick_table);self.tree.bind('<Shift-ButtonPress-1>',self.pick_target)
         self.tree.bind('<Control-z>',lambda e:self.history(False));self.tree.bind('<Control-y>',lambda e:self.history(True))
-        ttk.Label(side,text='번호 클릭: 선택 · Shift+번호 클릭: 이동·교환 대상',wraplength=410).pack(fill='x',pady=(6,2))
+        edit_tip=ttk.Label(side,text='번호 클릭: 선택 · Shift+번호 클릭: 이동·교환 대상',wraplength=410);edit_tip.pack(fill='x',pady=(6,2))
         change=ttk.Frame(side);change.pack(fill='x',pady=4)
         ttk.Label(change,text='변경할 번호').pack(side='left');self.target_entry=ttk.Entry(change,textvariable=self.target,width=8);self.target_entry.pack(side='left',padx=6)
         self.review_button=ttk.Button(change,text='변경 검토',command=self.review);self.review_button.pack(side='left')
         viewing=ttk.Frame(side);viewing.pack(fill='x',pady=3)
         for label in ('현재','변경 후 미리보기'):ttk.Radiobutton(viewing,text=label,value=label,variable=self.view,command=self.change_view).pack(side='left',padx=2)
-        self.review_text=tk.Text(side,height=9,wrap='word',font=('Malgun Gothic',9),background='#f8fafc',relief='flat',takefocus=False);self.review_text.pack(fill='x',pady=4);self.review_text.configure(state='disabled')
+        self.review_text=tk.Text(side,height=4,wrap='word',font=('Malgun Gothic',9),background='#f8fafc',relief='flat',takefocus=False);self.review_text.pack(fill='x',pady=4);self.review_text.configure(state='disabled')
         actions=ttk.Frame(side);actions.pack(fill='x',pady=4)
         self.apply_button=ttk.Button(actions,text='검토한 변경 적용',command=self.apply,style='Primary.TButton',state='disabled');self.apply_button.pack(side='right')
         self.cancel_button=ttk.Button(actions,text='검토 취소',command=self.cancel_preview);self.cancel_button.pack(side='left')
-        ttk.Label(self,textvariable=self.notice,padding=(10,3,10,6),foreground='#1769aa',wraplength=1500).pack(fill='x')
+        # Reserve the controls first; let the scrollable ledger use the remaining
+        # height instead of pushing Apply below the monitor's client area.
+        for widget in (actions,self.review_text,viewing,change,edit_tip):
+            widget.pack_configure(side='bottom',before=heading)
+        self.notice_label=ttk.Label(self,textvariable=self.notice,padding=(10,3,10,6),foreground='#1769aa',wraplength=900)
+        self.notice_label.pack(side='bottom',fill='x',before=self.panes)
         self.target.trace_add('write',self.target_changed);self.protocol('WM_DELETE_WINDOW',self.destroy)
         self.reload(initial=True)
         if source in self.model['slots']:self.select_slot(source)
@@ -395,16 +400,17 @@ class CoreLayoutDialog(RememberedToplevel):
         try:
             view=self.tree.yview();self.tree.delete(*self.tree.get_children())
             if not self.source:return
-            owner=self.source[0];model=self.display_model();target=self.selected_target()
+            owner=self.source[0];model=self.display_model();target=self.selected_target();shown_source=self.source
+            if self.preview and self.view.get()!='현재':shown_source,target=target,self.source
             self.cable_choice.set(next((label for label,c in self.owner_options.items() if c==owner),''))
             for slot in sorted(model['owners'].get(owner,())):
                 row=model['slots'][slot];peers=[]
                 for (nid,key),ends in model['peers'].items():
                     if key==slot:peers.append(model['nodes'][nid]['name']+': '+', '.join(core_layout_slot(model,p) for p in ends))
                 signal={'on':'ON','off':'OFF','unknown':'확인필요','':'확인필요','exception':'예외'}.get(row.get('signal',''),row.get('signal',''))
-                tags=('source',) if slot==self.source else ('target',) if slot==target else ()
+                tags=('source',) if slot==shown_source else ('target',) if slot==target else ()
                 self.tree.insert('','end',iid=str(slot[1]),values=(row.get('label') or slot[1],core_layout_id(row.get('core_id','')),row.get('detail',''),signal,' / '.join(peers) or '저장 접속 없음'),tags=tags)
-            self.tree.selection_set(str(self.source[1]));self.tree.focus(str(self.source[1]))
+            self.tree.selection_set(str(shown_source[1]));self.tree.focus(str(shown_source[1]))
             if view:self.tree.yview_moveto(view[0])
         finally:self._syncing=False
 
@@ -434,7 +440,8 @@ class CoreLayoutDialog(RememberedToplevel):
     def pick_table(self,event=None):
         if self._syncing or not self.source:return
         chosen=self.tree.selection()
-        if chosen and int(chosen[0])!=self.source[1]:self.select_slot((self.source[0],int(chosen[0])))
+        shown_source=self.selected_target() if self.preview and self.view.get()!='현재' else self.source
+        if chosen and int(chosen[0])!=shown_source[1]:self.select_slot((self.source[0],int(chosen[0])))
 
     def pick_target(self,event):
         iid=self.tree.identify_row(event.y)
