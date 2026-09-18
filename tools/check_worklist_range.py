@@ -58,7 +58,7 @@ def windows_ui():
             def values(rows,columns):return [[tree.set(i,c) for c in columns] for i in rows]
             def assert_copy(rows,columns):
                 actual=copied();expected=values(rows,columns)
-                assert actual==expected,dict(actual=actual[:5],expected=expected[:5],sizes=(len(actual),len(expected)),
+                assert actual==expected,dict(differences=[(i,a,b) for i,(a,b) in enumerate(zip(actual,expected)) if a!=b][:5],sizes=(len(actual),len(expected)),
                                             selected=(copy.selected_rows[:5],copy.selected_columns),notice=copy.notice.get(),errors=errors)
             rows=tree.get_children();cols=tuple(tree['columns']);assert len(rows)>80
             print('RANGE: rectangles, reverse drag, actual overlay clicks, Shift and TSV escaping',flush=True)
