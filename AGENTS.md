@@ -971,3 +971,22 @@ that authorized scope for requested program updates without asking again.
   destruction. Test actual highlighted-cell mouse events, range/reverse/Shift,
   whole rows/columns, scroll edges, quotes/tabs/newlines, filters, locked data and
   narrow layout in check_worklist_range.py, plus the full Windows release gates.
+
+- V114 planning/core_layout.py owns the modeless, live whole-drawing physical
+  number map. Include every valid saved splice, anonymous connected slot and
+  disconnected same-ID component; diagnose invalid endpoints without inventing
+  edges. Use drawing-relative facility cards and exact positional pair lists.
+  Keep all numbers visible when highlighting source and occupied target paths.
+- Same-cable reviewed move/exchange preserves all five core fields, both-end
+  splice partners and occupant exclusion keys. Retain fixed-slot/ID reservations,
+  baseline drawings, locks, stale/generation guards, pre-commit backup, one undo
+  group and transaction rollback. The label 후도면 선번 연결도 변경 suppresses
+  automatic same-ID reconnection. Projection never writes data or history.
+- Refresh via App.refresh and a cancelled-on-close watcher. External edits
+  invalidate previews while retaining target input and viewport. Preserve cable
+  header drafts; refuse a move while identity/signal drafts for that cable exist.
+  Keep Entry shortcuts, modeless access and toolbar preference defaults intact.
+- Run check_core_layout.py's actual Windows click/preview/cancel/apply, two-path
+  exchange, shared views, drafts, polling, undo/redo, lock, resize, temporary-ID
+  search and cleanup gate, inspect the synthetic screenshot, then complete the
+  existing Windows suite and public release/manifest/launcher verification.

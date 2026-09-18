@@ -89,6 +89,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM AFTER AUTO CONNECT\n' + (ROOT / 'planning' / 'after_autoconnect.py').read_text(encoding='utf-8')
         if version >= 104:
             baseline += '\n\n# BEGIN TELECOM CORE WORKLIST\n' + (ROOT / 'planning' / 'core_worklist.py').read_text(encoding='utf-8')
+        if version >= 114:
+            baseline += '\n\n# BEGIN TELECOM CORE LAYOUT\n' + (ROOT / 'planning' / 'core_layout.py').read_text(encoding='utf-8')
         if version >= 105:
             baseline += '\n\n# BEGIN TELECOM POPUP MONITOR\n' + (ROOT / 'planning' / 'popup_monitor.py').read_text(encoding='utf-8')
         if version >= 105:

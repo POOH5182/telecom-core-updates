@@ -27,7 +27,8 @@ class CoreWorklistCopy:
           ('선택 범위 복사',self.copy),
           ('코어내역 복사',lambda:self.copy(column='detail')),
           ('코어ID 복사',lambda:self.copy(column='id')),
-          ('목록 전체 복사',lambda:self.copy(all_rows=True))):
+          ('목록 전체 복사',lambda:self.copy(all_rows=True)),
+          ('선번 연결도',lambda:open_core_layout(dialog.parent))):
             ttk.Button(actions,text=text,command=command).pack(side='left',padx=3)
         ttk.Label(actions,textvariable=self.notice).pack(side='right',padx=4)
         selection=ttk.Frame(bar);selection.pack(fill='x',pady=(4,0))
