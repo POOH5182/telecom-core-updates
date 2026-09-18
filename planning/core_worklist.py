@@ -12,30 +12,226 @@ def worklist_clipboard(rows,headings=None):
 
 
 class CoreWorklistCopy:
+    """Read-only spreadsheet selection, independent of the single-row name editor."""
     def __init__(self,dialog):
         self.dialog=dialog;self.tree=dialog.tree;self.column='detail';self.notice=tk.StringVar()
+        self.mode=tk.StringVar(value='cells');self.anchor=None;self.end=None
+        self.selected_rows=();self.selected_columns=();self.native_selection=()
+        self.dragging=False;self._scroll_job=None;self._paint_job=None;self._labels=[]
+        style=ttk.Style(self.tree)
+        style.map('CoreWorklist.Treeview',background=[('selected','#f1f5f9')],foreground=[('selected','#18334f')])
+        self.tree.configure(style='CoreWorklist.Treeview')
         self.bar=bar=ttk.Frame(dialog,padding=(8,0,8,4));bar.pack(fill='x',before=dialog.tree.master)
-        for text,command in (('코어내역 복사',lambda:self.copy(column='detail')),('코어ID 복사',lambda:self.copy(column='id')),('목록 전체 복사',lambda:self.copy(all_rows=True))):
-            ttk.Button(bar,text=text,command=command).pack(side='left',padx=3)
-        ttk.Label(bar,text='Ctrl+C: 선택 칸 · 우클릭: 복사 항목',foreground='#1769aa').pack(side='left',padx=8)
-        ttk.Label(bar,textvariable=self.notice).pack(side='right',padx=4)
+        actions=ttk.Frame(bar);actions.pack(fill='x')
+        for text,command in (
+          ('선택 범위 복사',self.copy),
+          ('코어내역 복사',lambda:self.copy(column='detail')),
+          ('코어ID 복사',lambda:self.copy(column='id')),
+          ('목록 전체 복사',lambda:self.copy(all_rows=True))):
+            ttk.Button(actions,text=text,command=command).pack(side='left',padx=3)
+        ttk.Label(actions,textvariable=self.notice).pack(side='right',padx=4)
+        selection=ttk.Frame(bar);selection.pack(fill='x',pady=(4,0))
+        for title,value in (('셀 범위','cells'),('행 전체','rows'),('열 전체','columns')):
+            ttk.Radiobutton(selection,text=title,value=value,variable=self.mode,command=self.change_mode).pack(side='left',padx=3)
+        ttk.Label(selection,text='드래그 / Shift+클릭 · Ctrl+C 복사 · 제목 클릭: 정렬',foreground='#1769aa').pack(side='left',padx=8)
         self.menu=tk.Menu(dialog,tearoff=False)
-        for text,command in (('선택 칸 복사',self.copy),('코어ID 복사',lambda:self.copy(column='id')),('코어내역 복사',lambda:self.copy(column='detail')),('선택 행 전체 복사',lambda:self.copy(row=True)),('목록 전체 복사',lambda:self.copy(all_rows=True))):
+        for text,command in (
+          ('선택 범위 복사',self.copy),
+          ('코어ID 복사',lambda:self.copy(column='id')),
+          ('코어내역 복사',lambda:self.copy(column='detail')),
+          ('선택 행 전체 복사',lambda:self.copy(row=True)),
+          ('목록 전체 복사',lambda:self.copy(all_rows=True))):
             self.menu.add_command(label=text,command=command)
-        self.tree.bind('<ButtonPress-1>',self.remember_cell,add='+');self.tree.bind('<Button-3>',self.context_menu)
-        for key in ('<Control-c>','<Control-C>'):self.tree.bind(key,self.copy)
+        # Before the sorting tag: column-selection mode can drag across headings.
+        self._tag='WorklistRange:'+str(self.tree)
+        self.tree.bindtags((self._tag,)+self.tree.bindtags())
+        bindings={'<ButtonPress-1>':self.press,'<B1-Motion>':self.motion,
+                  '<Double-Button-1>':self.double_click,
+                  '<ButtonRelease-1>':self.release,'<Button-3>':self.context_menu,
+                  '<Control-c>':self.copy,'<Control-C>':self.copy,
+                  '<Control-a>':self.select_all,'<Control-A>':self.select_all,
+                  '<Escape>':self.escape,'<<TreeviewSelect>>':self.native_changed,
+                  '<Configure>':self.queue_paint,'<Destroy>':self.destroy}
+        for key in ('Left','Right','Up','Down'):
+            bindings['<'+key+'>']=self.key_move
+            bindings['<Shift-'+key+'>']=self.key_move
+        self._sequences=tuple(bindings)
+        for sequence,callback in bindings.items():self.tree.bind_class(self._tag,sequence,callback)
+        self._before_sort=self.tree.before_sort;self.tree.before_sort=self.before_sort
+        for option in ('xscrollcommand','yscrollcommand'):
+            original=self.tree.cget(option)
+            def scrolled(first,last,original=original):
+                if original:self.tree.tk.call(*self.tree.tk.splitlist(original),first,last)
+                self.queue_paint()
+            self.tree.configure(**{option:scrolled})
 
-    def remember_cell(self,event):
-        iid=self.tree.identify_row(event.y);column=self.tree.identify_column(event.x)
-        if not iid or not column or column=='#0':return None
-        columns=self.tree['columns'];index=int(column[1:])-1
-        if index>=len(columns):return None
-        self.column=columns[index];return iid
+    def clear(self):
+        self.stop_scroll();self.dragging=False;self.anchor=None;self.end=None
+        self.selected_rows=();self.selected_columns=();self.notice.set('')
+        for label in self._labels:label.place_forget()
+
+    def before_sort(self):
+        self.clear()
+        if self._before_sort:self._before_sort()
+
+    def change_mode(self):
+        self.clear();self.notice.set('복사할 범위를 드래그하세요.');self.tree.focus_set()
+
+    def escape(self,event=None):
+        self.clear();return 'break'
+
+    def native_changed(self,event=None):
+        if self.selected_rows and self.tree.selection()!=self.native_selection:self.clear()
+
+    def point(self,x,y,clamp=False):
+        columns=tuple(self.tree['columns']);rows=self.tree.get_children()
+        if not rows:return None
+        column=self.tree.identify_column(x)
+        if not column or column=='#0':
+            if not clamp:return None
+            column='#1' if x<1 else '#'+str(len(columns))
+        index=int(column[1:])-1
+        if not 0<=index<len(columns):return None
+        iid=self.tree.identify_row(y)
+        if not iid and clamp:
+            # Use the visible edge, never jump from a short drag to the last row.
+            step=1 if y<self.body_top() else -1
+            start=self.body_top() if step==1 else self.tree.winfo_height()-2
+            for yy in range(start,self.tree.winfo_height() if step==1 else 0,step):
+                iid=self.tree.identify_row(yy)
+                if iid:break
+        if not iid and self.mode.get()=='columns':iid=rows[0]
+        return (iid,columns[index]) if iid else None
+
+    def body_top(self):
+        for y in range(1,min(100,self.tree.winfo_height())):
+            if self.tree.identify_row(y):return y
+        return 25
+
+    def press(self,event):
+        region=self.tree.identify_region(event.x,event.y)
+        if region=='separator':return None
+        if region=='heading' and self.mode.get()!='columns':return None
+        cell=self.point(event.x,event.y)
+        if not cell:return None
+        self.tree.focus_set();self.column=cell[1]
+        if not (event.state & 1 and self.anchor):self.anchor=cell
+        self.end=cell;self.dragging=True;self.pointer=(event.x,event.y)
+        # Copying another range must not overwrite a pending name or retarget Apply.
+        dirty=self.dialog._edit_core is not None and self.dialog.name_var.get()!=self.dialog._name_original
+        if not dirty:self.tree.selection_set(self.anchor[0]);self.tree.focus(self.anchor[0])
+        self.native_selection=self.tree.selection()
+        self.update_range();return 'break'
+
+    def update_range(self):
+        rows=self.tree.get_children();columns=tuple(self.tree['columns'])
+        if not self.anchor or self.anchor[0] not in rows or self.end[0] not in rows:self.clear();return
+        a,b=sorted((rows.index(self.anchor[0]),rows.index(self.end[0])))
+        c,d=sorted((columns.index(self.anchor[1]),columns.index(self.end[1])))
+        self.selected_rows=rows if self.mode.get()=='columns' else rows[a:b+1]
+        self.selected_columns=columns if self.mode.get()=='rows' else columns[c:d+1]
+        self.notice.set(f'{len(self.selected_rows)}행 × {len(self.selected_columns)}열 선택')
+        self.queue_paint()
+
+    def double_click(self,event):
+        if self.mode.get()!='cells':return self.press(event)
+        if self.tree.identify_region(event.x,event.y)=='heading':return None
+        cell=self.point(event.x,event.y)
+        if cell:
+            self.clear();self.tree.selection_set(cell[0]);self.tree.focus(cell[0])
+            self.dialog.double_click(event)
+            return 'break'
+
+    def motion(self,event):
+        if not self.dragging:return None
+        self.pointer=(event.x,event.y);cell=self.point(event.x,event.y,clamp=True)
+        if cell:self.end=cell;self.update_range()
+        self.stop_scroll();self._scroll_job=self.tree.after(80,self.auto_scroll)
+        return 'break'
+
+    def auto_scroll(self):
+        self._scroll_job=None
+        if not self.dragging:return
+        x,y=self.pointer;dx=-1 if x<4 else 1 if x>=self.tree.winfo_width()-4 else 0
+        dy=-1 if y<self.body_top() else 1 if y>=self.tree.winfo_height()-4 else 0
+        if self.mode.get()=='columns':dy=0
+        if dx:self.tree.xview_scroll(dx,'units')
+        if dy:self.tree.yview_scroll(dy,'units')
+        if dx or dy:
+            cell=self.point(max(2,min(x,self.tree.winfo_width()-3)),max(self.body_top(),min(y,self.tree.winfo_height()-3)),clamp=True)
+            if cell:self.end=cell;self.update_range()
+            self._scroll_job=self.tree.after(80,self.auto_scroll)
+
+    def stop_scroll(self):
+        if self._scroll_job is not None:self.tree.after_cancel(self._scroll_job);self._scroll_job=None
+
+    def release(self,event):
+        if not self.dragging:return None
+        cell=self.point(event.x,event.y,clamp=True)
+        if cell:self.end=cell;self.update_range()
+        self.dragging=False;self.stop_scroll();return 'break'
+
+    def key_move(self,event):
+        rows=self.tree.get_children();columns=tuple(self.tree['columns'])
+        if not rows:return 'break'
+        cell=self.end if self.end and self.end[0] in rows else (self.tree.focus() or rows[0],self.column)
+        if cell[0] not in rows:cell=(rows[0],self.column)
+        r=rows.index(cell[0]);c=columns.index(cell[1])
+        r=max(0,min(len(rows)-1,r+({'Up':-1,'Down':1}.get(event.keysym,0))))
+        c=max(0,min(len(columns)-1,c+({'Left':-1,'Right':1}.get(event.keysym,0))))
+        self.end=(rows[r],columns[c]);self.column=columns[c]
+        if not (event.state & 1 and self.anchor):self.anchor=self.end
+        self.native_selection=self.tree.selection();self.tree.see(rows[r]);self.update_range();return 'break'
+
+    def select_all(self,event=None):
+        rows=self.tree.get_children();columns=tuple(self.tree['columns'])
+        if rows:
+            self.mode.set('cells');self.anchor=(rows[0],columns[0]);self.end=(rows[-1],columns[-1])
+            self.native_selection=self.tree.selection();self.update_range()
+        return 'break'
+
+    def queue_paint(self,event=None):
+        if self._paint_job is None:self._paint_job=self.tree.after_idle(self.paint)
+
+    def forward(self,event,sequence):
+        # Highlight labels stay mouse-transparent by forwarding to the real table.
+        self.tree.event_generate(sequence,x=event.x+event.widget.winfo_x(),y=event.y+event.widget.winfo_y(),
+                                 state=event.state,time=event.time,**({'delta':event.delta} if sequence=='<MouseWheel>' else {}))
+        return 'break'
+
+    def paint(self):
+        self._paint_job=None
+        for label in self._labels:label.place_forget()
+        if not self.selected_rows:return
+        selected=set(self.selected_rows);y=self.body_top();used=0;seen=set()
+        style=ttk.Style(self.tree);font=style.lookup(self.tree.cget('style') or 'Treeview','font') or 'TkDefaultFont'
+        while y<self.tree.winfo_height():
+            iid=self.tree.identify_row(y)
+            if not iid:y+=1;continue
+            box=self.tree.bbox(iid)
+            if not box:y+=1;continue
+            if iid in seen:y+=1;continue
+            seen.add(iid);y=box[1]+box[3]
+            if iid not in selected:continue
+            for column in self.selected_columns:
+                x,yy,w,h=self.tree.bbox(iid,column)
+                if x+w<=0 or x>=self.tree.winfo_width():continue
+                if used==len(self._labels):
+                    label=tk.Label(self.tree,anchor='w',background='#dbeafe',foreground='#143d70',
+                                   highlightbackground='#7fa9df',highlightthickness=1,borderwidth=0,padx=4,takefocus=False)
+                    for sequence in ('<ButtonPress-1>','<B1-Motion>','<ButtonRelease-1>','<Button-3>','<MouseWheel>'):
+                        label.bind(sequence,lambda e,s=sequence:self.forward(e,s))
+                    self._labels.append(label)
+                label=self._labels[used];used+=1
+                label.configure(text=self.tree.set(iid,column).replace('\r',' ').replace('\n',' '),font=font)
+                label.place(x=x,y=yy,width=w,height=h)
 
     def context_menu(self,event):
-        iid=self.remember_cell(event)
-        if iid is None:return 'break'
-        self.tree.selection_set(iid);self.tree.focus(iid)
+        cell=self.point(event.x,event.y)
+        if not cell:return 'break'
+        self.column=cell[1]
+        if cell[0] not in self.selected_rows or cell[1] not in self.selected_columns:
+            self.anchor=self.end=cell;self.native_selection=self.tree.selection();self.update_range()
         previous=self.dialog.grab_current()
         try:self.menu.tk_popup(event.x_root,event.y_root)
         finally:
@@ -44,16 +240,23 @@ class CoreWorklistCopy:
         return 'break'
 
     def copy(self,event=None,column=None,row=False,all_rows=False):
-        selected=self.tree.get_children() if all_rows else self.tree.selection()
+        self.native_changed()
+        visible=self.tree.get_children();columns=tuple(self.tree['columns'])
+        wanted=set(self.selected_rows or self.tree.selection())
+        selected=visible if all_rows else tuple(i for i in visible if i in wanted)
         if not selected:self.notice.set('복사할 항목을 선택하세요.');return 'break'
-        if all_rows or row:
-            headings=[self.tree.heading_text(c) for c in self.tree['columns']] if all_rows else None
-            text=worklist_clipboard([self.tree.item(iid,'values') for iid in selected],headings)
-        else:text=self.tree.set(selected[0],column or self.column)
+        chosen=columns if all_rows or row else (column,) if column else self.selected_columns or (self.column,)
+        values=[[self.tree.set(i,c) for c in chosen] for i in selected]
+        if len(selected)==len(chosen)==1 and not all_rows and not row:text=values[0][0]
+        else:text=worklist_clipboard(values,[self.tree.heading_text(c) for c in chosen] if all_rows else None)
         self.dialog.clipboard_clear();self.dialog.clipboard_append(text)
-        self.notice.set(f'{len(selected)}행 복사 완료' if all_rows or row else '복사 완료')
-        return 'break'
+        self.notice.set(f'{len(selected)}행 × {len(chosen)}열 복사 완료');return 'break'
 
+    def destroy(self,event=None):
+        if event is not None and event.widget is not self.tree:return
+        self.stop_scroll()
+        if self._paint_job is not None:self.tree.after_cancel(self._paint_job);self._paint_job=None
+        for sequence in self._sequences:self.tree.unbind_class(self._tag,sequence)
 
 def work_list_items(app,items):
     """Real IDs and physical field-end ON obligations only; no saved writes."""

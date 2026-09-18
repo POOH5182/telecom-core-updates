@@ -959,3 +959,15 @@ that authorized scope for requested program updates without asking again.
 - Adapt existing identity/save/desktop gates to the selected toolbar actions.
   Check exact toolbar-to-canvas adjacency, empty/all/restarted layouts and the
   existing complete Windows suite; inspect the synthetic single-toolbar image.
+
+- V113 CoreWorklistCopy owns read-only rectangle/row/column selection on the
+  existing work-list SortableTreeview. Copy displayed values in current visible
+  order using stable item IDs and quoted TSV; only whole-list copy adds headings.
+  Keep native editor selection separate when a name draft exists. Range gestures
+  must never retarget Apply, overwrite an Entry draft or write drawing/history.
+- Clear range state before rebuilding reused row IDs and before sorting; preserve
+  normal heading sorting in cell/row mode and native separator resizing. Scope
+  Ctrl+C/A to the table, retain Entry shortcuts, and cancel paint/scroll timers on
+  destruction. Test actual highlighted-cell mouse events, range/reverse/Shift,
+  whole rows/columns, scroll edges, quotes/tabs/newlines, filters, locked data and
+  narrow layout in check_worklist_range.py, plus the full Windows release gates.
