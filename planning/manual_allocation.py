@@ -725,7 +725,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         if self._resize_job is not None:self.after_cancel(self._resize_job);self._resize_job=None
         if self._size_binding is not None:self.app.unbind('<Configure>',self._size_binding);self._size_binding=None
         if getattr(self.app,'_map_allocation_panel',None) is self:self.app._map_allocation_panel=None
-        if self.dashboard_visible:self.app.dashboard_frame.place(relx=1.0,x=-24,y=18,anchor='ne')
+        if self.dashboard_visible:self.app.dashboard_frame.place(x=18,y=18,anchor='nw')
         editor=self.editor
         super().destroy()
         if restore_editor and valid and editor is not None and editor.winfo_exists():

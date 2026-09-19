@@ -1,4 +1,4 @@
-"""Previous-stage reference: isolated reads and real modeless Windows navigation."""
+"""Pinned stage windows: isolated reads, separate detail dialogs and Windows navigation."""
 import faulthandler
 import os
 from pathlib import Path
@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from check_after_plan import code,wf
@@ -26,7 +27,7 @@ def fixture(store):
 
 
 def save_stage(store,path,kind,ids):
-    a,h,b,left,right=ids;number=7 if kind=='gis' else 4
+    a,h,b,left,right=ids;number={'gis':7,'before':4,'after':9}[kind]
     set_stage(store,kind)
     with store.action('Synthetic '+kind+' connection'):
         store.conn.execute('DELETE FROM splices')
@@ -106,9 +107,27 @@ class SnapshotTests(unittest.TestCase):
             self.assertIn('SYNTH-LEFT / 3번',rows[right,7]['start'])
             for end in ('start','end'):self.assertIn('미접속',rows[left,5][end])
             self.assertEqual(rows[left,5]['signal'],'OFF')
+            route=wf.reference_detail_rows(snapshot.store,'route',(left,3))
+            self.assertEqual({row['slot'] for row in route},{(left,3),(right,7)})
             for row in rows.values():
                 self.assertIn('현장 재확인',row['state']);self.assertIn('SYNTH 공통 메모',row['state'])
             self.assertEqual(wf.stage_database_token(snapshot.store.conn),before)
+            self.assertEqual(self.path.read_bytes(),source)
+        finally:snapshot.close()
+
+    def test_detail_route_keeps_real_mismatched_peer_and_excludes_disconnected_same_id(self):
+        left,right=self.ids[-2:]
+        with self.working.action('Synthetic mismatched physical path'):
+            self.working.conn.execute("UPDATE cores SET core_id='GIS-ID' WHERE cable_id=? AND core_index=5",(left,))
+            self.working.conn.execute("UPDATE cores SET core_id='DIFFERENT-ID' WHERE cable_id=? AND core_index=7",(right,))
+        self.working.backup_to(self.path);source=self.path.read_bytes()
+        snapshot=wf.ReferenceSnapshot(code['Store'],self.path)
+        try:
+            token=wf.stage_database_token(snapshot.store.conn)
+            rows=wf.reference_detail_rows(snapshot.store,'route',(left,3))
+            self.assertEqual({row['slot'] for row in rows},{(left,3),(right,7)})
+            self.assertEqual({row['values'][2] for row in rows},{'GIS-ID','DIFFERENT-ID'})
+            self.assertEqual(wf.stage_database_token(snapshot.store.conn),token)
             self.assertEqual(self.path.read_bytes(),source)
         finally:snapshot.close()
 
@@ -143,9 +162,30 @@ def poll(dialog):
     dialog._poll()
 
 
+def detail_text(dialog):
+    return '\n'.join(tree_text(tree) for tree in dialog.trees)
+
+
+def populated_row(dialog,cable,index):
+    for tree,mapping in dialog.row_map.items():
+        for iid,row in mapping.items():
+            if row['slot']==(cable,index):return tree,iid
+    raise AssertionError(('Missing detail slot',cable,index))
+
+
+def assert_stage_chrome(window,kind,reference=True):
+    prefixes={'gis':'[GIS]','before':'[현장]','after':'[후도면]'}
+    assert window.title().startswith(prefixes[kind]),window.title()
+    assert window._stage_kind==kind and window._stage_reference is reference
+    # The visible band is the user's primary cue even when title bars truncate.
+    assert window._stage_banner.winfo_ismapped()
+    assert ('참고용' if reference else '편집 중') in window._stage_banner_label.cget('text')
+    return window._stage_banner.cget('bg')
+
+
 def windows_ui():
     if sys.platform!='win32':return
-    faulthandler.dump_traceback_later(150,exit=True)
+    faulthandler.dump_traceback_later(180,exit=True)
     with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,TELECOM_APP_HOME=temp), \
          patch.object(wf.messagebox,'showinfo'),patch.object(wf.messagebox,'showwarning'), \
          patch.object(wf.messagebox,'showerror') as error,patch.object(wf.messagebox,'askyesno',return_value=True), \
@@ -155,111 +195,192 @@ def windows_ui():
             s=app.store;ids=fixture(s);a,h,b,left,right=ids
             for kind in ('gis','before','after'):save_stage(s,app.scenario_path(kind),kind,ids)
             wf.stage_restore_store(s,app.scenario_path('before'));app.scenario_saved_revision=s.data_revision()
-            app.geometry('1180x760+0+0');app.refresh();app.update()
+            app.geometry('1000x720+0+0');app.update_title();app.refresh();app.update()
+            assert app.dashboard_frame.place_info()['anchor']=='nw'
             config=dict(app.drawing_tools.config,enabled=app.drawing_tools.config['enabled']+['reference_drawing'])
             app.drawing_tools.apply(config);app.update()
-            baseline=wf.stage_state_token(app);previous_grab=app.grab_current()
-            app.drawing_tools.buttons['reference_drawing'].invoke();app.update();dialog=app._reference_drawing
-            assert dialog and dialog.winfo_exists() and dialog.grab_current() is previous_grab is None
-            assert dialog.source_kind=='gis' and Path(dialog.source_path)==app.scenario_path('gis')
-            assert dialog.store is not s and dialog.reference_snapshot.store is dialog.store
-            assert wf.open_reference_drawing(app) is dialog
+            baseline=wf.stage_state_token(app)
+            source_bytes={kind:app.scenario_path(kind).read_bytes() for kind in ('gis','before','after')}
             app.drawing_tools.buttons['reference_drawing'].invoke();app.update()
-            assert len([w for w in app.winfo_children() if isinstance(w,wf.ReferenceDrawingDialog)])==1
+            chooser=wf.open_reference_drawing(app);app.update()
+            assert isinstance(chooser,wf.ReferenceDrawingChooser) and chooser.grab_current() is None
+            assert set(chooser.stage_buttons)=={'gis','before','after'}
+            for button in chooser.stage_buttons.values():
+                assert button.winfo_ismapped()
+                assert button.winfo_rooty()+button.winfo_height()<=chooser.winfo_rooty()+chooser.winfo_height()
+            viewers={}
+            for kind in ('gis','before','after'):
+                # Exercise the actual stage picker rather than only its helper.
+                chooser=wf.open_reference_drawing(app);app.update()
+                chooser.stage_buttons[kind].invoke();app.update()
+                dialog=app._reference_drawings[kind];viewers[kind]=dialog
+                assert dialog.source_kind==kind and Path(dialog.source_path)==app.scenario_path(kind)
+                assert dialog.store is not s and dialog.reference_snapshot.store is dialog.store
+                assert wf.open_reference_drawing(app,kind) is dialog
+                assert dialog.grab_current() is None
+                assert not hasattr(dialog,'core_tree'), 'The permanent lower ledger must be removed'
+                assert dialog.dashboard_frame.place_info()['anchor']=='nw'
+                dialog.geometry('960x650+20+20');app.update();dialog.fit_view();app.update()
+            if chooser.winfo_exists():chooser.destroy()
+            app.reference_windows_button.invoke();app.update()
+            chooser=wf.open_reference_drawing(app);assert chooser.winfo_exists();chooser.destroy()
+            manager=code['ScenarioDialog'](app);app.update()
+            for kind,button in manager.reference_buttons.items():
+                button.invoke();app.update();assert app._reference_drawings[kind] is viewers[kind]
+            manager.destroy();app.update()
+            assert len(app._reference_drawings)==3
+            assert len({id(dialog.store) for dialog in viewers.values()})==3
             assert wf.stage_state_token(app)==baseline
-            dialog.geometry('1100x720+90+30');app.update();dialog.fit_view();app.update()
-            print('REFERENCE: real toolbar, reusable modeless GIS source, exact saved peers and copy',flush=True)
-            dialog.follow_selection.set(False);dialog.select_item('node',h,center=True);app.update()
-            displayed=tree_text(dialog.core_tree)
-            assert 'GIS-ID' in displayed and 'SYNTH gis service' in displayed
-            assert 'SYNTH-LEFT' in displayed and 'SYNTH-RIGHT' in displayed
-            assert 'BEFORE-ID' not in displayed and 'AFTER-ID' not in displayed
-            rows=dialog.core_tree.get_children();assert rows
-            populated=next(row for row in rows if dialog.core_tree.set(row,'cable')=='SYNTH-LEFT' and dialog.core_tree.set(row,'number')=='3번')
-            assert 'SYNTH-RIGHT / 7번' in dialog.core_tree.set(populated,'end')
-            assert dialog.core_tree.set(populated,'signal').upper()=='ON'
-            dialog.core_tree.selection_set(populated);key(app,dialog.core_tree,'<Control-c>')
-            assert 'GIS-ID' in app.clipboard_get()
-            dialog.find_text.set('GIS-ID');dialog.find_next();app.update()
-            assert dialog.core_tree.get_children() and dialog.canvas.find_all()
-            key(app,dialog.canvas,'<Control-f>');assert app.focus_get() is dialog.find_entry
+            print('REFERENCE: three pinned stage drawings, full canvas, modeless stage details and visible identity',flush=True)
+            colors={};details={};routes=[]
+            for kind,dialog in viewers.items():
+                colors[kind]=assert_stage_chrome(dialog,kind)
+                dialog.select_item('node',h,center=True)
+                detail=dialog.open_selected_detail();app.update();details[kind]=detail
+                assert detail is wf.open_reference_detail(dialog,'node',h)
+                assert detail.grab_current() is None and detail.store is dialog.store
+                assert assert_stage_chrome(detail,kind)==colors[kind]
+                shown=detail_text(detail)
+                assert kind.upper()+'-ID' in shown and 'SYNTH '+kind+' service' in shown
+                for other in set(viewers)-{kind}:assert other.upper()+'-ID' not in shown
+                tree,row=populated_row(detail,left,3)
+                assert 'SYNTH-RIGHT / '+str({'gis':7,'before':4,'after':9}[kind])+'번' in tree.set(row,'start')
+                assert tree.set(row,'signal').upper()=='ON'
+                assert all(str(entry.cget('state'))=='readonly' for entry in detail.header_entries)
+                tree.selection_set(row);key(app,tree,'<Control-c>')
+                assert kind.upper()+'-ID' in app.clipboard_get()
+                route=detail.open_route();app.update();routes.append(route)
+                assert route.grab_current() is None and route.store is dialog.store
+                assert assert_stage_chrome(route,kind)==colors[kind]
+                assert {r['slot'] for r in route.rows}=={(left,3),(right,{'gis':7,'before':4,'after':9}[kind])}
+                key(app,tree,'<Control-f>');assert app.focus_get() is detail.find_entry
+                detail.find_text.set(kind.upper()+'-ID');detail.find_next();app.update()
+            assert len(set(colors.values()))==3,colors
+            assert len({wf.stage_popup_position_key(d) for d in viewers.values()})==3
+            assert len({wf.stage_popup_position_key(d) for d in details.values()})==3
+            gis=viewers['gis'];field=viewers['before'];after=viewers['after']
+            gis.select_item('cable',left);field.select_item('node',a);after.select_item('cable',right)
+            other_views={kind:(d.selected_item,d.view_scale,d.canvas.xview(),d.canvas.yview())
+                         for kind,d in viewers.items() if kind!='gis'}
+            gis.find_text.set('GIS-ID');gis.find_next();app.update()
+            gis.zoom_by(1.12,SimpleNamespace(x=320,y=180));app.update()
+            gis.canvas.event_generate('<ButtonPress-3>',x=450,y=240)
+            gis.canvas.event_generate('<B3-Motion>',x=340,y=240)
+            gis.canvas.event_generate('<ButtonRelease-3>',x=340,y=240);app.update()
+            for kind,state in other_views.items():
+                d=viewers[kind];assert (d.selected_item,d.view_scale,d.canvas.xview(),d.canvas.yview())==state
+            key(app,gis.canvas,'<Control-f>');assert app.focus_get() is gis.find_entry
             assert not getattr(app,'find_dialog',None)
-            with patch.object(wf,'DrawingSaveDialog',side_effect=AssertionError('Reference Ctrl+S escaped to drawing save')):
-                for widget in (dialog.canvas,dialog.core_tree,dialog.find_entry):
-                    for sequence in ('<Control-s>','<Control-z>','<Control-y>'):key(app,widget,sequence)
-            assert not errors,errors
+            with patch.object(wf,'DrawingSaveDialog',side_effect=AssertionError('Reference shortcut reached main save')):
+                for window in (*viewers.values(),*details.values(),*routes):
+                    targets=(window.canvas,window.find_entry) if hasattr(window,'canvas') else (*window.trees,window.find_entry)
+                    for widget in targets:
+                        for sequence in ('<Control-s>','<Control-z>','<Control-y>'):key(app,widget,sequence)
             assert wf.stage_state_token(app)==baseline and not getattr(app,'_save_dialog',None)
+            assert not errors,errors
+            gis.find_text.set('copy this text');gis.find_entry.selection_range(0,4)
+            key(app,gis.find_entry,'<Control-c>');assert app.clipboard_get()=='copy'
+            # Each stage remembers its own position; moving GIS must not move field/after.
+            for index,(kind,dialog) in enumerate(viewers.items()):
+                dialog.geometry(f'960x650+{10+index*12}+{10+index*12}')
+            app.update();positions={kind:d.geometry() for kind,d in viewers.items()}
+            for kind in viewers:assert wf.open_reference_drawing(app,kind).geometry()==positions[kind]
             if '--emit-screenshots' in sys.argv:
                 from check_desktop_design import screenshot
-                Path('dist').mkdir(exist_ok=True);dialog.select_item('node',h,center=True);app.update()
-                screenshot(dialog,Path('dist')/'v118-reference-drawing.png')
-            # Normal text copy must remain scoped to the entry, not the ledger.
-            dialog.find_text.set('copy this text');dialog.find_entry.selection_range(0,4)
-            key(app,dialog.find_entry,'<Control-c>');assert app.clipboard_get()=='copy'
-            # Main right-drag panning and actual editing remain available.
-            app.canvas.xview_moveto(.15);old_view=app.canvas.xview();drawing=wf.stage_database_token(s.conn)
+                Path('dist').mkdir(exist_ok=True)
+                for kind in ('gis','before','after'):
+                    dialog=viewers[kind];dialog.geometry('960x650+20+20');dialog.fit_view();app.update()
+                    screenshot(dialog,Path('dist')/('v119-'+kind+'-drawing.png'))
+                cable_detail=wf.open_reference_detail(gis,'cable',left);app.update()
+                cable_detail.geometry('960x620+20+20');app.update()
+                screenshot(cable_detail,Path('dist')/'v119-gis-cable-details.png')
+            # Main right-drag panning and actual editing remain available while
+            # references and all their child detail windows are still open.
+            app.lift();app.canvas.xview_moveto(.15);old_view=app.canvas.xview()
+            drawing=wf.stage_database_token(s.conn)
             app.canvas.event_generate('<ButtonPress-3>',x=500,y=80)
             app.canvas.event_generate('<B3-Motion>',x=370,y=80)
             app.canvas.event_generate('<ButtonRelease-3>',x=370,y=80);app.update()
-            assert app.canvas.xview()!=old_view and dialog.winfo_exists()
+            assert app.canvas.xview()!=old_view
             assert wf.stage_database_token(s.conn)==drawing
             app.set_mode('hamche');count=len(s.nodes())
-            app.canvas.event_generate('<ButtonPress-1>',x=70,y=70)
-            app.canvas.event_generate('<ButtonRelease-1>',x=70,y=70);app.update()
-            assert len(s.nodes())==count+1 and dialog.winfo_exists()
+            app.canvas.event_generate('<ButtonPress-1>',x=500,y=300)
+            app.canvas.event_generate('<ButtonRelease-1>',x=500,y=300);app.update()
+            assert len(s.nodes())==count+1
             key(app,app.canvas,'<Control-z>');assert len(s.nodes())==count
-            # Opening, navigation, reload and source refresh preserve a dirty
-            # real cable header and do not capture it into either drawing.
             editor=code['CableDialog'](app,s,left);app.update();editor.lot_var.set('Uncommitted LOT draft')
-            baseline=wf.stage_state_token(app);dialog.reload_source(force=True);app.update()
+            assert_stage_chrome(editor,'before',reference=False)
+            baseline=wf.stage_state_token(app);old_detail=details['gis'];old_conn=gis.store.conn
+            old_snapshot_dir=Path(gis.reference_snapshot.temp.name)
+            gis.reload_source(force=True);app.update()
+            assert not old_detail.winfo_exists() and not routes[0].winfo_exists() and not old_snapshot_dir.exists()
+            with unittest.TestCase().assertRaises(sqlite3.ProgrammingError):old_conn.execute('SELECT 1')
             assert editor.lot_var.get()=='Uncommitted LOT draft' and wf.stage_state_token(app)==baseline
-            dialog.follow_selection.set(True);app.selected={right};pump(app)
-            assert dialog.selected_item==('cable',right)
-            assert 'GIS-ID' in tree_text(dialog.core_tree)
-            dialog.follow_selection.set(False);app.selected={a};poll(dialog);app.update()
-            assert dialog.selected_item==('cable',right)
+            for kind,content in source_bytes.items():assert app.scenario_path(kind).read_bytes()==content
             editor.destroy();app.update()
-            print('REFERENCE: stage/project changes, missing source, source reload, geometry and cleanup',flush=True)
-            geometry=dialog.geometry();old_snapshot=dialog.reference_snapshot;old_connection=old_snapshot.store.conn
-            # Source switching is independent of the already-covered field
-            # handoff validator; use the real stage button with its gate accepted.
+            print('REFERENCE: pinned stages across main switch, saved-source reload, project changes and owned cleanup',flush=True)
+            geometry={kind:d.geometry() for kind,d in viewers.items()}
             with patch.object(app,'field_ready_for_after',return_value=True):app.workflow_buttons['after'].invoke()
-            app.update();poll(dialog);app.update()
-            assert app.scenario_kind()=='after' and app._reference_drawing is dialog
-            assert dialog.source_kind=='before' and dialog.geometry()==geometry
-            dialog.select_item('cable',left,center=True);app.update()
-            assert 'BEFORE-ID' in tree_text(dialog.core_tree) and 'GIS-ID' not in tree_text(dialog.core_tree)
-            assert dialog.store.component((left,3))=={(left,3),(right,4)}
-            with unittest.TestCase().assertRaises(sqlite3.ProgrammingError):old_connection.execute('SELECT 1')
-            source=app.scenario_path('before');source_bytes=source.read_bytes();source.unlink()
-            baseline=wf.stage_state_token(app);poll(dialog);app.update()
-            assert dialog.store is None and not dialog.core_tree.get_children()
+            app.update()
+            assert app.scenario_kind()=='after'
+            for kind,dialog in viewers.items():
+                poll(dialog);app.update()
+                assert dialog.source_kind==kind and dialog.geometry()==geometry[kind]
+                assert dialog.store.core(left,3)['core_id']==kind.upper()+'-ID'
+                assert dialog.store.component((left,3))=={(left,3),(right,{'gis':7,'before':4,'after':9}[kind])}
+            # Refresh only a changed saved stage. Editing the reference itself
+            # remains impossible and unrelated stage viewers keep their stores.
+            field_snapshot=field.reference_snapshot;after_snapshot=after.reference_snapshot
+            source=app.scenario_path('gis')
+            conn=sqlite3.connect(source)
+            try:conn.execute("UPDATE cores SET detail='SYNTH updated saved GIS' WHERE cable_id=? AND core_index=3",(left,));conn.commit()
+            finally:conn.close()
+            detail=wf.open_reference_detail(gis,'cable',left);app.update();old_conn=gis.store.conn
+            poll(gis);app.update()
+            assert not detail.winfo_exists() and gis.store.core(left,3)['detail']=='SYNTH updated saved GIS'
+            assert field.reference_snapshot is field_snapshot and after.reference_snapshot is after_snapshot
+            with unittest.TestCase().assertRaises(sqlite3.ProgrammingError):old_conn.execute('SELECT 1')
+            source_bytes=source.read_bytes();source.unlink();baseline=wf.stage_state_token(app)
+            poll(gis);app.update()
+            assert gis.source_kind=='gis' and gis.store is None and not gis._reference_details
             assert wf.stage_state_token(app)==baseline and not source.exists()
-            source.write_bytes(source_bytes);dialog.reload_source(force=True);app.update();assert dialog.store
-            assert app.load_scenario('gis');app.update();poll(dialog);app.update()
-            assert dialog.source_kind is None and dialog.store is None and not dialog.core_tree.get_children()
-            assert dialog.geometry()==geometry and app._reference_drawing is dialog
-            assert app.load_scenario('before');app.update();poll(dialog);app.update()
-            assert dialog.source_kind=='gis' and dialog.store.core(left,3)['core_id']=='GIS-ID'
-            # A different project must not keep showing the previous project's
-            # saved GIS, even when the active stage name is unchanged.
+            assert field.store and after.store
+            chooser=wf.open_reference_drawing(app);app.update()
+            assert str(chooser.stage_buttons['gis'].cget('state'))=='disabled';chooser.destroy()
+            source.write_bytes(source_bytes);gis.reload_source(force=True);app.update();assert gis.store
+            # A different project cannot retain any previous-project snapshot.
             original_store=app.store;other=code['Store'](Path(temp)/'other-project.sqlite3')
             try:
-                set_stage(other,'before');app.store=other;app.refresh();poll(dialog);app.update()
-                assert dialog.store is None and not dialog.core_tree.get_children()
-            finally:app.store=original_store;other.close();app.refresh();poll(dialog);app.update()
-            assert dialog.store and dialog.store.core(left,3)['core_id']=='GIS-ID'
-            watcher=dialog._poll_job;connection=dialog.store.conn
-            dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'));pump(app)
-            assert not dialog.winfo_exists() and dialog._poll_job is None
-            assert app._reference_drawing is None
-            assert watcher not in app.tk.splitlist(app.tk.call('after','info'))
+                set_stage(other,'after');app.store=other;app.update_title();app.refresh()
+                for dialog in viewers.values():
+                    poll(dialog);app.update();assert dialog.store is None and not dialog._reference_details
+            finally:
+                app.store=original_store;other.close();app.update_title();app.refresh()
+                for dialog in viewers.values():poll(dialog)
+                app.update()
+            for kind,dialog in viewers.items():
+                assert dialog.source_kind==kind and dialog.store.core(left,3)['core_id']==kind.upper()+'-ID'
+            # Closing one stage leaves the other windows usable; timer and DB
+            # lifetime belong to the stage that opened them.
+            child=wf.open_reference_detail(gis,'cable',left);app.update()
+            watcher=gis._poll_job;connection=gis.store.conn;temp_path=Path(gis.reference_snapshot.temp.name)
+            gis.tk.call(gis.protocol('WM_DELETE_WINDOW'));pump(app)
+            assert not gis.winfo_exists() and not child.winfo_exists() and gis._poll_job is None
+            assert 'gis' not in app._reference_drawings and field.winfo_exists() and after.winfo_exists()
+            assert watcher not in app.tk.splitlist(app.tk.call('after','info')) and not temp_path.exists()
             with unittest.TestCase().assertRaises(sqlite3.ProgrammingError):connection.execute('SELECT 1')
-            assert app.grab_current() is None and not errors,errors
+            remaining=[(d,d.store.conn,Path(d.reference_snapshot.temp.name),d._poll_job) for d in (field,after)]
+            wf.close_reference_drawings(app);app.update()
+            for dialog,connection,path,watcher in remaining:
+                assert not dialog.winfo_exists() and not path.exists()
+                assert watcher not in app.tk.splitlist(app.tk.call('after','info'))
+                with unittest.TestCase().assertRaises(sqlite3.ProgrammingError):connection.execute('SELECT 1')
+            assert not app._reference_drawings and app.grab_current() is None
+            assert not errors,errors
             assert not error.called,error.call_args
         finally:app.on_close()
     faulthandler.cancel_dump_traceback_later()
-    print('PASS Windows previous-stage reference: modeless singleton, exact peers, copy/search, live source, stage/project switches, drafts, scoped shortcuts, main panning/editing and timer cleanup')
+    print('PASS Windows pinned stage windows: three modeless drawings, stage titles/colors, independent full canvases, separate exact-peer details, scoped shortcuts, unchanged sources/drafts, pinned stage/project reload and owned cleanup')
 
 
 if __name__=='__main__':

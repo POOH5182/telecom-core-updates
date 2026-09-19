@@ -48,12 +48,14 @@ def windows_ui():
             path=Path(temp)/'data'/'popup_positions.json'
             wf.save_dialog_position(path,'RememberedToplevel',-1800,-1200);saved=path.read_bytes()
             first=wf.RememberedToplevel(app);first.geometry('460x230');app.update();assert_centered(first,app)
-            first.geometry('+55+60');app.update();first.destroy()
+            first.geometry('+55+60');app.update();remembered=native_rect(first)[:2];first.destroy()
             assert path.read_bytes()==saved
-            second=wf.RememberedToplevel(app);second.geometry('460x230');app.update();assert_centered(second,app)
+            second=wf.RememberedToplevel(app);second.geometry('460x230');app.update()
+            actual=native_rect(second)[:2];assert all(abs(a-b)<=2 for a,b in zip(actual,remembered)),(actual,remembered)
+            assert wf.stage_popup_position_key(second).startswith(app.scenario_kind()+':editing:')
             child=wf.TableDialog(second,'합성 중첩 확인',('항목',),[('내용',)]);app.update();assert_centered(child,second)
             child.destroy()
-            print('PASS Windows centered new/reopened/nested dialogs',flush=True)
+            print('PASS Windows owner-centered new/nested dialogs and stage-scoped reopened position',flush=True)
             # Exercise actual SetWindowPos with simulated three-monitor work
             # areas; the hosted Windows runner itself has only one display.
             for bounds in ((-1920,0,1920,1040),(0,0,2560,1400),(2560,-240,1920,1040),(0,-1440,2560,1400)):
@@ -107,7 +109,7 @@ def windows_ui():
             second.destroy();app.update();assert not errors,errors
         finally:app.on_close()
     faulthandler.cancel_dump_traceback_later()
-    print('PASS Windows owner-monitor centering, ignored stale position, nested/plain/native dialogs and synthetic three-display negative coordinates')
+    print('PASS Windows owner-monitor centering, stage-scoped position restore, ignored legacy position, nested/plain/native dialogs and synthetic three-display negative coordinates')
 
 
 if __name__=='__main__':

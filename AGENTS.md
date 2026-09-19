@@ -1,5 +1,26 @@
 # Telecom Core updater project
 
+- V119 supersedes V118's single automatic previous-stage window: explicit GIS,
+  field and after viewers can coexist, pinned to their chosen saved stage across
+  main-stage changes. Never launch another App or share editable Store/dialogs.
+  Keep independent viewports/search/details and read-only private snapshots;
+  close descendant details before replacing their Store or switching projects.
+- Stage identity is visible on all drawing/detail windows: GIS blue, field green,
+  after orange, leading title prefix plus a stage/role band (편집 중 / 참고용).
+  Keep status/signal colors intact. Position memory is partitioned by stage and
+  role and remains constrained to the current owner's monitor for new details;
+  independent drawing windows may remember their selected monitor. Preserve
+  legacy settings and synthetic negative-coordinate/native-owner checks.
+- Main and reference drawing dashboards belong at the canvas upper-left,
+  including after a map-allocation panel closes. Reference drawings occupy the
+  full canvas without a permanent lower ledger; modeless facility/cable details
+  open by double-click and support local search, physical-route lookup and copy.
+  Scope reference keyboard events so save/undo/delete never reach main editing.
+- V119 changes ship through the already authorized automatic update channel,
+  without a separate downloadable desktop package. Run the multi-window native
+  Windows gate, inspect its synthetic screenshots and finish the full workflow
+  and exact release/manifest/installed-launcher verification before reporting it.
+
 - User preference (2026-09-19): requested changes ship through automatic updates
   only. Do not prepare or deliver a separate installer/downloadable desktop ZIP
   unless the user explicitly asks for a file. Existing authorized public release

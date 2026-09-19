@@ -1,4 +1,4 @@
-"""Independent, modeless viewer of the saved previous drawing stage."""
+"""Independent, modeless GIS/field/after saved drawing windows."""
 
 
 def reference_kind(kind):return {'before':'gis','after':'before'}.get(kind)
@@ -67,95 +67,166 @@ def reference_core_rows(store,kind,key):
 
 
 class ReferenceDrawingDialog(RememberedToplevel):
-    def __init__(self,app):
-        super().__init__(app);self.app=app;self.title('참고 도면 · 읽기 전용');self.geometry('1180x820');self.minsize(820,560)
-        self.reference_snapshot=None;self.store=None;self.source_kind=None;self.source_path=None
+    """A pinned stage drawing: independent navigation, private read-only data."""
+    def __init__(self,app,kind):
+        self._stage_kind=kind;self._stage_reference=True;self._stage_independent=True
+        super().__init__(app);self.app=app;self.source_kind=kind
+        self.title('통신 코어 도면 · 참고용');self.geometry('1450x900');self.minsize(920,640)
+        self.reference_snapshot=None;self.store=None;self.source_path=None;self._reference_details={}
         self._source_token=None;self._selection_token=None;self._poll_job=None;self._fit_job=None;self._closed=False
         self.selected_item=None;self.selected=set();self.view_scale=1.;self.preview_positions={};self.label_fonts={}
         self.display_options=dict(app.display_options);self.item_to_node={};self.item_to_cable={}
         self.cable_line_items={};self.cable_base_styles={};self.highlight_cables=set();self.highlight_blink_on=False
         self.highlight_cable_colors={};self._drag_start=None;self._find_signature=None;self._find_index=-1
-        self.source_text=tk.StringVar();self.notice=tk.StringVar();self.detail_text=tk.StringVar(value='함체 또는 케이블을 선택하면 코어내역을 표시합니다.')
-        self.find_text=tk.StringVar();self.follow_selection=tk.BooleanVar(value=False)
-        header=ttk.Frame(self,padding=(12,10,12,4));header.pack(fill='x')
-        ttk.Label(header,textvariable=self.source_text,style='Title.TLabel').pack(side='left')
-        ttk.Label(header,text='읽기 전용 · 별도 모니터로 옮겨서 사용',style='Muted.TLabel').pack(side='right')
-        tools=ttk.Frame(self,padding=(12,4));tools.pack(fill='x')
-        self.find_entry=ttk.Entry(tools,textvariable=self.find_text,width=28);self.find_entry.pack(side='left',fill='x',expand=True)
+        self.source_text=tk.StringVar();self.notice=tk.StringVar();self.find_text=tk.StringVar()
+        self.follow_selection=tk.BooleanVar(value=False);self._core_labels={}
+        self.dashboard_expanded=True;self.minimap_visible=False;self.minimap_transform=None;self.minimap_view_item=None
+        self.minimap_drag_anchor=None;self.pending_drag=None;self.world_w=5200;self.world_h=4200
+        header=tk.Frame(self,bg='#14243d');header.pack(fill='x');self.desktop_header=header
+        title_row=tk.Frame(header,bg='#14243d');title_row.pack(fill='x',padx=16,pady=(12,8))
+        actions=tk.Frame(title_row,bg='#14243d');actions.pack(side='right')
+        ttk.Button(actions,text='저장본 새로고침',command=lambda:self.reload_source(force=True),style='Header.TButton').pack(side='left',padx=3)
+        ttk.Button(actions,text='다른 도면 새 창으로',command=lambda:open_reference_drawing(app),style='Header.TButton').pack(side='left',padx=3)
+        title_text=tk.Frame(title_row,bg='#14243d');title_text.pack(side='left',fill='x',expand=True)
+        tk.Label(title_text,text='통신 코어 도면',font=('Malgun Gothic',15,'bold'),fg='white',bg='#14243d',anchor='w').pack(fill='x')
+        tk.Label(title_text,textvariable=self.source_text,font=('Malgun Gothic',8),fg='#a7bbd7',bg='#14243d',anchor='w').pack(fill='x')
+        stages=tk.Frame(header,bg='#14243d');stages.pack(fill='x',padx=16,pady=(0,12));self.stage_buttons={}
+        for i,target in enumerate(('gis','before','after')):
+            text=STAGE_WINDOW_NAMES[target]+(' · 이 창' if target==kind else ' · 새 창으로 열기')
+            button=tk.Button(stages,text=text,command=lambda k=target:open_reference_drawing(app,k),
+                font=('Malgun Gothic',9,'bold'),fg='white',bg=STAGE_WINDOW_COLORS[target] if target==kind else '#294468',
+                activebackground=STAGE_WINDOW_COLORS[target],activeforeground='white',relief='flat',bd=0,padx=8,pady=7,cursor='hand2')
+            button.grid(row=0,column=i,sticky='ew',padx=(0,5) if i<2 else 0);stages.columnconfigure(i,weight=1,uniform='stage');self.stage_buttons[target]=button
+        toolbar=FlowToolbar(self);toolbar.pack(fill='x');self.drawing_toolbar=toolbar
+        for label,command in (('선택/이동',self.clear_selection),('선택 내역',self.open_selected_detail),('찾기 Ctrl+F',self.focus_find),
+                              ('보기설정',self.open_display_settings),('코어추적',self.open_core_trace),('화면 맞춤',self.fit_view),('도면 강조 해제',self.clear_selection)):
+            toolbar.add(ttk.Button(toolbar,text=label,command=command,style='Tool.TButton'))
+        self.find_entry=ttk.Entry(toolbar,textvariable=self.find_text,width=24);toolbar.add(self.find_entry)
         self.find_entry.bind('<Return>',self.find_next)
-        ttk.Button(tools,text='찾기 / 다음',command=self.find_next).pack(side='left',padx=4)
-        ttk.Button(tools,text='화면 맞춤',command=self.fit_view).pack(side='left',padx=4)
-        ttk.Button(tools,text='저장본 새로고침',command=lambda:self.reload_source(force=True)).pack(side='left',padx=4)
-        ttk.Button(tools,text='선택 내역 복사',command=self.copy_selected).pack(side='left',padx=4)
-        options=ttk.Frame(self,padding=(12,2,12,6));options.pack(fill='x')
-        ttk.Button(options,text='작업창 선택 찾기',command=self.sync_selection).pack(side='left')
-        ttk.Checkbutton(options,text='작업창 선택 따라가기',variable=self.follow_selection,command=self._follow_changed).pack(side='left',padx=10)
-        ttk.Label(options,text='시설·케이블·코어ID 검색 · 휠 확대/축소 · 드래그 이동',style='Muted.TLabel').pack(side='left')
-        ttk.Label(self,textvariable=self.notice,style='Muted.TLabel',padding=(12,5),wraplength=790).pack(side='bottom',fill='x')
-        self.panes=ttk.Panedwindow(self,orient='vertical');self.panes.pack(fill='both',expand=True,padx=8,pady=(0,4))
-        drawing=ttk.Frame(self.panes);drawing.rowconfigure(0,weight=1);drawing.columnconfigure(0,weight=1);self.panes.add(drawing,weight=3)
+        toolbar.add(ttk.Button(toolbar,text='찾기 / 다음',command=self.find_next,style='Tool.TButton'))
+        statusbar=ttk.Frame(self,padding=(14,6));statusbar.pack(side='bottom',fill='x')
+        ttk.Label(statusbar,text='드래그 이동 · 휠 확대/축소 · 더블클릭 내역',style='Muted.TLabel').pack(side='right',padx=(10,0))
+        ttk.Label(statusbar,textvariable=self.notice,style='Muted.TLabel',anchor='w').pack(side='left',fill='x',expand=True)
+        drawing=ttk.Frame(self);self.canvas_frame=drawing;drawing.pack(fill='both',expand=True)
+        drawing.rowconfigure(0,weight=1);drawing.columnconfigure(0,weight=1)
         self.canvas=tk.Canvas(drawing,bg='#f5f7fb',highlightthickness=0);self.canvas.grid(row=0,column=0,sticky='nsew')
         xs=ttk.Scrollbar(drawing,orient='horizontal',command=self.canvas.xview);ys=ttk.Scrollbar(drawing,orient='vertical',command=self.canvas.yview)
-        xs.grid(row=1,column=0,sticky='ew');ys.grid(row=0,column=1,sticky='ns');self.canvas.configure(xscrollcommand=xs.set,yscrollcommand=ys.set)
-        details=ttk.Frame(self.panes);self.panes.add(details,weight=1)
-        ttk.Label(details,textvariable=self.detail_text,padding=(4,5)).pack(fill='x')
-        frame=ttk.Frame(details);frame.pack(fill='both',expand=True);frame.columnconfigure(0,weight=1);frame.rowconfigure(0,weight=1)
-        self.core_tree=SortableTreeview(frame,columns=REFERENCE_COLUMNS,show='headings',height=8,selectmode='extended')
-        self.core_tree.grid(row=0,column=0,sticky='nsew')
-        for name,label,width in zip(REFERENCE_COLUMNS,REFERENCE_HEADINGS,(150,70,140,200,80,120,250,250)):
-            self.core_tree.heading(name,text=label);self.core_tree.column(name,width=width,minwidth=60,stretch=False)
-        vs=ttk.Scrollbar(frame,orient='vertical',command=self.core_tree.yview);hs=ttk.Scrollbar(frame,orient='horizontal',command=self.core_tree.xview)
-        vs.grid(row=0,column=1,sticky='ns');hs.grid(row=1,column=0,sticky='ew');self.core_tree.configure(yscrollcommand=vs.set,xscrollcommand=hs.set)
-        for seq in ('<Control-c>','<Control-C>'):self.core_tree.bind(seq,self.copy_selected)
-        for seq in ('<Control-a>','<Control-A>'):self.core_tree.bind(seq,self.select_all_rows)
+        xs.grid(row=1,column=0,sticky='ew');ys.grid(row=0,column=1,sticky='ns')
+        self.canvas.configure(xscrollcommand=lambda a,b:self._canvas_scrolled(xs,a,b),yscrollcommand=lambda a,b:self._canvas_scrolled(ys,a,b))
+        self._make_dashboard(drawing)
+        self.minimap_frame=tk.Frame(drawing,bg='white',highlightbackground='#7f8da3',highlightthickness=1)
+        tk.Label(self.minimap_frame,text='미니맵 · 클릭 이동 / 주황 상자 드래그',font=('Malgun Gothic',8,'bold'),fg='white',bg='#26354d',padx=8,pady=4).pack(fill='x')
+        self.minimap=tk.Canvas(self.minimap_frame,width=250,height=155,bg='#fbfcfe',highlightthickness=0,cursor='hand2');self.minimap.pack()
+        self.minimap.bind('<Button-1>',self.minimap_press);self.minimap.bind('<B1-Motion>',self.minimap_drag);self.minimap.bind('<ButtonRelease-1>',self.minimap_release)
         for seq in ('<Control-s>','<Control-S>','<Control-z>','<Control-Z>','<Control-y>','<Control-Y>'):
             self.bind(seq,lambda e:'break')
         for seq in ('<Control-f>','<Control-F>'):self.bind(seq,self.focus_find)
-        self.bind('<Escape>',self.close_key);self.bind('<Delete>',lambda e:'break')
+        self.bind('<Escape>',self.clear_selection);self.bind('<Delete>',lambda e:'break')
         self.canvas.bind('<MouseWheel>',self.zoom);self.canvas.bind('<Button-4>',lambda e:self.zoom_by(1.12,e));self.canvas.bind('<Button-5>',lambda e:self.zoom_by(1/1.12,e))
         for button in (1,3):
             self.canvas.bind(f'<ButtonPress-{button}>',self.pan_start);self.canvas.bind(f'<B{button}-Motion>',self.pan_move);self.canvas.bind(f'<ButtonRelease-{button}>',self.pan_end)
-        self.canvas.bind('<Configure>',lambda e:self._place_empty())
-        self.protocol('WM_DELETE_WINDOW',self.destroy);self.reload_source(force=True);self._poll_job=self.after(700,self._poll)
+        self.canvas.bind('<Double-Button-1>',self.double_click);self.canvas.bind('<Configure>',self._canvas_resized)
+        self.protocol('WM_DELETE_WINDOW',self.destroy)
+        apply_stage_window_chrome(self,kind,True)
+        self.reload_source(force=True);self._poll_job=self.after(700,self._poll)
+
+    def _make_dashboard(self,parent):
+        self.dashboard_frame=tk.Frame(parent,bg='white',highlightbackground='#dbe3ed',highlightthickness=1)
+        self.dashboard_frame.place(x=18,y=18,anchor='nw')
+        head=tk.Frame(self.dashboard_frame,bg='white');head.pack(fill='x')
+        tk.Label(head,text='도면 현황',font=('Malgun Gothic',11,'bold'),fg='#192b46',bg='white',padx=14,pady=12).pack(side='left')
+        self.minimap_toggle_button=tk.Button(head,text='미니맵 보기',command=self.toggle_minimap,font=('Malgun Gothic',8),fg='#64748b',bg='white',relief='flat',padx=7,pady=3)
+        self.minimap_toggle_button.pack(side='right',padx=3,pady=3)
+        self.dashboard_toggle_button=tk.Button(head,text='접기 ▲',command=self.toggle_dashboard,font=('Malgun Gothic',8),fg='#64748b',bg='white',relief='flat',padx=7,pady=3)
+        self.dashboard_toggle_button.pack(side='right',padx=3,pady=3)
+        self.metrics_frame=tk.Frame(self.dashboard_frame,bg='white');self.metrics_frame.pack(fill='both')
+        self.metrics_text=tk.StringVar();self.metrics_rate=tk.StringVar()
+        tk.Label(self.metrics_frame,textvariable=self.metrics_text,justify='left',anchor='w',font=('Malgun Gothic',9),bg='white',padx=14,pady=8,wraplength=290).pack(fill='x')
+        tk.Label(self.metrics_frame,textvariable=self.metrics_rate,anchor='w',font=('Malgun Gothic',22,'bold'),fg=STAGE_WINDOW_COLORS[self.source_kind],bg='white',padx=14).pack(fill='x')
+        self.completion_bar=ttk.Progressbar(self.metrics_frame,maximum=100,style='Completion.Horizontal.TProgressbar');self.completion_bar.pack(fill='x',padx=14,pady=(6,12))
+        tk.Label(self.metrics_frame,text='참고용 · 해당 단계의 저장본',font=('Malgun Gothic',9),bg='#edf3fc',fg='#315eac',padx=14,pady=8).pack(fill='x')
+
+    def refresh_dashboard(self):
+        if self.store is None:
+            self.metrics_text.set('저장 도면이 없습니다.');self.metrics_rate.set('—');self.completion_bar['value']=0;return
+        nodes=self.store.nodes();cables=self.store.cables();report=completion_report(self.store,self.source_kind)
+        total=report['total'];done=report['done'];rate=report['rate']
+        self.metrics_text.set(f"{STAGE_WINDOW_NAMES[self.source_kind]}\n시설 {len(nodes)}개 · 케이블 {len(cables)}개\n연결 대상 {total}개 · 완료 {done}개 · 미완료 {total-done}개")
+        self.metrics_rate.set(f'{rate:.1f}%' if rate is not None else '대상 없음');self.completion_bar['value']=rate or 0
+
+    def toggle_dashboard(self):
+        self.dashboard_expanded=not self.dashboard_expanded
+        if self.dashboard_expanded:self.metrics_frame.pack(fill='both')
+        else:self.metrics_frame.pack_forget()
+        self.dashboard_toggle_button.configure(text='접기 ▲' if self.dashboard_expanded else '펼치기 ▼')
+
+    def toggle_minimap(self):
+        self.minimap_visible=not self.minimap_visible
+        if self.minimap_visible:self.minimap_frame.place(relx=1.,rely=1.,x=-18,y=-18,anchor='se');self.refresh_minimap()
+        else:self.minimap_frame.place_forget()
+        self.minimap_toggle_button.configure(text='미니맵 숨기기' if self.minimap_visible else '미니맵 보기')
 
     def hamche_label_layout(self,*args,**kwargs):return type(self.app).hamche_label_layout(self,*args,**kwargs)
     def cable_label_layout(self,*args,**kwargs):return type(self.app).cable_label_layout(self,*args,**kwargs)
     def render_cable_labels(self,*args,**kwargs):return type(self.app).render_cable_labels(self,*args,**kwargs)
+    def refresh_minimap(self):
+        if self.store is not None:type(self.app).refresh_minimap(self)
+    def refresh_minimap_viewport(self):return type(self.app).refresh_minimap_viewport(self)
+    def minimap_release(self,event):return type(self.app).minimap_release(self,event)
+    def minimap_press(self,event):return type(self.app).minimap_press(self,event)
+    def minimap_click(self,event):
+        if not self.minimap_transform:return
+        minx,miny,factor,pad=self.minimap_transform
+        x=(minx+(event.x-pad)/factor)*self.view_scale-self.canvas.winfo_width()/2
+        y=(miny+(event.y-pad)/factor)*self.view_scale-self.canvas.winfo_height()/2
+        self._scroll_to(x,y)
+    def minimap_drag(self,event):
+        if not self.minimap_drag_anchor:return 'break'
+        x,y,left,top,factor,scale=self.minimap_drag_anchor
+        self._scroll_to(left+(event.x-x)/factor*scale,top+(event.y-y)/factor*scale);return 'break'
+    def _canvas_scrolled(self,bar,a,b):bar.set(a,b);self.refresh_minimap_viewport()
+    def _canvas_resized(self,event=None):
+        if self.store is None:self.canvas.itemconfigure('empty_reference',width=max(100,self.canvas.winfo_width()-40))
+        self.refresh_minimap_viewport()
 
     def _token(self):
-        kind=reference_kind(self.app.scenario_kind());path=self.app.scenario_path(kind) if kind else None
+        path=self.app.scenario_path(self.source_kind)
         def stamp(p):
             try:s=p.stat();return s.st_mtime_ns,s.st_size,s.st_ino
             except FileNotFoundError:return None
-        return (id(self.app.store),str(self.app.store.path.resolve()),self.app.scenario_kind(),kind,
-                stamp(path) if path else None,stamp(Path(str(path)+'-wal')) if path else None)
+        return (str(self.app.store.path.resolve()),self.source_kind,stamp(path),stamp(Path(str(path)+'-wal')))
+
+    def _close_details(self):
+        for dialog in list(self._reference_details.values()):
+            try:dialog.destroy()
+            except tk.TclError:pass
+        self._reference_details.clear()
 
     def reload_source(self,force=False):
         if self._closed:return
         try:token=self._token()
         except OSError as error:self.clear_source('참고 도면을 확인할 수 없습니다: '+str(error));return
+        for target,button in self.stage_buttons.items():
+            button.configure(state='normal' if target==self.source_kind or self.app.scenario_path(target).is_file() else 'disabled')
         if not force and token==self._source_token:return
-        previous=self._source_token;self._source_token=token
-        same_source=previous is not None and previous[:4]==token[:4]
+        previous=self._source_token;self._source_token=token;same_source=previous is not None and previous[:2]==token[:2]
         selected=self.selected_item if same_source else None
-        self.source_kind=token[3];self.source_path=self.app.scenario_path(self.source_kind) if self.source_kind else None
-        self.source_text.set((STAGE_NAMES[self.source_kind]+' 참고') if self.source_kind else '참고 도면')
-        self.title(self.source_text.get()+' · 읽기 전용 · '+self.app.store.path.stem)
-        if not self.source_kind:
-            self.clear_source('현장반영에서는 GIS 도면을, 후도면에서는 현장반영 도면을 참고할 수 있습니다.');return
-        if token[4] is None:
-            self.clear_source(STAGE_NAMES[self.source_kind]+' 저장본이 없습니다. 해당 단계 도면을 먼저 저장하세요.');return
+        self.source_path=self.app.scenario_path(self.source_kind)
+        self.source_text.set(STAGE_WINDOW_NAMES[self.source_kind]+' · '+self.app.store.path.stem+' · 저장된 도면')
+        self.title('통신 코어 도면 · '+self.app.store.path.stem)
+        if token[2] is None:
+            self.clear_source(STAGE_WINDOW_NAMES[self.source_kind]+' 저장본이 없습니다. 작업창에서 해당 단계 도면을 저장하면 여기에 표시됩니다.');return
         try:snapshot=ReferenceSnapshot(type(self.app.store),self.source_path)
         except (sqlite3.Error,OSError,ValueError) as error:
             self.clear_source('참고 도면을 열 수 없습니다. 저장본을 확인하세요. '+str(error));return
+        self._close_details()
         old=self.reference_snapshot;self.reference_snapshot=snapshot;self.store=snapshot.store
         if old is not None:old.close()
-        self.display_options=dict(self.app.display_options);self.selected.clear();self.selected_item=None
+        self.selected.clear();self.selected_item=None;self.highlight_cables.clear();self._core_labels={}
         self._find_signature=None;self._find_index=-1;self._selection_token=None
-        self.detail_text.set('함체 또는 케이블을 선택하면 코어내역을 표시합니다.');self.core_tree.delete(*self.core_tree.get_children())
-        when=datetime.fromtimestamp(token[4][0]/1e9).strftime('%Y-%m-%d %H:%M:%S')
-        self.notice.set('저장본 기준: '+when+' · 참고창에서는 도면을 수정하거나 저장하지 않습니다.')
-        self.render()
+        when=datetime.fromtimestamp(token[2][0]/1e9).strftime('%Y-%m-%d %H:%M:%S')
+        self.notice.set('저장본 '+when+' · 더블클릭하면 함체·케이블 내역을 엽니다.')
+        self.refresh_dashboard();self.render()
         if selected:self.select_item(*selected)
         if not same_source:
             if self._fit_job is not None:self.after_cancel(self._fit_job)
@@ -164,15 +235,17 @@ class ReferenceDrawingDialog(RememberedToplevel):
     def _fit_initial(self):self._fit_job=None;self.fit_view()
 
     def clear_source(self,message):
+        self._close_details()
+        if self._fit_job is not None:
+            try:self.after_cancel(self._fit_job)
+            except tk.TclError:pass
+            self._fit_job=None
         if self.reference_snapshot is not None:self.reference_snapshot.close();self.reference_snapshot=None
         self.store=None;self.selected.clear();self.selected_item=None;self.item_to_node.clear();self.item_to_cable.clear()
-        self.core_tree.delete(*self.core_tree.get_children());self.detail_text.set('참고할 저장 도면이 없습니다.')
+        self.highlight_cables.clear();self._core_labels={};self.minimap_transform=None;self.minimap.delete('all')
         self.canvas.delete('all');self.canvas.configure(scrollregion=(0,0,1,1));self.canvas.xview_moveto(0);self.canvas.yview_moveto(0)
-        self.canvas.create_text(20,30,text=message,width=620,anchor='nw',fill='#475569',tags='empty_reference')
-        self.notice.set(message);self._find_signature=None
-
-    def _place_empty(self):
-        if self.store is None:self.canvas.itemconfigure('empty_reference',width=max(100,self.canvas.winfo_width()-40))
+        self.canvas.create_text(20,210,text=message,width=620,anchor='nw',fill='#475569',tags='empty_reference')
+        self.notice.set(message);self._find_signature=None;self.refresh_dashboard()
 
     def render(self):
         if self.store is None:return
@@ -180,13 +253,23 @@ class ReferenceDrawingDialog(RememberedToplevel):
         type(self.app).render_drawing_canvas(self)
         nodes=self.store.nodes();left=min([0]+[n['x']-160 for n in nodes])*self.view_scale;top=min([0]+[n['y']-180 for n in nodes])*self.view_scale
         self.canvas.configure(scrollregion=(left,top,self.world_w*self.view_scale,self.world_h*self.view_scale))
-        self._scroll_to(x,y)
+        for cable,label in self._core_labels.items():
+            line=self.cable_line_items.get(cable)
+            if line is None:continue
+            coords=self.canvas.coords(line)
+            if len(coords)<6:continue
+            x0,y0,x1,y1,x2,y2=coords[:6];cx=(x0+2*x1+x2)/4;cy=(y0+2*y1+y2)/4+22
+            item=self.canvas.create_text(cx,cy,text=label,fill='#9a3412',font=('Malgun Gothic',10,'bold'),tags='reference_core_path')
+            bounds=self.canvas.bbox(item)
+            if bounds:
+                a,b,c,d=bounds;box=self.canvas.create_rectangle(a-5,b-3,c+5,d+3,fill='#fff7ed',outline='#f97316',tags='reference_core_path');self.canvas.tag_lower(box,item)
+        self._scroll_to(x,y);self.refresh_minimap()
 
     def _scroll_to(self,x,y):
         bounds=tuple(float(v) for v in self.canvas.cget('scrollregion').split())
         if len(bounds)!=4:return
         x0,y0,x1,y1=bounds
-        self.canvas.xview_moveto(max(0,(x-x0)/max(1,x1-x0)));self.canvas.yview_moveto(max(0,(y-y0)/max(1,y1-y0)))
+        self.canvas.xview_moveto(max(0,(x-x0)/max(1,x1-x0)));self.canvas.yview_moveto(max(0,(y-y0)/max(1,y1-y0)));self.refresh_minimap_viewport()
 
     def fit_view(self):
         if self.store is None:return
@@ -212,29 +295,42 @@ class ReferenceDrawingDialog(RememberedToplevel):
     def pan_start(self,event):
         self.canvas.focus_set();self._drag_start=(event.x,event.y);self.canvas.scan_mark(event.x,event.y);return 'break'
     def pan_move(self,event):
-        if self._drag_start:self.canvas.scan_dragto(event.x,event.y,gain=1)
+        if self._drag_start:self.canvas.scan_dragto(event.x,event.y,gain=1);self.refresh_minimap_viewport()
         return 'break'
+    def target(self,event):
+        x,y=self.canvas.canvasx(event.x),self.canvas.canvasy(event.y)
+        for item in reversed(self.canvas.find_overlapping(x-3,y-3,x+3,y+3)):
+            if item in self.item_to_node:return 'node',self.item_to_node[item]
+            if item in self.item_to_cable:return 'cable',self.item_to_cable[item]
+        return None
     def pan_end(self,event):
         start=self._drag_start;self._drag_start=None
         if not start or abs(start[0]-event.x)+abs(start[1]-event.y)>5:return 'break'
-        x,y=self.canvas.canvasx(event.x),self.canvas.canvasy(event.y)
-        for item in reversed(self.canvas.find_overlapping(x-3,y-3,x+3,y+3)):
-            if item in self.item_to_node:self.select_item('node',self.item_to_node[item]);break
-            if item in self.item_to_cable:self.select_item('cable',self.item_to_cable[item]);break
+        target=self.target(event)
+        if target:self.select_item(*target)
+        return 'break'
+    def double_click(self,event):
+        self._drag_start=None;target=self.target(event)
+        if target:self.select_item(*target);self.open_selected_detail()
         return 'break'
 
     def select_item(self,kind,key,center=False):
         if self.store is None:return False
         row=self.store.node(key) if kind=='node' else self.store.cable(key) if kind=='cable' else None
-        rows=reference_core_rows(self.store,kind,key)
         if kind in ('node','cable') and row is None:return False
+        rows=reference_core_rows(self.store,kind,key) if kind=='core' else []
         if kind=='core' and not rows:return False
-        self.selected_item=(kind,key)
+        self.selected_item=(kind,key);self.highlight_cables.clear();self._core_labels={}
         self.selected={key} if kind in ('node','cable') else {r['slot'][0][5:] if r['slot'][0].startswith('PORT:') else r['slot'][0] for r in rows}
+        if kind=='core':
+            indices=defaultdict(list)
+            for item in rows:
+                owner,index=item['slot']
+                if not owner.startswith('PORT:'):indices[owner].append(index)
+            self.highlight_cables=set(indices);self.highlight_cable_colors={owner:'#f97316' for owner in indices};self.highlight_blink_on=True
+            self._core_labels={owner:'선번 '+', '.join(map(str,sorted(numbers))) for owner,numbers in indices.items()}
         title=(row['name'] if kind=='node' else row['cable_id'] or row['spec']) if row is not None else key
-        self.detail_text.set(str(title)+' · '+str(len(rows))+'개 코어 · 접속은 이 참고 도면에 저장된 실제 선번입니다.')
-        self.core_tree.delete(*self.core_tree.get_children())
-        for i,item in enumerate(rows):self.core_tree.insert('','end',iid=str(i),values=item['values'])
+        self.notice.set(str(title)+' · '+('전체 코어 경로 표시 · 선택 내역에서 접속 확인' if kind=='core' else '더블클릭 또는 선택 내역으로 열기'))
         self.render()
         if center:
             nodes=[]
@@ -244,15 +340,25 @@ class ReferenceDrawingDialog(RememberedToplevel):
             self._fit_nodes([n for n in nodes if n])
         return True
 
+    def clear_selection(self,event=None):
+        self._drag_start=None;self.selected.clear();self.selected_item=None;self.highlight_cables.clear();self._core_labels={};self.render();return 'break'
+    def open_selected_detail(self):
+        if self.store is None:return None
+        if self.selected_item:return open_reference_detail(self,*self.selected_item)
+        self.notice.set('함체 또는 케이블을 선택하거나 코어ID를 검색하세요.');return None
+    def open_core_trace(self):
+        if self.selected_item and self.selected_item[0]=='core':return self.open_selected_detail()
+        self.focus_find();self.notice.set('추적할 코어ID를 입력하고 Enter를 누르세요. 끊어진 구간을 포함해 모두 표시합니다.')
+    def open_display_settings(self):return ReferenceDisplaySettings(self)
+
     def find_next(self,event=None):
         if self.store is None:return 'break'
-        query=self.find_text.get().strip();results=drawing_search(self.store,query)
-        signature=(query,self._source_token)
+        query=self.find_text.get().strip();results=drawing_search(self.store,query);signature=(query,self._source_token)
         if signature!=self._find_signature:self._find_signature=signature;self._find_index=-1
         if not results:self.notice.set('검색 결과가 없습니다. 시설명·시설ID·케이블ID·코어ID를 입력하세요.');return 'break'
         self._find_index=(self._find_index+1)%len(results);result=results[self._find_index]
         kind,key=('node',result['node_id']) if 'node_id' in result else ('cable',result['cable_id']) if 'cable_id' in result else ('core',result['core_id'])
-        self.select_item(kind,key,center=True);self.notice.set(f"찾기 {self._find_index+1}/{len(results)} · {result['kind']} · {result['identifier']}")
+        self.select_item(kind,key,center=True);self.notice.set(f"찾기 {self._find_index+1}/{len(results)} · {result['kind']} · {result['identifier']} · 선택 내역으로 확인")
         return 'break'
 
     def sync_selection(self):
@@ -263,21 +369,8 @@ class ReferenceDrawingDialog(RememberedToplevel):
             if self.store.node(key):self.select_item('node',key,center=True);return
             if self.store.cable(key):self.select_item('cable',key,center=True);return
         self.notice.set('작업창에서 선택한 시설·케이블이 참고 도면에 없습니다.' if selection else '작업창에서 함체 또는 케이블을 먼저 선택하세요.')
-
-    def _follow_changed(self):
-        self._selection_token=None
-        if self.follow_selection.get():self.sync_selection()
-
     def focus_find(self,event=None):self.find_entry.focus_set();self.find_entry.selection_range(0,'end');return 'break'
     def close_key(self,event=None):self.destroy();return 'break'
-    def select_all_rows(self,event=None):self.core_tree.selection_set(self.core_tree.get_children());return 'break'
-    def copy_selected(self,event=None):
-        chosen=set(self.core_tree.selection());rows=[i for i in self.core_tree.get_children() if i in chosen]
-        if not rows:self.notice.set('복사할 코어내역 행을 선택하세요. Ctrl+A로 전체를 선택할 수 있습니다.');return 'break'
-        import csv
-        output=io.StringIO();writer=csv.writer(output,delimiter='\t',lineterminator='\n');writer.writerow(REFERENCE_HEADINGS)
-        for item in rows:writer.writerow(self.core_tree.item(item,'values'))
-        self.clipboard_clear();self.clipboard_append(output.getvalue());self.notice.set(str(len(rows))+'개 코어내역을 복사했습니다.');return 'break'
 
     def _poll(self):
         self._poll_job=None
@@ -295,14 +388,78 @@ class ReferenceDrawingDialog(RememberedToplevel):
             if job is not None:
                 try:self.after_cancel(job)
                 except tk.TclError:pass
-        self._poll_job=None;self._fit_job=None
+        self._poll_job=None;self._fit_job=None;self._close_details()
         if self.reference_snapshot is not None:self.reference_snapshot.close();self.reference_snapshot=None;self.store=None
+        registry=getattr(self.app,'_reference_drawings',{})
+        if registry.get(self.source_kind) is self:registry.pop(self.source_kind,None)
         if getattr(self.app,'_reference_drawing',None) is self:self.app._reference_drawing=None
         super().destroy()
 
 
-def open_reference_drawing(app):
-    dialog=getattr(app,'_reference_drawing',None)
-    if dialog is not None and dialog.winfo_exists():
-        dialog.reload_source();dialog.deiconify();dialog.lift();return dialog
-    dialog=ReferenceDrawingDialog(app);app._reference_drawing=dialog;return dialog
+class ReferenceDisplaySettings(RememberedToplevel):
+    def __init__(self,view):
+        self._stage_kind=view.source_kind;self._stage_reference=True
+        super().__init__(view);self.view=view;self.title('보기설정');self.resizable(False,False)
+        namespace=type(view.app).__init__.__globals__;self.values={}
+        frame=ttk.Frame(self,padding=14);frame.pack(fill='both',expand=True)
+        ttk.Label(frame,text='이 참고 도면 창의 화면 표시만 바꿉니다.').pack(anchor='w',pady=(0,8))
+        for group,keys in namespace['DISPLAY_GROUPS']:
+            section=ttk.LabelFrame(frame,text=group,padding=8);section.pack(fill='x',pady=3)
+            for key in keys:
+                variable=tk.BooleanVar(value=view.display_options[key]);self.values[key]=variable
+                ttk.Checkbutton(section,text=namespace['DISPLAY_LABELS'][key],variable=variable).pack(anchor='w')
+        buttons=ttk.Frame(frame);buttons.pack(fill='x',pady=(10,0))
+        ttk.Button(buttons,text='닫기',command=self.destroy).pack(side='right')
+        ttk.Button(buttons,text='적용',command=self.apply).pack(side='right',padx=5)
+        for seq in ('<Control-s>','<Control-S>','<Control-z>','<Control-Z>','<Control-y>','<Control-Y>','<Control-f>','<Control-F>'):
+            self.bind(seq,lambda e:'break')
+        self.bind('<Escape>',lambda e:(self.destroy(),'break')[1])
+        apply_stage_window_chrome(self,view.source_kind,True)
+    def apply(self):
+        if not self.view._closed:self.view.display_options={key:var.get() for key,var in self.values.items()};self.view.render()
+        self.destroy()
+
+
+class ReferenceDrawingChooser(RememberedToplevel):
+    def __init__(self,app):
+        super().__init__(app);self.app=app;self.title('도면 새 창으로 열기');self.geometry('560x450');self.resizable(False,False)
+        frame=ttk.Frame(self,padding=20);frame.pack(fill='both',expand=True)
+        ttk.Label(frame,text='각 도면을 다른 모니터에 띄워 보세요.',style='Title.TLabel').pack(anchor='w',pady=(0,8))
+        ttk.Label(frame,text='새 창은 저장된 도면을 보여 줍니다. 현재 작업창에서 계속 편집할 수 있습니다.\n창마다 확대·이동·검색과 내역 확인을 따로 할 수 있습니다.',wraplength=485).pack(anchor='w',pady=(0,16))
+        self.stage_buttons={}
+        for kind in ('gis','before','after'):
+            button=tk.Button(frame,text=STAGE_WINDOW_NAMES[kind]+' · 새 창으로 열기',command=lambda k=kind:self.open_kind(k),
+                bg=STAGE_WINDOW_COLORS[kind],fg='white',activebackground=STAGE_WINDOW_COLORS[kind],activeforeground='white',
+                font=('Malgun Gothic',10,'bold'),relief='flat',padx=12,pady=9,cursor='hand2')
+            button.pack(fill='x',pady=4);self.stage_buttons[kind]=button
+        ttk.Label(frame,text='저장본이 없는 단계는 먼저 작업창에서 생성·저장하세요.',style='Muted.TLabel').pack(anchor='w',pady=(12,0))
+        self.refresh_availability()
+        for seq in ('<Control-s>','<Control-S>','<Control-z>','<Control-Z>','<Control-y>','<Control-Y>','<Control-f>','<Control-F>'):
+            self.bind(seq,lambda e:'break')
+        self.bind('<Escape>',lambda e:(self.destroy(),'break')[1]);self.protocol('WM_DELETE_WINDOW',self.destroy)
+    def refresh_availability(self):
+        for kind,button in self.stage_buttons.items():button.configure(state='normal' if self.app.scenario_path(kind).is_file() else 'disabled')
+    def open_kind(self,kind):return open_reference_drawing(self.app,kind)
+    def destroy(self):
+        if getattr(self.app,'_reference_chooser',None) is self:self.app._reference_chooser=None
+        super().destroy()
+
+
+def open_reference_drawing(app,kind=None):
+    if kind is None:
+        dialog=getattr(app,'_reference_chooser',None)
+        if dialog is not None and dialog.winfo_exists():dialog.refresh_availability();dialog.deiconify();dialog.lift();return dialog
+        dialog=ReferenceDrawingChooser(app);app._reference_chooser=dialog;return dialog
+    if kind not in ('gis','before','after'):raise ValueError('알 수 없는 도면 단계입니다.')
+    if not hasattr(app,'_reference_drawings'):app._reference_drawings={}
+    dialog=app._reference_drawings.get(kind)
+    if dialog is not None and dialog.winfo_exists():dialog.reload_source();dialog.deiconify();dialog.lift();return dialog
+    dialog=ReferenceDrawingDialog(app,kind);app._reference_drawings[kind]=dialog;return dialog
+
+
+def close_reference_drawings(app):
+    for dialog in list(getattr(app,'_reference_drawings',{}).values()):dialog.destroy()
+    chooser=getattr(app,'_reference_chooser',None)
+    if chooser is not None and chooser.winfo_exists():chooser.destroy()
+    legacy=getattr(app,'_reference_drawing',None)
+    if legacy is not None and legacy.winfo_exists():legacy.destroy()
