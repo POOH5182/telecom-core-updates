@@ -332,10 +332,12 @@ def windows_ui():
             # remains impossible and unrelated stage viewers keep their stores.
             field_snapshot=field.reference_snapshot;after_snapshot=after.reference_snapshot
             source=app.scenario_path('gis')
-            conn=sqlite3.connect(source)
-            try:conn.execute("UPDATE cores SET detail='SYNTH updated saved GIS' WHERE cable_id=? AND core_index=3",(left,));conn.commit()
-            finally:conn.close()
             detail=wf.open_reference_detail(gis,'cable',left);app.update();old_conn=gis.store.conn
+            saved=code['Store'](source)
+            try:
+                with saved.action('Synthetic saved GIS source update'):
+                    saved.conn.execute("UPDATE cores SET detail='SYNTH updated saved GIS' WHERE cable_id=? AND core_index=3",(left,))
+            finally:saved.close()
             poll(gis);app.update()
             assert not detail.winfo_exists() and gis.store.core(left,3)['detail']=='SYNTH updated saved GIS'
             assert field.reference_snapshot is field_snapshot and after.reference_snapshot is after_snapshot
