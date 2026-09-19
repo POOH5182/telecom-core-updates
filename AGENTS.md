@@ -1,5 +1,20 @@
 # Telecom Core updater project
 
+- V120 reference detail row selection, local Ctrl+F and show-on-drawing trace the
+  selected physical slots in their pinned reference Store. reference_slot_highlight
+  follows valid Network splice edges, preserving neutral and mismatched-ID transit;
+  clicked slots never expand via disconnected matching IDs. Whole-ID drawing
+  search explicitly starts every matching slot. Never infer or persist identities.
+- Reference detail core IDs are prominent in the visible column order, with full
+  identity in the selection summary and main temporary-ID aliases searchable.
+  Preserve actual raw ID values for projection and copying. Highlight labels show
+  core IDs plus physical numbers through the main canvas label/halo renderer.
+- Reference blink timers/labels are viewer-local and owned by the latest active
+  detail or search. Closing/deselecting an older owner cannot clear a newer route.
+  Clear timers on Escape, missing search, snapshot replacement and window close;
+  retain table focus and independent main/other-stage viewports. Run real mouse
+  and keyboard regression check_reference_core_trace.py and full Windows release.
+
 - V119 supersedes V118's single automatic previous-stage window: explicit GIS,
   field and after viewers can coexist, pinned to their chosen saved stage across
   main-stage changes. Never launch another App or share editable Store/dialogs.

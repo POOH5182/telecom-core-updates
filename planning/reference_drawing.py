@@ -66,6 +66,47 @@ def reference_core_rows(store,kind,key):
     return sorted(output,key=lambda row:(row['values'][0],row['slot'][0],row['slot'][1]))
 
 
+def reference_slot_highlight(store,slots):
+    """Project chosen physical connections only; a matching ID is never an edge."""
+    audit=field_slot_audit(store);net=audit['net'];rows=audit['rows']
+    seeds=tuple(sorted({(str(owner),int(index)) for owner,index in slots if (str(owner),int(index)) in rows}))
+    visited=set();groups=[];nodes=set();bands=defaultdict(list);cable_slots=defaultdict(set);label_colors={}
+    for seed in seeds:
+        if seed in visited:continue
+        members=set();pending=[seed]
+        while pending:
+            slot=pending.pop()
+            if slot in members or slot not in rows:continue
+            members.add(slot);pending.extend(peer for _,peer in net.links.get(slot,()) if peer not in members)
+        visited.update(members);number=len(groups)+1;color=core_segment_color(number-1)
+        identities={str(rows[slot].get('core_id') or '').strip() for slot in members
+                    if str(rows[slot].get('core_id') or '').strip() and not str(rows[slot].get('core_id')).startswith('임시-')}
+        groups.append(dict(number=number,color=color,slots=tuple(sorted(members))))
+        cable_lines=defaultdict(list)
+        for slot in sorted(members):
+            row=rows[slot];core_id=str(row.get('core_id') or '')
+            shown=('임시코어'+core_id[3:]) if core_id.startswith('임시-') and core_id[3:].isdigit() else core_id
+            if slot[0] in net.cables:
+                cable=net.cables[slot[0]];nodes.update((cable['n1id'],cable['n2id']))
+                owners=[slot[0]];prefix=str(slot[1])+'번';cable_slots[slot[0]].add(slot)
+            elif slot[0].startswith('PORT:'):
+                nodes.add(slot[0][5:]);owners=sorted({peer[0] for _,peer in net.links.get(slot,()) if peer[0] in net.cables})
+                prefix='RN 포트 '+str(row.get('label') or slot[1])
+            else:continue
+            for owner in owners:cable_lines[owner].append(prefix+' · 코어ID: '+(shown or '(없음)'))
+        for cable,lines in cable_lines.items():
+            text=f'경로 {number}'+(' · 코어ID 다름' if len(identities)>1 else '')+'\n'+'\n'.join(lines)
+            bands[cable].append(dict(number=number,color=color,text=text))
+            if len(identities)>1:label_colors[cable]='#c62828'
+    overlaps=frozenset(cable for cable,members in cable_slots.items() if len(members)>1)
+    colors={cable:OVERLAP_COLOR if cable in overlaps else items[0]['color'] for cable,items in bands.items()}
+    labels={cable:('겹침 · '+str(len(cable_slots[cable]))+'개 선번\n' if cable in overlaps else '')+
+            '\n'.join(item['text'] for item in items) for cable,items in bands.items()}
+    return dict(seed_slots=seeds,slots=frozenset(visited),groups=groups,nodes=frozenset(nodes),colors=colors,labels=labels,
+                bands=dict(bands),label_colors=label_colors,overlaps=overlaps,boundaries=[],
+                summary=f'실제 접속 {len(groups)}구간 · {len(visited)}개 선번')
+
+
 class ReferenceDrawingDialog(RememberedToplevel):
     """A pinned stage drawing: independent navigation, private read-only data."""
     def __init__(self,app,kind):
@@ -80,6 +121,9 @@ class ReferenceDrawingDialog(RememberedToplevel):
         self.highlight_cable_colors={};self._drag_start=None;self._find_signature=None;self._find_index=-1
         self.source_text=tk.StringVar();self.notice=tk.StringVar();self.find_text=tk.StringVar()
         self.follow_selection=tk.BooleanVar(value=False);self._core_labels={}
+        self.highlight_owner=None;self.highlight_blink_job=None;self.highlight_core_labels={};self.highlight_connection_model={}
+        self._highlight_label_items=[];self._highlight_hint_items=[];self._highlight_glow_items={}
+
         self.dashboard_expanded=True;self.minimap_visible=False;self.minimap_transform=None;self.minimap_view_item=None
         self.minimap_drag_anchor=None;self.pending_drag=None;self.world_w=5200;self.world_h=4200
         header=tk.Frame(self,bg='#14243d');header.pack(fill='x');self.desktop_header=header
@@ -219,7 +263,7 @@ class ReferenceDrawingDialog(RememberedToplevel):
         try:snapshot=ReferenceSnapshot(type(self.app.store),self.source_path)
         except (sqlite3.Error,OSError,ValueError) as error:
             self.clear_source('참고 도면을 열 수 없습니다. 저장본을 확인하세요. '+str(error));return
-        self._close_details()
+        self.clear_reference_highlight(repaint=False);self._close_details()
         old=self.reference_snapshot;self.reference_snapshot=snapshot;self.store=snapshot.store
         if old is not None:old.close()
         self.selected.clear();self.selected_item=None;self.highlight_cables.clear();self._core_labels={}
@@ -235,7 +279,7 @@ class ReferenceDrawingDialog(RememberedToplevel):
     def _fit_initial(self):self._fit_job=None;self.fit_view()
 
     def clear_source(self,message):
-        self._close_details()
+        self.clear_reference_highlight(repaint=False);self._close_details()
         if self._fit_job is not None:
             try:self.after_cancel(self._fit_job)
             except tk.TclError:pass
@@ -253,17 +297,45 @@ class ReferenceDrawingDialog(RememberedToplevel):
         type(self.app).render_drawing_canvas(self)
         nodes=self.store.nodes();left=min([0]+[n['x']-160 for n in nodes])*self.view_scale;top=min([0]+[n['y']-180 for n in nodes])*self.view_scale
         self.canvas.configure(scrollregion=(left,top,self.world_w*self.view_scale,self.world_h*self.view_scale))
-        for cable,label in self._core_labels.items():
-            line=self.cable_line_items.get(cable)
-            if line is None:continue
-            coords=self.canvas.coords(line)
-            if len(coords)<6:continue
-            x0,y0,x1,y1,x2,y2=coords[:6];cx=(x0+2*x1+x2)/4;cy=(y0+2*y1+y2)/4+22
-            item=self.canvas.create_text(cx,cy,text=label,fill='#9a3412',font=('Malgun Gothic',10,'bold'),tags='reference_core_path')
-            bounds=self.canvas.bbox(item)
-            if bounds:
-                a,b,c,d=bounds;box=self.canvas.create_rectangle(a-5,b-3,c+5,d+3,fill='#fff7ed',outline='#f97316',tags='reference_core_path');self.canvas.tag_lower(box,item)
+        type(self.app).apply_highlight_visuals(self)
+        type(self.app).render_highlight_core_labels(self)
         self._scroll_to(x,y);self.refresh_minimap()
+
+    def clear_reference_highlight(self,owner=None,repaint=True):
+        if owner is not None and self.highlight_owner is not owner:return False
+        if self.highlight_blink_job is not None:
+            try:self.after_cancel(self.highlight_blink_job)
+            except tk.TclError:pass
+        self.highlight_blink_job=None;self.highlight_owner=None;self.highlight_blink_on=True
+        self.highlight_cables.clear();self.highlight_cable_colors.clear();self.highlight_core_labels={};self._core_labels={}
+        self.highlight_connection_model={}
+        if repaint and not self._closed and self.store is not None:
+            type(self.app).apply_highlight_visuals(self);type(self.app).render_highlight_core_labels(self)
+        return True
+
+    def highlight_reference_slots(self,slots,owner=None,center=False):
+        if self._closed or self.store is None:return None
+        model=reference_slot_highlight(self.store,slots)
+        self.clear_reference_highlight(repaint=False)
+        self.highlight_owner=owner if owner is not None else self
+        self.highlight_connection_model=model;self.highlight_cable_colors=dict(model['colors'])
+        self.highlight_cables=set(model['colors']);self.highlight_core_labels=dict(model['labels']);self._core_labels=self.highlight_core_labels
+        self.highlight_blink_on=True
+        if center:
+            nodes=[self.store.node(nid) for nid in model['nodes']]
+            self._fit_nodes([n for n in nodes if n])
+        # Repaint the owned route without moving focus away from its table.
+        type(self.app).apply_highlight_visuals(self);type(self.app).render_highlight_core_labels(self)
+        self.notice.set(STAGE_WINDOW_NAMES[self.source_kind]+' · '+model['summary']+' · 선택 코어ID·선번 경로 표시')
+        if self.highlight_cables:self.highlight_blink_job=self.after(330,self._reference_blink_tick)
+        return model
+
+    def _reference_blink_tick(self):
+        self.highlight_blink_job=None
+        if self._closed or self.store is None or not self.highlight_cables:return
+        self.highlight_blink_on=not self.highlight_blink_on
+        type(self.app).apply_highlight_visuals(self)
+        self.highlight_blink_job=self.after(330,self._reference_blink_tick)
 
     def _scroll_to(self,x,y):
         bounds=tuple(float(v) for v in self.canvas.cget('scrollregion').split())
@@ -320,18 +392,14 @@ class ReferenceDrawingDialog(RememberedToplevel):
         if kind in ('node','cable') and row is None:return False
         rows=reference_core_rows(self.store,kind,key) if kind=='core' else []
         if kind=='core' and not rows:return False
-        self.selected_item=(kind,key);self.highlight_cables.clear();self._core_labels={}
+        self.clear_reference_highlight(repaint=False)
+        self.selected_item=(kind,key)
         self.selected={key} if kind in ('node','cable') else {r['slot'][0][5:] if r['slot'][0].startswith('PORT:') else r['slot'][0] for r in rows}
-        if kind=='core':
-            indices=defaultdict(list)
-            for item in rows:
-                owner,index=item['slot']
-                if not owner.startswith('PORT:'):indices[owner].append(index)
-            self.highlight_cables=set(indices);self.highlight_cable_colors={owner:'#f97316' for owner in indices};self.highlight_blink_on=True
-            self._core_labels={owner:'선번 '+', '.join(map(str,sorted(numbers))) for owner,numbers in indices.items()}
         title=(row['name'] if kind=='node' else row['cable_id'] or row['spec']) if row is not None else key
         self.notice.set(str(title)+' · '+('전체 코어 경로 표시 · 선택 내역에서 접속 확인' if kind=='core' else '더블클릭 또는 선택 내역으로 열기'))
         self.render()
+        if kind=='core':
+            self.highlight_reference_slots([row['slot'] for row in rows],owner=self,center=center);return True
         if center:
             nodes=[]
             for target in self.selected:
@@ -341,7 +409,7 @@ class ReferenceDrawingDialog(RememberedToplevel):
         return True
 
     def clear_selection(self,event=None):
-        self._drag_start=None;self.selected.clear();self.selected_item=None;self.highlight_cables.clear();self._core_labels={};self.render();return 'break'
+        self._drag_start=None;self.selected.clear();self.selected_item=None;self.clear_reference_highlight(repaint=False);self.render();return 'break'
     def open_selected_detail(self):
         if self.store is None:return None
         if self.selected_item:return open_reference_detail(self,*self.selected_item)
@@ -355,7 +423,8 @@ class ReferenceDrawingDialog(RememberedToplevel):
         if self.store is None:return 'break'
         query=self.find_text.get().strip();results=drawing_search(self.store,query);signature=(query,self._source_token)
         if signature!=self._find_signature:self._find_signature=signature;self._find_index=-1
-        if not results:self.notice.set('검색 결과가 없습니다. 시설명·시설ID·케이블ID·코어ID를 입력하세요.');return 'break'
+        if not results:
+            self.clear_reference_highlight(owner=self);self.notice.set('검색 결과가 없습니다. 시설명·시설ID·케이블ID·코어ID를 입력하세요.');return 'break'
         self._find_index=(self._find_index+1)%len(results);result=results[self._find_index]
         kind,key=('node',result['node_id']) if 'node_id' in result else ('cable',result['cable_id']) if 'cable_id' in result else ('core',result['core_id'])
         self.select_item(kind,key,center=True);self.notice.set(f"찾기 {self._find_index+1}/{len(results)} · {result['kind']} · {result['identifier']} · 선택 내역으로 확인")
@@ -383,7 +452,7 @@ class ReferenceDrawingDialog(RememberedToplevel):
 
     def destroy(self):
         if self._closed:return
-        self._closed=True
+        self._closed=True;self.clear_reference_highlight(repaint=False)
         for job in (self._poll_job,self._fit_job):
             if job is not None:
                 try:self.after_cancel(job)

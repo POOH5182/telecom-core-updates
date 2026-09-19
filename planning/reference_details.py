@@ -8,7 +8,7 @@ REFERENCE_DETAIL_HEADINGS=('상태·메모','신호','번호','코어ID','코어
 def reference_detail_rows(store,kind,key):
     """A route follows physical splices, including mismatched and blank IDs."""
     if kind=='route':
-        slots=store.component(tuple(key))
+        slots=set(reference_slot_highlight(store,[tuple(key)])['slots'])
         return [row for row in reference_core_rows(store,'all',None) if row['slot'] in slots]
     return reference_core_rows(store,kind,key)
 
@@ -35,7 +35,8 @@ class ReferenceDetailDialog(RememberedToplevel):
         self.view=view;self.app=view.app;self.store=view.store;self.source_kind=view.source_kind
         self.kind=kind;self.key=key;self._closed=False;self._find_signature=None;self._find_index=-1;self._find_job=None
         self.rows=reference_detail_rows(self.store,kind,key);self.trees=[];self.row_map={};self.active_tree=None
-        self.find_text=tk.StringVar();self.notice=tk.StringVar();self.selection_text=tk.StringVar(value='코어를 선택하면 실제 접속 상대를 확인할 수 있습니다.')
+        self._selection_trace_signature=None
+        self.find_text=tk.StringVar();self.notice=tk.StringVar();self.selection_text=tk.StringVar(value='코어를 선택하면 코어ID와 실제 연결 경로를 도면에서 확인할 수 있습니다.')
         self.geometry('1200x760' if kind=='node' else '1100x730');self.minsize(760,480)
         self._set_heading()
         # Pack persistent actions before the expanding table to keep them
@@ -124,7 +125,7 @@ class ReferenceDetailDialog(RememberedToplevel):
             combo=ttk.Combobox(selector,textvariable=var,values=tuple(self.by_label),state='readonly',width=20)
             combo.pack(fill='x',expand=True);combo.bind('<<ComboboxSelected>>',lambda e,s=side:self.reload_side(s))
             tree=self._make_tree(panel);tree.master.pack(fill='both',expand=True)
-            tree.configure(displaycolumns=('state','signal','number','core_id','detail','start'))
+            tree.configure(displaycolumns=('number','core_id','signal','detail','state','start'))
             tree.heading('start',text='이 함체 접속')
             setattr(self,side+'_tree',tree);setattr(self,side+'_combo',combo)
         labels=list(self.by_label)
@@ -134,15 +135,17 @@ class ReferenceDetailDialog(RememberedToplevel):
 
     def _make_tree(self,parent):
         frame=ttk.Frame(parent);frame.columnconfigure(0,weight=1);frame.rowconfigure(0,weight=1)
-        tree=SortableTreeview(frame,columns=REFERENCE_DETAIL_COLUMNS,show='headings',selectmode='extended')
-        for name,label,width in zip(REFERENCE_DETAIL_COLUMNS,REFERENCE_DETAIL_HEADINGS,(110,58,52,130,230,165,250,250)):
+        tree=SortableTreeview(frame,columns=REFERENCE_DETAIL_COLUMNS,show='headings',selectmode='extended',
+                              displaycolumns=('number','core_id','signal','detail','state','cable','start','end'))
+        for name,label,width in zip(REFERENCE_DETAIL_COLUMNS,REFERENCE_DETAIL_HEADINGS,(110,58,52,140,230,165,250,250)):
             tree.heading(name,text=label);tree.column(name,width=width,minwidth=40,stretch=name=='detail')
         tree.grid(row=0,column=0,sticky='nsew')
         vs=ttk.Scrollbar(frame,orient='vertical',command=tree.yview);vs.grid(row=0,column=1,sticky='ns')
         hs=ttk.Scrollbar(frame,orient='horizontal',command=tree.xview);hs.grid(row=1,column=0,sticky='ew')
         tree.configure(yscrollcommand=vs.set,xscrollcommand=hs.set)
-        tree.bind('<<TreeviewSelect>>',lambda e,t=tree:self.selected(t))
+        tree.bind('<<TreeviewSelect>>',lambda e,t=tree:self.selected(t,from_event=True))
         tree.bind('<FocusIn>',lambda e,t=tree:self._activate_tree(t))
+        tree.bind('<ButtonRelease-1>',lambda e,t=tree:self.selected(t) if t.identify_row(e.y) in t.selection() else None)
         tree.bind('<Double-Button-1>',lambda e:self.open_route())
         for sequence in ('<Control-c>','<Control-C>'):tree.bind(sequence,self.copy_selected)
         for sequence in ('<Control-a>','<Control-A>'):tree.bind(sequence,lambda e,t=tree:self.select_all(t))
@@ -159,22 +162,53 @@ class ReferenceDetailDialog(RememberedToplevel):
             if self.kind=='node':
                 owner=row['slot'][0]
                 if not owner.startswith('PORT:') and self.store.cable(owner)['n2id']==self.key:start,end=end,start
-            values=(state,signal,number,core_id,detail,cable,start,end)
+            values=(state,signal,number,self._display_core_id(core_id),detail,cable,start,end)
             tags=('cancel',) if '해지' in state and '해지예상' not in state else ('error',) if '오류' in state else ('on',) if signal=='ON' else ()
             tree.insert('','end',iid=iid,values=values,tags=tags);mapping[iid]=row
 
     def reload_side(self,side):
         owner=self.by_label.get(getattr(self,side+'_var').get());tree=getattr(self,side+'_tree')
+        if tree is self.active_tree:self._clear_trace()
         self._fill_tree(tree,[r for r in self.rows if r['slot'][0]==owner]);self._find_signature=None
 
-    def _activate_tree(self,tree):self.active_tree=tree
+    def _display_core_id(self,value):
+        # Reuse the main drawing's temporary-ID wording, while the row map and
+        # clipboard retain the exact stored identity.
+        namespace=type(self.app).__init__.__globals__
+        return namespace['display_core_id'](value)
 
-    def selected(self,tree):
-        self.active_tree=tree;selected=tree.selection()
-        if not selected:return
-        row=self.row_map[tree].get(selected[0])
-        if row:
-            v=row['values'];self.selection_text.set(v[0]+' / '+v[1]+' · '+(v[2] or '(ID 없음)')+'\n'+v[6]+('  ↔  '+v[7] if v[7] else ''))
+    def _clear_trace(self):
+        self._selection_trace_signature=None
+        self.view.clear_reference_highlight(owner=self)
+
+    def _activate_tree(self,tree):
+        self.active_tree=tree;self.selected(tree,force=True)
+
+    def selected(self,tree,force=False,from_event=False):
+        if self._closed:return
+        if from_event:
+            focus=self.focus_get()
+            if focus is None or focus.winfo_toplevel() is not self:return
+        selected=tree.selection()
+        if not selected:
+            # Replacing an inactive pane queues an empty selection event. It
+            # must not erase a newer path chosen in the other pane/window.
+            if tree is self.active_tree:
+                self._clear_trace();self.selection_text.set('코어를 선택하면 코어ID와 실제 연결 경로를 도면에서 확인할 수 있습니다.')
+            return
+        self.active_tree=tree
+        rows=[self.row_map[tree][iid] for iid in selected if iid in self.row_map[tree]]
+        if not rows:return
+        v=rows[0]['values'];raw_id=str(v[2] or '');shown_id=self._display_core_id(raw_id)
+        identity=(shown_id or '(ID 없음)')+(f' · 원본 ID: {raw_id}' if shown_id!=raw_id else '')
+        count=f' · {len(rows)}개 선번 선택' if len(rows)>1 else ''
+        self.selection_text.set('코어ID: '+identity+count+'\n'+v[0]+' / '+v[1]+' · 신호 '+v[4]+'\n'+v[6]+('  ↔  '+v[7] if v[7] else ''))
+        signature=(tree,tuple(row['slot'] for row in rows))
+        expected_slots=tuple(sorted({row['slot'] for row in rows}))
+        if (force or signature!=self._selection_trace_signature or self.view.highlight_owner is not self or
+                tuple(self.view.highlight_connection_model.get('seed_slots',()))!=expected_slots):
+            self._selection_trace_signature=signature
+            self.view.highlight_reference_slots([row['slot'] for row in rows],owner=self,center=False)
 
     def select_all(self,tree):
         self.active_tree=tree;tree.selection_set(tree.get_children());return 'break'
@@ -189,7 +223,8 @@ class ReferenceDetailDialog(RememberedToplevel):
     def find_next(self,event=None,direction=1):
         if self._find_job is not None:self.after_cancel(self._find_job);self._find_job=None
         query=self.find_text.get().strip().casefold()
-        matches=[row for row in self.rows if query and query in str(row['values'][2]).casefold()]
+        matches=[row for row in self.rows if query and
+                 (query in str(row['values'][2]).casefold() or query in self._display_core_id(row['values'][2]).casefold())]
         if not matches:self.notice.set('일치하는 코어ID가 없습니다.' if query else '찾을 코어ID를 입력하세요.');return 'break'
         signature=(query,tuple(row['slot'] for row in matches))
         self._find_index=(self._find_index+direction)%len(matches) if signature==self._find_signature else 0
@@ -211,7 +246,7 @@ class ReferenceDetailDialog(RememberedToplevel):
         rows=tree.get_children() if all_rows else [iid for iid in tree.get_children() if iid in tree.selection()]
         if not rows:self.notice.set('복사할 코어 행을 선택하세요.');return 'break'
         columns=(column,) if column else REFERENCE_DETAIL_COLUMNS
-        text=worklist_clipboard([[tree.set(iid,c) for c in columns] for iid in rows],
+        text=worklist_clipboard([[self.row_map[tree][iid]['values'][2] if c=='core_id' else tree.set(iid,c) for c in columns] for iid in rows],
                                 [tree.heading_text(c) for c in columns] if all_rows else None)
         if column and len(rows)==1:text=text.removesuffix('\n')
         self.clipboard_clear();self.clipboard_append(text);self.notice.set(f'{len(rows)}개 행 복사 완료');return 'break'
@@ -223,13 +258,15 @@ class ReferenceDetailDialog(RememberedToplevel):
 
     def open_route(self):
         row=self._selected_row()
-        if row:return open_reference_detail(self.view,'route',row['slot'],parent=self)
+        if row:
+            self._selection_trace_signature=None
+            self.view.highlight_reference_slots([row['slot']],owner=self,center=False)
+            return open_reference_detail(self.view,'route',row['slot'],parent=self)
 
     def show_on_drawing(self):
-        row=self._selected_row()
-        if not row:return
-        owner=row['slot'][0];kind='node' if owner.startswith('PORT:') else 'cable';key=owner[5:] if kind=='node' else owner
-        self.view.select_item(kind,key,center=True);self.view.lift()
+        if not self._selected_row():return
+        rows=[self.row_map[self.active_tree][iid] for iid in self.active_tree.selection() if iid in self.row_map[self.active_tree]]
+        self.view.highlight_reference_slots([row['slot'] for row in rows],owner=self,center=True);self.view.lift()
 
     def open_node_diagram(self):
         token=('diagram',self.key);registry=self.view._reference_details;existing=registry.get(token)
@@ -249,6 +286,7 @@ class ReferenceDetailDialog(RememberedToplevel):
     def destroy(self):
         if self._closed:return
         self._closed=True;registry=getattr(self.view,'_reference_details',{})
+        self._clear_trace()
         if self._find_job is not None:self.after_cancel(self._find_job);self._find_job=None
         self.find_text.trace_remove('write',self._find_trace)
         if registry.get((self.kind,self.key)) is self:registry.pop((self.kind,self.key),None)
