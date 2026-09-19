@@ -117,14 +117,17 @@ def check_single_enclosure_window(code, app):
     # A cable editor may remain beside the single enclosure editor.
     cable_window = code['open_detail_dialog'](app, store, 'cable', cable)
     app.update(); before = wf.plan_snapshot(store.conn)
-    first.geometry('+40+40'); app.update(); position = first.winfo_x(), first.winfo_y()
+    from check_popup_monitor import native_rect
+    first.geometry('+40+40'); app.update(); position = native_rect(first)[:2]
     with patch.object(code['messagebox'], 'askyesnocancel', side_effect=AssertionError('Clean switch prompted')):
         second = open_node(b)
     assert second.node_id == b and not first.winfo_exists() and cable_window.winfo_exists()
     assert wf.plan_snapshot(store.conn) == before
     assert app.highlight_owner is not first
-    from check_popup_monitor import assert_centered
-    assert_centered(second,app)
+    actual = native_rect(second); bounds = wf.popup_monitor_bounds(app)
+    expected = wf.remembered_position_on_monitor(position, actual[2], actual[3], bounds)
+    if expected is None:expected = wf.centered_popup_position(actual[2], actual[3], bounds)
+    assert all(abs(a-b)<=2 for a,b in zip(actual[:2],expected)), (actual,expected)
     second.name_var.set('저장하지 않은 이름')
     with patch.object(code['messagebox'], 'askyesnocancel', return_value=None):
         assert open_node(a) is second
@@ -182,13 +185,16 @@ def check_single_cable_window(code, app):
     assert app.highlight_owner is first
     assert open_cable(left) is first and first.tree.selection() == ('1',)
     before = wf.plan_snapshot(store.conn); revision = store.data_revision(); history = store.history_rows()
-    first.geometry('+55+55'); app.update(); position = first.winfo_x(), first.winfo_y()
+    from check_popup_monitor import native_rect
+    first.geometry('+55+55'); app.update(); position = native_rect(first)[:2]
     with patch.object(code['messagebox'], 'askyesno', side_effect=AssertionError('Clean cable switch prompted')):
         second = open_cable(right)
     assert second.cable_key == right and not first.winfo_exists() and node.winfo_exists()
     assert app.highlight_owner is not first
-    from check_popup_monitor import assert_centered
-    assert_centered(second,app)
+    actual = native_rect(second); bounds = wf.popup_monitor_bounds(app)
+    expected = wf.remembered_position_on_monitor(position, actual[2], actual[3], bounds)
+    if expected is None:expected = wf.centered_popup_position(actual[2], actual[3], bounds)
+    assert all(abs(a-b)<=2 for a,b in zip(actual[:2],expected)), (actual,expected)
     assert wf.plan_snapshot(store.conn) == before and store.data_revision() == revision
     assert store.history_rows() == history
 
