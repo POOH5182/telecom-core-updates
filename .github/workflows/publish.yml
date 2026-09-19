@@ -41,6 +41,8 @@ jobs:
         run: python tools/materialize_release.py
       - name: 후도면 없는 현장반영·작업실 버튼·창 생성 중단·입력 보존 검증
         run: python tools/check_after_workbench_entry.py
+      - name: GIS·현장반영·후도면 단계 삭제·이전 복귀·백업·되돌리기 검증
+        run: python tools/check_stage_delete.py --emit-screenshots
       - name: 전체 선번 연결도·실시간 갱신·두 경로 교환·미리보기·입력 보존 검증
         run: python tools/check_core_layout.py --emit-screenshots
       - name: 작업목록 셀 범위·행·열 드래그·엑셀 복사·입력 보존 검증

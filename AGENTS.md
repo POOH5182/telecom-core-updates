@@ -1,5 +1,17 @@
 # Telecom Core updater project
 
+- V117 current-stage removal lives in planning/stage_delete.py. Only remove the
+  active stage and its snapshot, then restore the saved previous stage verbatim
+  (after -> before -> gis -> empty gis). Preserve unrelated stage snapshots.
+  Review exact working/snapshot state and generation; refuse missing/corrupt
+  predecessors, current locks, busy saves/sync and open data editors. Back up
+  working plus snapshots before mutation and roll back failures. Local dedicated
+  stage undo restores unsaved work/history and the removed snapshot only while
+  the post-deletion state is unchanged, including across restart. Do not merge
+  deleted-stage workflow state into the previous drawing or bypass input drafts.
+  Run check_stage_delete.py including real Windows buttons/cancel/restore and
+  cloud-bundle membership; preserve the V48 three-file release contract.
+
 This repository is the user's Windows telecom app and its automatic release pipeline.
 The user requested that requested app changes include GitHub publication, so users do
 not have to upload release files themselves. Follow the current conversation's scope
