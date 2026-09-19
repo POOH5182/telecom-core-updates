@@ -997,3 +997,12 @@ that authorized scope for requested program updates without asking again.
   bounds misses buttons packed below the visible screen. Preview table selection
   and colors follow the projected source/target, without retargeting the sealed
   edit. Inspect full and compact synthetic screenshots before reporting delivery.
+
+- V116 AfterPlanDialog checks the stage in __new__, before allocating a Tk
+  widget. A blocked constructor returns None; never return early from __init__
+  and leak a widget lacking _w to a Tcl button callback. Show the existing
+  creation/switch guidance without creating a scenario or touching field data.
+- Run check_after_workbench_entry.py's real Tcl conversion and Windows repeated
+  mainloop/button gates for all three entry points, no after snapshot, drafts,
+  unchanged history, explicit after creation and a saved-after/current-field
+  case. Keep normal after-workbench and full Windows release gates intact.

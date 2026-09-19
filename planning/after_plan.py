@@ -505,10 +505,16 @@ def plan_export_csv(path, headers, rows):
 
 class AfterPlanDialog(RememberedToplevel):
     """One workbench; all previews are read-only until the corresponding action."""
-    def __init__(self, app):
+    def __new__(cls, app):
+        # Button callbacks return this constructor's result to Tcl. Returning
+        # early from __init__ leaves a widget without _w, which Tcl then tries
+        # to stringify and can abort the application's mainloop.
         if app.scenario_kind()!='after':
-            messagebox.showinfo('후도면 작업실','먼저 상단의 「4 후도면 작성」을 눌러 후도면으로 전환하세요.',parent=app)
-            return
+            messagebox.showinfo('후도면 작업실','후도면 작업실은 후도면에서 사용할 수 있습니다.\n상단의 「4 후도면」을 눌러 후도면을 만들거나 전환한 뒤 다시 열어주세요.',parent=app)
+            return None
+        return super().__new__(cls)
+
+    def __init__(self, app):
         super().__init__(app);self.app=app;self.service=AfterPlanner(app);self.proposal=None
         self.title('후도면 작업실 · 1 케이블 경로 설정 → 2 코어 배분')
         self.geometry('1340x820');self.minsize(960,620);self.transient(app)
