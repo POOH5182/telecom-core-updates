@@ -1,5 +1,24 @@
 # Telecom Core updater project
 
+- User preference (2026-09-19): requested changes ship through automatic updates
+  only. Do not prepare or deliver a separate installer/downloadable desktop ZIP
+  unless the user explicitly asks for a file. Existing authorized public release
+  payload, GitHub publication and Windows validation continue as usual.
+- V118 planning/reference_drawing.py owns the singleton modeless reference
+  window: before -> saved GIS, after -> saved field, GIS -> explanatory empty
+  view. Never switch the working drawing or fall back to another stage merely
+  to display a reference. Read source SQLite in mode=ro, clone privately before
+  Store migrations, then set query_only. Keep main/snapshot/history unchanged.
+  Share only App.render_drawing_canvas and label painting, not App.refresh or
+  live editable detail dialogs. Scope reference save/undo/find/Escape shortcuts.
+  Preserve other modal grabs, unsaved drafts and the reused window's monitor
+  position. New windows retain V105 owner-monitor centering. Watch current store
+  identity, phase and source stamp; clear unavailable/old-project data. Optional
+  selection following uses exact persistent node/cable IDs and defaults off.
+  Cancel watchers and close/remove temporary copies on exit. Run the real
+  Windows check_reference_drawing.py navigation/editability/source-isolation
+  gate, inspect its synthetic screenshot, and finish the full release workflow.
+
 - V117 current-stage removal lives in planning/stage_delete.py. Only remove the
   active stage and its snapshot, then restore the saved previous stage verbatim
   (after -> before -> gis -> empty gis). Preserve unrelated stage snapshots.

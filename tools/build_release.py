@@ -97,6 +97,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM SAVE DIALOG\n' + (ROOT / 'planning' / 'save_dialog.py').read_text(encoding='utf-8')
         if version >= 117:
             baseline += '\n\n# BEGIN TELECOM STAGE DELETE\n' + (ROOT / 'planning' / 'stage_delete.py').read_text(encoding='utf-8')
+        if version >= 118:
+            baseline += '\n\n# BEGIN TELECOM REFERENCE DRAWING\n' + (ROOT / 'planning' / 'reference_drawing.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()
