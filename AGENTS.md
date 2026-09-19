@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V121 reference cable details include the main cable dialog's upper-right
+  completion/signal panel. Use core_completion_brief, core_id_signal_summary
+  and core_completion_locations with the pinned reference Store and selected
+  physical slot. Same-ID signal totals span only that saved stage, including
+  disconnected positions; physical route highlighting remains slot-based.
+  Keep the panel and its readonly reason button visible on narrow windows;
+  selection, sorting and Ctrl+F update it without touching main edits or another
+  reference stage. Empty selection clears old values. Run the native Windows
+  check_reference_core_status.py gate and full automatic release verification.
+
 - Treat a missing and zero-byte snapshot WAL as the same watch token. SQLite
   read-only opening can create the latter without a data change; do not close
   reference details on first read. Nonempty WAL and checkpoint changes still

@@ -37,7 +37,7 @@ class ReferenceDetailDialog(RememberedToplevel):
         self.rows=reference_detail_rows(self.store,kind,key);self.trees=[];self.row_map={};self.active_tree=None
         self._selection_trace_signature=None
         self.find_text=tk.StringVar();self.notice=tk.StringVar();self.selection_text=tk.StringVar(value='코어를 선택하면 코어ID와 실제 연결 경로를 도면에서 확인할 수 있습니다.')
-        self.geometry('1200x760' if kind=='node' else '1100x730');self.minsize(760,480)
+        self.geometry('1200x760' if kind=='node' else '1100x730');self.minsize(760,600 if kind=='cable' else 480)
         self._set_heading()
         # Pack persistent actions before the expanding table to keep them
         # available on a short monitor or when a user reduces this window.
@@ -88,15 +88,62 @@ class ReferenceDetailDialog(RememberedToplevel):
             self.title('코어 실제 연결 경로');fields=[('선택 선번',store._slot_title(*key)),('실제 접속',f'{len(self.rows)}개 선번')]
         else:
             self.title('코어 '+str(key)+' 내역');fields=[('코어ID',key),('배정 위치',f'{len(self.rows)}개 선번')]
-        header=ttk.Frame(self,padding=(10,8));header.pack(fill='x')
+        header=ttk.Frame(self,padding=(10,8));header.pack(fill='x');self.header_frame=header
+        fields_frame=ttk.Frame(header);self.header_fields=fields_frame
+        if kind=='cable':
+            header.columnconfigure(0,weight=1,minsize=260);header.columnconfigure(1,weight=1,minsize=300)
+            fields_frame.grid(row=0,column=0,sticky='nsew')
+            self._build_completion_box(header)
+        else:fields_frame.pack(fill='x')
         self.header_entries=[]
         for index,(label,value) in enumerate(fields):
-            line=ttk.Frame(header);line.pack(fill='x',pady=2)
+            line=ttk.Frame(fields_frame);line.pack(fill='x',pady=2)
             ttk.Label(line,text=label,width=13).pack(side='left')
             entry=ttk.Entry(line);entry.insert(0,'' if value is None else str(value));entry.configure(state='readonly')
             entry.pack(side='left',fill='x',expand=True);self.header_entries.append(entry)
         if kind=='node':
-            ttk.Button(header,text='코어 연결도',command=self.open_node_diagram).pack(anchor='w',pady=(5,0))
+            ttk.Button(fields_frame,text='코어 연결도',command=self.open_node_diagram).pack(anchor='w',pady=(5,0))
+
+    def _build_completion_box(self,parent):
+        self.completion_title=tk.StringVar();self.completion_reason=tk.StringVar()
+        self.completion_signal=tk.StringVar();self.completion_signal_detail=tk.StringVar()
+        self.completion_box=ttk.LabelFrame(parent,text='연결 상태',padding=10)
+        self.completion_box.grid(row=0,column=1,sticky='nsew',padx=(12,0))
+        self.completion_title_label=ttk.Label(self.completion_box,textvariable=self.completion_title,font=('Malgun Gothic',11,'bold'),wraplength=320)
+        self.completion_title_label.pack(fill='x',anchor='w')
+        self.completion_reason_label=ttk.Label(self.completion_box,textvariable=self.completion_reason,foreground='#666666',justify='left',wraplength=320)
+        self.completion_reason_label.pack(fill='x',anchor='w',pady=(6,0))
+        self.completion_signal_label=ttk.Label(self.completion_box,textvariable=self.completion_signal,font=('Malgun Gothic',10,'bold'),justify='left',wraplength=320)
+        self.completion_signal_label.pack(fill='x',anchor='w',pady=(6,0))
+        self.completion_signal_detail_label=ttk.Label(self.completion_box,textvariable=self.completion_signal_detail,foreground='#475569',justify='left',wraplength=320)
+        self.completion_signal_detail_label.pack(fill='x',anchor='w',pady=(2,0))
+        self.completion_details_button=ttk.Button(self.completion_box,text='완료 판정·미연결 위치 확인',command=self.show_completion_locations)
+        self.completion_details_button.pack(fill='x',pady=(6,0))
+        labels=(self.completion_title_label,self.completion_reason_label,self.completion_signal_label,self.completion_signal_detail_label)
+        self.completion_box.bind('<Configure>',lambda e:[label.configure(wraplength=max(100,e.width-24)) for label in labels])
+        self.refresh_completion_reason()
+
+    def refresh_completion_reason(self,rows=None):
+        if not hasattr(self,'completion_box'):return
+        if not rows:
+            self.completion_title.set('선택 코어 · 미완료 이유');self.completion_reason.set('코어를 선택하세요.')
+            self.completion_signal.set('');self.completion_signal_detail.set('')
+            self.completion_reason_label.configure(foreground='#666666');self.completion_details_button.configure(state='disabled');return
+        slot=rows[0]['slot'];status,reason=core_completion_brief(self.store,slot)
+        suffix=f' · {len(rows)}개 선택 중' if len(rows)>1 else ''
+        self.completion_title.set(f'{slot[1]} · {status}'+suffix);self.completion_reason.set(reason or status)
+        self.completion_reason_label.configure(foreground='#c62828' if status in ('미완료','연결 오류') else '#1769aa')
+        signal=core_id_signal_summary(self.store,slot)
+        self.completion_signal.set(('전체 신호: ' if signal['core_id'] else '선택 번호 신호: ')+signal['label'])
+        self.completion_signal_detail.set(signal['detail'])
+        self.completion_signal_label.configure(foreground={'on':'#d00000','off':'#475569','mixed':'#c62828','error':'#c62828','exception':'#1769aa'}.get(signal['signal'],'#666666'))
+        self.completion_details_button.configure(state='normal')
+
+    def show_completion_locations(self):
+        row=self._selected_row()
+        if row:
+            slot=row['slot'];status,_=core_completion_brief(self.store,slot)
+            messagebox.showinfo(f'{slot[1]}번 · {status}',core_completion_locations(self.store,slot),parent=self)
 
     @staticmethod
     def _extra(row):
@@ -179,6 +226,7 @@ class ReferenceDetailDialog(RememberedToplevel):
 
     def _clear_trace(self):
         self._selection_trace_signature=None
+        self.refresh_completion_reason()
         self.view.clear_reference_highlight(owner=self)
 
     def _activate_tree(self,tree):
@@ -203,6 +251,7 @@ class ReferenceDetailDialog(RememberedToplevel):
         identity=(shown_id or '(ID 없음)')+(f' · 원본 ID: {raw_id}' if shown_id!=raw_id else '')
         count=f' · {len(rows)}개 선번 선택' if len(rows)>1 else ''
         self.selection_text.set('코어ID: '+identity+count+'\n'+v[0]+' / '+v[1]+' · 신호 '+v[4]+'\n'+v[6]+('  ↔  '+v[7] if v[7] else ''))
+        self.refresh_completion_reason(rows)
         signature=(tree,tuple(row['slot'] for row in rows))
         expected_slots=tuple(sorted({row['slot'] for row in rows}))
         if (force or signature!=self._selection_trace_signature or self.view.highlight_owner is not self or
