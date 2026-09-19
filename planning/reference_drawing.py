@@ -235,10 +235,15 @@ class ReferenceDrawingDialog(RememberedToplevel):
 
     def _token(self):
         path=self.app.scenario_path(self.source_kind)
-        def stamp(p):
-            try:s=p.stat();return s.st_mtime_ns,s.st_size,s.st_ino
+        def stamp(p,empty_is_missing=False):
+            try:
+                s=p.stat()
+                # A read-only SQLite open may create an empty WAL sidecar.
+                # It contains no saved change and must not close open details.
+                if empty_is_missing and s.st_size==0:return None
+                return s.st_mtime_ns,s.st_size,s.st_ino
             except FileNotFoundError:return None
-        return (str(self.app.store.path.resolve()),self.source_kind,stamp(path),stamp(Path(str(path)+'-wal')))
+        return (str(self.app.store.path.resolve()),self.source_kind,stamp(path),stamp(Path(str(path)+'-wal'),True))
 
     def _close_details(self):
         for dialog in list(self._reference_details.values()):

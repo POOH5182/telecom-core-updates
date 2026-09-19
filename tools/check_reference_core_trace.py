@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from check_reference_drawing import code,wf,key,pump,populated_row,set_stage
@@ -117,6 +118,28 @@ class ReferenceTraceTests(unittest.TestCase):
             self.assertEqual(len(combined['groups']),3)
             self.assertEqual(wf.stage_database_token(snapshot.store.conn),token)
             self.assertEqual(path.read_bytes(),source)
+        finally:snapshot.close()
+
+    def test_read_created_empty_wal_does_not_invalidate_open_details_but_real_edits_do(self):
+        path=self.home/'gis.sqlite3';left=self.fixture[1][0]
+        save_trace_stage(self.store,path,'gis',self.fixture)
+        fake=SimpleNamespace(source_kind='gis',app=SimpleNamespace(store=self.store,scenario_path=lambda kind:path))
+        token=lambda:wf.ReferenceDrawingDialog._token(fake)
+        before=token();content=path.read_bytes()
+        snapshot=wf.ReferenceSnapshot(code['Store'],path)
+        try:
+            # Opening this WAL-mode saved drawing read-only can create empty
+            # SQLite sidecars. That is not a changed drawing and must not close
+            # the cable detail at the next 700ms source watcher tick.
+            self.assertEqual(token(),before)
+            self.assertEqual(path.read_bytes(),content)
+            writer=code['Store'](path)
+            try:
+                with writer.action('Synthetic saved-stage detail change'):
+                    writer.conn.execute("UPDATE cores SET detail='SYNTH changed saved source' WHERE cable_id=? AND core_index=3",(left,))
+                self.assertNotEqual(token(),before)
+            finally:writer.close()
+            self.assertNotEqual(token(),before)
         finally:snapshot.close()
 
 

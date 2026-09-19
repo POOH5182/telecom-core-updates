@@ -1,5 +1,9 @@
 # Telecom Core updater project
 
+- Treat a missing and zero-byte snapshot WAL as the same watch token. SQLite
+  read-only opening can create the latter without a data change; do not close
+  reference details on first read. Nonempty WAL and checkpoint changes still
+  invalidate the saved snapshot normally.
 - V120 reference detail row selection, local Ctrl+F and show-on-drawing trace the
   selected physical slots in their pinned reference Store. reference_slot_highlight
   follows valid Network splice edges, preserving neutral and mismatched-ID transit;
