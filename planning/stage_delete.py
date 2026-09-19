@@ -83,6 +83,7 @@ def stage_delete_commit(app,preview):
     marker=stage_recovery_marker(app);old_marker=marker.read_bytes() if marker.exists() else None
     deleted=app.scenario_path(preview['kind']);moved=folder/'removed_snapshot.sqlite3';removed=False;changed=False
     info=dict(schema=1,owner=str(store.path.resolve()),kind=preview['kind'],previous=preview['previous'],
+              saved_revision=getattr(app,'scenario_saved_revision',old_revision),
               had_snapshot=deleted.exists(),hashes={p.name:stage_file_hash(p) for p in folder.glob('*.sqlite3')})
     # A durable recovery record exists before the first destructive operation.
     stage_write_json(folder/'recovery.json',info)
@@ -125,7 +126,7 @@ def stage_restore_preview(app):
     if not isinstance(info,dict) or info.get('schema')!=1 or info.get('owner')!=pointer['owner'] or info.get('kind') not in STAGE_ORDER:raise ValueError('삭제 백업 정보가 올바르지 않습니다.')
     hashes=info.get('hashes');allowed={'working.sqlite3'}|{k+'.sqlite3' for k in STAGE_ORDER}
     required={'working.sqlite3'}|({info['kind']+'.sqlite3'} if info.get('had_snapshot') else set())
-    if not isinstance(info.get('had_snapshot'),bool) or not isinstance(hashes,dict) or not required<=set(hashes)<=allowed or any(not isinstance(v,str) or len(v)!=64 for v in hashes.values()):raise ValueError('삭제 백업 파일 정보가 올바르지 않습니다.')
+    if not isinstance(info.get('saved_revision'),int) or not isinstance(info.get('had_snapshot'),bool) or not isinstance(hashes,dict) or not required<=set(hashes)<=allowed or any(not isinstance(v,str) or len(v)!=64 for v in hashes.values()):raise ValueError('삭제 백업 파일 정보가 올바르지 않습니다.')
     if info.get('post')!=stage_state_token(app):raise ValueError('단계 삭제 후 도면이나 저장본이 변경되었습니다. 현재 작업을 보호하기 위해 바로 되돌리기를 중단합니다. 삭제 전 백업은 backup/stage_deletions에 보관되어 있습니다.')
     if any(stage_file_hash(folder/name)!=value for name,value in hashes.items()):raise ValueError('삭제 백업 파일이 변경되어 복원을 중단합니다.')
     return dict(folder=str(folder),info=info,generation=app.store._view_generation)
@@ -157,13 +158,15 @@ def stage_check_editors(app):
     if stage_open_editors(app):raise ValueError('열린 케이블·함체·코어 편집창을 먼저 저장하거나 닫아 주세요. 입력 중인 내용은 유지됩니다.')
 
 
-def stage_refresh_app(app):
+def stage_refresh_app(app,saved_revision=None):
     panel=getattr(app,'_map_allocation_panel',None)
     if panel is not None:panel.destroy(restore_editor=False)
     app.stop_highlight_blink(clear=True);app.selected.clear();app.preview_positions={};app.set_mode('select')
     for name in ('_work_report_key','work_progress_cache_key','work_progress_cache_value','error_core_cache_key'):
         setattr(app,name,None)
-    app.error_core_cache_value=0;app.scenario_saved_revision=app.store.data_revision();app.update_title();app.refresh()
+    app.error_core_cache_value=0
+    app.scenario_saved_revision=app.store.data_revision() if saved_revision is None else saved_revision
+    app.update_title();app.refresh()
     if getattr(app,'cloud',None):app.after_idle(app.cloud.sync_now)
 
 
@@ -202,5 +205,5 @@ def restore_stage_delete(app,parent=None):
     try:
         stage_check_editors(app);preview=stage_restore_preview(app)
         if not messagebox.askyesno('단계 삭제 되돌리기',STAGE_NAMES[preview['info']['kind']]+' 삭제 직전의 작업과 저장본을 복원할까요?',parent=parent or app):return
-        stage_restore_commit(app,preview);stage_refresh_app(app);app.status.set('단계 삭제를 되돌렸습니다. 삭제 전 도면·수정 이력·단계 저장본을 복원했습니다.')
+        stage_restore_commit(app,preview);stage_refresh_app(app,saved_revision=preview['info']['saved_revision']);app.status.set('단계 삭제를 되돌렸습니다. 삭제 전 도면·수정 이력·단계 저장본을 복원했습니다.')
     except (ValueError,sqlite3.Error,OSError) as error:messagebox.showinfo('단계 삭제 되돌리기',str(error),parent=parent or app)

@@ -142,11 +142,12 @@ def windows_ui():
     with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,TELECOM_APP_HOME=temp), \
          patch.object(wf.messagebox,'showinfo') as info,patch.object(wf.messagebox,'showwarning'), \
          patch.object(wf.messagebox,'showerror') as error,patch.object(wf.messagebox,'askyesno',return_value=True), \
-         patch.object(wf.messagebox,'askyesnocancel',return_value=True):
+         patch.object(wf.messagebox,'askyesnocancel',return_value=True) as save_question:
         app=code['App']();errors=[];app.report_callback_exception=lambda *args:errors.append(args)
         try:
             a,h,b,left,right=fixture(app);app.refresh();app.update()
             app.geometry('1024x720');app.update();before=wf.stage_state_token(app)
+            saved_revision=app.scenario_saved_revision;assert app.scenario_dirty()
             # Cancellation leaves all database/history/snapshot state unchanged.
             dialog=wf.open_stage_delete(app);app.update();assert dialog and dialog.winfo_exists()
             if '--emit-screenshots' in sys.argv:
@@ -167,6 +168,10 @@ def windows_ui():
             dialog.apply_button.invoke();app.update();assert app.scenario_kind()=='before'
             assert not app.scenario_path('after').exists();assert app.mode=='select'
             app.drawing_tools.buttons['stage_restore'].invoke();app.update();assert wf.stage_state_token(app)==before
+            assert app.scenario_dirty() and app.scenario_saved_revision==saved_revision
+            save_question.return_value=None;question_count=save_question.call_count
+            assert not app.load_scenario('gis') and save_question.call_count==question_count+1
+            assert wf.stage_state_token(app)==before;save_question.return_value=True
             # Ensure refresh did not rewrite state and invalidate the local undo record.
             for kind,previous in (('before','gis'),('gis','gis')):
                 wf.stage_restore_store(app.store,app.scenario_path(kind));app.refresh();app.update();baseline=wf.stage_state_token(app)
@@ -176,6 +181,9 @@ def windows_ui():
                     assert len(nested)==1;nested[0].apply_button.invoke()
                 app.after(100,apply_nested);manager.clear();app.update()
                 assert app.scenario_kind()==previous and not app.scenario_path(kind).exists()
+                if kind=='gis':
+                    empty_state=wf.stage_state_token(app)
+                    assert not app.load_scenario('gis') and wf.stage_state_token(app)==empty_state
                 manager.restore_deleted();app.update();assert wf.stage_state_token(app)==baseline
                 manager.destroy();app.update()
             assert not errors,errors;assert not error.called,error.call_args
