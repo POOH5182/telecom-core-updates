@@ -151,6 +151,7 @@ def windows_ui():
             dialog=wf.open_stage_delete(app);app.update();assert dialog and dialog.winfo_exists()
             if '--emit-screenshots' in sys.argv:
                 from check_desktop_design import screenshot
+                Path('dist').mkdir(exist_ok=True)
                 screenshot(dialog,Path('dist')/'v117-stage-delete.png')
             assert dialog.apply_button.winfo_y()+dialog.apply_button.winfo_height()<=dialog.apply_button.master.winfo_height()
             dialog.cancel_button.invoke();app.update();assert wf.stage_state_token(app)==before
