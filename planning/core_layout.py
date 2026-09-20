@@ -279,18 +279,32 @@ def core_layout_pending(app,store,cable_id):
 class CoreLayoutDialog(RememberedToplevel):
     def __init__(self,app,source=None):
         super().__init__(app);self.app=app;self.store=app.store;self._generation=self.store._view_generation
-        self.title('후도면 전체 선번 연결도');self.geometry('1560x920');self.minsize(960,640)
+        self.title('후도면 전체 선번 연결도 · 실시간');self.geometry('1560x920');self.minsize(960,640)
         self.source=None;self.preview=None;self.scale=1.;self._watch=None;self._target_job=None;self._closed=False;self._syncing=False
         self.target=tk.StringVar();self.view=tk.StringVar(value='현재');self.query=tk.StringVar();self.info=tk.StringVar();self.summary=tk.StringVar();self.detail=tk.StringVar()
         self.cable_choice=tk.StringVar();self.notice=tk.StringVar(value='번호 클릭 → 변경할 번호 선택 → 변경 검토 → 적용')
+        self.display_mode=tk.StringVar(value='도면형');self.sort_cable=tk.StringVar();self.sort_direction=tk.StringVar(value='오름차순')
+        self.sort_ref=None;self.sort_options={};self.side_visible=True
         toolbar=FlowToolbar(self);toolbar.pack(fill='x',padx=8,pady=6)
         toolbar.add(ttk.Label(toolbar,text='후도면 전체 선번 연결도',style='Title.TLabel'))
         self.search_entry=toolbar.add(ttk.Entry(toolbar,textvariable=self.query,width=20));self.search_entry.bind('<Return>',self.find)
         toolbar.add(ttk.Button(toolbar,text='코어ID 찾기',command=self.find))
         for label,command in (('전체 보기',self.fit),('100%',lambda:self.zoom_to(1)),('−',lambda:self.zoom_to(self.scale/1.2)),('+',lambda:self.zoom_to(self.scale*1.2)),('강조 해제',self.clear_selection),('실행취소',lambda:self.history(False)),('다시실행',lambda:self.history(True))):
             toolbar.add(ttk.Button(toolbar,text=label,command=command,width=9 if len(label)>2 else 3))
+        self.side_toggle_button=toolbar.add(ttk.Button(toolbar,text='편집 영역 접기',command=self.toggle_side))
+        sorting=FlowToolbar(self);sorting.pack(fill='x',padx=8,pady=(0,4))
+        sorting.add(ttk.Label(sorting,text='보기'))
+        self.display_mode_combo=sorting.add(ttk.Combobox(sorting,textvariable=self.display_mode,values=('도면형','함체별 목록'),state='readonly',width=12))
+        self.display_mode_combo.bind('<<ComboboxSelected>>',self.change_view_mode)
+        sorting.add(ttk.Label(sorting,text='정렬 기준 케이블'))
+        self.sort_combo=sorting.add(ttk.Combobox(sorting,textvariable=self.sort_cable,state='readonly',width=28))
+        self.sort_combo.bind('<<ComboboxSelected>>',self.sort_changed)
+        self.sort_direction_combo=sorting.add(ttk.Combobox(sorting,textvariable=self.sort_direction,values=('오름차순','내림차순'),state='readonly',width=9))
+        self.sort_direction_combo.bind('<<ComboboxSelected>>',self.sort_changed)
+        self.sort_selected_button=sorting.add(ttk.Button(sorting,text='선택 케이블 기준',command=self.sort_by_selected))
         ttk.Label(self,textvariable=self.summary,padding=(10,0,10,4),foreground='#1769aa').pack(fill='x')
-        ttk.Label(self,text='같은 연결 묶음의 왼쪽·오른쪽 번호는 같은 줄·같은 자리끼리 실제 접속됩니다. 파랑: 선택 경로 · 주황: 대상 경로 · 휠: 확대 · 빈 곳 끌기: 이동',padding=(10,0,10,5),wraplength=1480).pack(fill='x')
+        self.guide=ttk.Label(self,text='함체·케이블 위 번호를 클릭하면 경로를 표시합니다. 같은 줄의 양쪽 번호끼리 접속 · 정렬은 표시 순서만 변경 · 케이블 우클릭: 정렬 기준 지정',padding=(10,0,10,5),wraplength=1480)
+        self.guide.pack(fill='x');self.guide.bind('<Configure>',lambda e:self.guide.configure(wraplength=max(400,e.width-24)))
         self.panes=ttk.Panedwindow(self,orient='horizontal');self.panes.pack(fill='both',expand=True,padx=8,pady=(0,6))
         body=ttk.Frame(self.panes);body.rowconfigure(0,weight=1);body.columnconfigure(0,weight=1);self.panes.add(body,weight=4)
         self.canvas=tk.Canvas(body,bg='#f6f8fc',highlightthickness=0);self.canvas.grid(row=0,column=0,sticky='nsew')
@@ -298,6 +312,8 @@ class CoreLayoutDialog(RememberedToplevel):
         xs=ttk.Scrollbar(body,orient='horizontal',command=self.canvas.xview);xs.grid(row=1,column=0,sticky='ew');self.canvas.configure(xscrollcommand=xs.set,yscrollcommand=ys.set)
         self.canvas.bind('<MouseWheel>',lambda e:self.zoom_to(self.scale*(1.15 if e.delta>0 else 1/1.15),e))
         self.canvas.bind('<ButtonPress-1>',self.press);self.canvas.bind('<B1-Motion>',self.motion);self.canvas.bind('<ButtonRelease-1>',self.release)
+        self.canvas.bind('<Button-3>',self.sort_context)
+        self.sort_menu=tk.Menu(self,tearoff=False)
         self.canvas.bind('<Control-z>',lambda e:self.history(False));self.canvas.bind('<Control-y>',lambda e:self.history(True))
         side=ttk.Frame(self.panes,padding=8,width=440);self.side=side;self.panes.add(side,weight=1)
         heading=ttk.Label(side,text='선택 케이블 · 전체 번호',style='Title.TLabel');heading.pack(anchor='w')
@@ -329,6 +345,7 @@ class CoreLayoutDialog(RememberedToplevel):
         self.notice_label=ttk.Label(self,textvariable=self.notice,padding=(10,3,10,6),foreground='#1769aa',wraplength=900)
         self.notice_label.pack(side='bottom',fill='x',before=self.panes)
         self.target.trace_add('write',self.target_changed);self.protocol('WM_DELETE_WINDOW',self.destroy)
+        self.bind('<Control-f>',self.focus_find);self.bind('<Control-F>',self.focus_find)
         self.reload(initial=True)
         if source in self.model['slots']:self.select_slot(source)
         self.after_idle(self.initial_view);self._watch=self.after(500,self.watch)
@@ -338,7 +355,45 @@ class CoreLayoutDialog(RememberedToplevel):
 
     def initial_view(self):
         if self._closed:return
-        self.update_idletasks();self.panes.sashpos(0,max(420,self.panes.winfo_width()-440));self.fit()
+        self.update_idletasks()
+        if self.side_visible:self.panes.sashpos(0,max(420,self.panes.winfo_width()-440))
+        self.fit()
+
+    def toggle_side(self):
+        self.side_visible=not self.side_visible
+        if self.side_visible:
+            self.panes.add(self.side,weight=1);self.update_idletasks();self.panes.sashpos(0,max(420,self.panes.winfo_width()-440))
+        else:self.panes.forget(self.side)
+        self.side_toggle_button.configure(text='편집 영역 접기' if self.side_visible else '편집 영역 펼치기')
+
+    def focus_find(self,event=None):
+        self.search_entry.focus_set();self.search_entry.selection_range(0,'end');return 'break'
+
+    def change_view_mode(self,event=None):
+        self.paint();self.fit()
+        self.notice.set('도면형: 함체·케이블과 전체 선번 연결을 실시간 표시합니다.' if self.display_mode.get()=='도면형' else '함체별 목록: 접속 번호를 묶음별로 확인합니다.')
+
+    def set_sort_reference(self,owner):
+        if owner is not None and owner not in self.model['cables']:return
+        self.sort_ref=owner
+        self.sort_cable.set(next((label for label,value in self.sort_options.items() if value==owner),''))
+        self.paint()
+        self.notice.set('정렬 기준: '+(core_layout_owner(self.model,owner) if owner else '각 연결 묶음')+' · '+self.sort_direction.get()+' · 표시 순서만 변경')
+
+    def sort_changed(self,event=None):
+        self.set_sort_reference(self.sort_options.get(self.sort_cable.get()))
+
+    def sort_by_selected(self):
+        if self.source and self.source[0] in self.model['cables']:self.set_sort_reference(self.source[0])
+        else:self.notice.set('기준으로 삼을 케이블 또는 그 케이블의 번호를 먼저 선택하세요.')
+
+    def sort_context(self,event):
+        slot,owner=self.hit(event.x,event.y);owner=slot[0] if slot else owner
+        if owner not in self.model['cables']:return 'break'
+        menu=self.sort_menu;menu.delete(0,'end');menu.add_command(label=core_layout_owner(self.model,owner)+' · 정렬 기준으로 지정',command=lambda:self.set_sort_reference(owner))
+        try:menu.tk_popup(event.x_root,event.y_root)
+        finally:menu.grab_release()
+        return 'break'
 
     def watch(self):
         self._watch=None
@@ -354,13 +409,21 @@ class CoreLayoutDialog(RememberedToplevel):
         if not self.valid():self.destroy();return
         had_preview=self.preview is not None;self.preview=None;self.view.set('현재');self.apply_button.configure(state='disabled')
         self.snapshot=plan_snapshot(self.store.conn);self.model=core_layout_model(self.snapshot);self.stamp=(self.store.data_revision(),self.store.conn.total_changes)
+        self.model['cable_order']=[str(c['id']) for c in self.store.cables()]
         self.owner_options={}
         for owner in sorted(self.model['owners'],key=lambda x:(core_layout_owner(self.model,x),x)):
             self.owner_options[f'{core_layout_owner(self.model,owner)} [{owner}]']=owner
         self.cable_combo.configure(values=tuple(self.owner_options))
+        self.sort_options={'각 연결 묶음':None}
+        for owner in sorted(self.model['cables'],key=lambda x:(core_layout_owner(self.model,x),x)):
+            cable=self.model['cables'][owner];ends=' ↔ '.join(str(self.model['nodes'].get(cable[n],{}).get('name','?')) for n in ('n1id','n2id'))
+            label=core_layout_owner(self.model,owner)+' · '+ends;original=label;number=2
+            while label in self.sort_options:label=original+f' ({number})';number+=1
+            self.sort_options[label]=owner
+        if self.sort_ref not in self.model['cables']:self.sort_ref=None
+        self.sort_combo.configure(values=tuple(self.sort_options))
+        self.sort_cable.set(next(label for label,owner in self.sort_options.items() if owner==self.sort_ref))
         if self.source not in self.model['slots']:self.source=None
-        if self.source is None and self.model['owners']:
-            owner=next(iter(self.owner_options.values()));self.source=sorted(self.model['owners'][owner])[0]
         self.fill_table();self.paint();self.show_details()
         if had_preview:self.notice.set('도면 변경을 실시간 반영했습니다. 입력한 대상 번호를 확인하고 다시 검토하세요.')
         elif not initial:self.notice.set('실시간 갱신 완료 · 변경 내용이 전체 연결도에 반영됐습니다.')
@@ -372,7 +435,9 @@ class CoreLayoutDialog(RememberedToplevel):
         return slot if slot!=self.source and slot in self.model['slots'] else None
 
     def display_model(self):
-        if self.preview and self.view.get()!='현재':return core_layout_model(core_layout_project(self.snapshot,self.preview))
+        if self.preview and self.view.get()!='현재':
+            model=core_layout_model(core_layout_project(self.snapshot,self.preview));model['cable_order']=self.model.get('cable_order',[])
+            return model
         return self.model
 
     def paint(self):
@@ -380,26 +445,37 @@ class CoreLayoutDialog(RememberedToplevel):
         model=self.display_model();source=self.source;target=self.selected_target()
         if self.preview and self.view.get()!='현재':source,target=target,source
         primary,_=core_layout_family(model,source);secondary,_=core_layout_family(model,target)
-        self.scene=core_layout_scene(model,primary,secondary);self.render()
+        if self.display_mode.get()=='도면형':
+            self.scene=core_layout_map_scene(model,primary,secondary,reference=self.sort_ref,descending=self.sort_direction.get()=='내림차순')
+        else:self.scene=core_layout_scene(core_layout_sorted_model(model,self.sort_ref,self.sort_direction.get()=='내림차순'),primary,secondary)
+        self.render()
         warning=f" · 접속정보 확인 {len(model['errors'])}개" if model['errors'] else ''
         self.summary.set(f"{'변경 후 미리보기 · 미적용' if self.preview and self.view.get()!='현재' else '현재 도면 · 실시간'} · 시설 {len(model['nodes'])}개 · 케이블 {len(model['cables'])}개 · 실제 접속 {model['pair_count']}개"+warning)
 
     def render(self):
-        x=self.canvas.xview()[0];y=self.canvas.yview()[0];self.canvas.delete('all');self.items={};k=self.scale
+        old_scale=getattr(self,'_render_scale',self.scale);x=self.canvas.canvasx(0)/old_scale;y=self.canvas.canvasy(0)/old_scale
+        old_transform=getattr(self,'_render_transform',None);transform=self.scene.get('transform')
+        if old_transform and transform:
+            factor,ox,oy=old_transform;new_factor,nx,ny=transform
+            x=(x-ox)/factor*new_factor+nx;y=(y-oy)/factor*new_factor+ny
+        self.canvas.delete('all');self.items={};k=self.scale
         self.canvas.configure(scrollregion=(0,0,self.scene['width']*k,self.scene['height']*k))
         for s in self.scene['shapes']:
-            if s['kind']=='rect':
-                item=self.canvas.create_rectangle(s['x']*k,s['y']*k,(s['x']+s['w'])*k,(s['y']+s['h'])*k,fill=s['fill'],outline=s['stroke'])
-                if s.get('slot') or s.get('owner'):self.items[item]=(s.get('slot'),s.get('owner'))
-            elif s['kind']=='line':self.canvas.create_line(*[v*k for v in s['points']],fill=s['fill'],width=max(1,s['thickness']*k),dash=s['dash'])
-            else:self.canvas.create_text(s['x']*k,s['y']*k,text=s['text'],anchor='nw',fill=s['fill'],font=('Malgun Gothic',-max(2,round(s['size']*k)),'bold' if s['bold'] else 'normal'),width=(s.get('width') or 0)*k)
-        self.canvas.xview_moveto(x);self.canvas.yview_moveto(y)
+            if s['kind'] in ('rect','oval'):
+                draw=self.canvas.create_rectangle if s['kind']=='rect' else self.canvas.create_oval
+                item=draw(s['x']*k,s['y']*k,(s['x']+s['w'])*k,(s['y']+s['h'])*k,fill=s['fill'],outline=s['stroke'])
+            elif s['kind']=='polygon':item=self.canvas.create_polygon(*[v*k for v in s['points']],fill=s['fill'],outline=s['stroke'])
+            elif s['kind']=='line':item=self.canvas.create_line(*[v*k for v in s['points']],fill=s['fill'],width=max(1,s['thickness']*k),dash=s.get('dash',()),arrow=s.get('arrow','none'))
+            else:item=self.canvas.create_text(s['x']*k,s['y']*k,text=s['text'],anchor='nw',fill=s['fill'],font=('Malgun Gothic',-max(2,round(s['size']*k)),'bold' if s['bold'] else 'normal'),width=(s.get('width') or 0)*k)
+            if s.get('slot') or s.get('owner'):self.items[item]=(s.get('slot'),s.get('owner'))
+        self.canvas.xview_moveto(max(0,x)/self.scene['width']);self.canvas.yview_moveto(max(0,y)/self.scene['height'])
+        self._render_scale=k;self._render_transform=transform
 
     def fill_table(self):
         self._syncing=True
         try:
             view=self.tree.yview();self.tree.delete(*self.tree.get_children())
-            if not self.source:return
+            if not self.source:self.cable_choice.set('');return
             owner=self.source[0];model=self.display_model();target=self.selected_target();shown_source=self.source
             if self.preview and self.view.get()!='현재':shown_source,target=target,self.source
             self.cable_choice.set(next((label for label,c in self.owner_options.items() if c==owner),''))
@@ -415,7 +491,8 @@ class CoreLayoutDialog(RememberedToplevel):
         finally:self._syncing=False
 
     def show_details(self):
-        if not self.source:return
+        if not self.source:
+            self.info.set('번호 또는 케이블을 클릭하세요.');self.set_review_text('');return
         row=self.model['slots'][self.source];_,groups=core_layout_family(self.model,self.source)
         self.info.set(core_layout_slot(self.model,self.source)+'\n'+(core_layout_id(row.get('core_id')) or '(ID 없음)')+' · '+str(row.get('detail') or '')+f'\n같은 ID 실제 연결 {len(groups)}구간')
         if self.preview:return

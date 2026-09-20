@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V122 opens the live whole-core layout in drawing mode by default. Canonical
+  planning/core_layout_map.py paints facility symbols, saved cable geometry and
+  selectable actual splice pairs using one uniform coordinate transform. Keep
+  facility positions intact; annotation placement cannot invent physical edges.
+  Reference-cable ascending/descending order is a presentation operation only;
+  reorder paired endpoints together, include disconnected groups and mark any
+  multiple reference numbers rather than picking an arbitrary branch identity.
+  Preserve the modeless live Store watcher, world viewport, selection, pending
+  input and reviewed preview/apply/undo safeguards. The separate view and its
+  collapsible edit area must work on another monitor. Run check_core_layout_map.py
+  and the existing core-layout Windows gate, inspect native screenshots and
+  complete the full automatic release/installed-launcher verification.
+
 - V121 reference cable details include the main cable dialog's upper-right
   completion/signal panel. Use core_completion_brief, core_id_signal_summary
   and core_completion_locations with the pinned reference Store and selected
