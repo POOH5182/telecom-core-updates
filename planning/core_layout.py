@@ -278,6 +278,7 @@ def core_layout_pending(app,store,cable_id):
 
 class CoreLayoutDialog(RememberedToplevel):
     def __init__(self,app,source=None):
+        self._stage_kind='after';self._stage_reference=False
         super().__init__(app);self.app=app;self.store=app.store;self._generation=self.store._view_generation
         self.title('후도면 전체 선번 연결도 · 실시간');self.geometry('1560x920');self.minsize(960,640)
         self.source=None;self.preview=None;self.scale=1.;self._watch=None;self._target_job=None;self._closed=False;self._syncing=False
@@ -303,7 +304,7 @@ class CoreLayoutDialog(RememberedToplevel):
         self.sort_direction_combo.bind('<<ComboboxSelected>>',self.sort_changed)
         self.sort_selected_button=sorting.add(ttk.Button(sorting,text='선택 케이블 기준',command=self.sort_by_selected))
         ttk.Label(self,textvariable=self.summary,padding=(10,0,10,4),foreground='#1769aa').pack(fill='x')
-        self.guide=ttk.Label(self,text='함체·케이블 위 번호를 클릭하면 경로를 표시합니다. 같은 줄의 양쪽 번호끼리 접속 · 정렬은 표시 순서만 변경 · 케이블 우클릭: 정렬 기준 지정',padding=(10,0,10,5),wraplength=1480)
+        self.guide=ttk.Label(self,text='번호 클릭: 경로 · Shift+번호: 대상 · 같은 줄 양쪽 번호끼리 접속 · 정렬은 표시만 변경 · 케이블 우클릭: 정렬 기준',padding=(10,0,10,5),wraplength=1480)
         self.guide.pack(fill='x');self.guide.bind('<Configure>',lambda e:self.guide.configure(wraplength=max(400,e.width-24)))
         self.panes=ttk.Panedwindow(self,orient='horizontal');self.panes.pack(fill='both',expand=True,padx=8,pady=(0,6))
         body=ttk.Frame(self.panes);body.rowconfigure(0,weight=1);body.columnconfigure(0,weight=1);self.panes.add(body,weight=4)
@@ -328,7 +329,7 @@ class CoreLayoutDialog(RememberedToplevel):
         self.tree.tag_configure('source',background='#dbeafe');self.tree.tag_configure('target',background='#ffedd5')
         self.tree.bind('<<TreeviewSelect>>',self.pick_table);self.tree.bind('<Shift-ButtonPress-1>',self.pick_target)
         self.tree.bind('<Control-z>',lambda e:self.history(False));self.tree.bind('<Control-y>',lambda e:self.history(True))
-        edit_tip=ttk.Label(side,text='번호 클릭: 선택 · Shift+번호 클릭: 이동·교환 대상',wraplength=410);edit_tip.pack(fill='x',pady=(6,2))
+        edit_tip=ttk.Label(side,text='번호 클릭: 선택 · Shift+번호 클릭: 이동·교환 대상',wraplength=410);self.edit_tip=edit_tip;edit_tip.pack(fill='x',pady=(6,2))
         change=ttk.Frame(side);change.pack(fill='x',pady=4)
         ttk.Label(change,text='변경할 번호').pack(side='left');self.target_entry=ttk.Entry(change,textvariable=self.target,width=8);self.target_entry.pack(side='left',padx=6)
         self.review_button=ttk.Button(change,text='변경 검토',command=self.review);self.review_button.pack(side='left')
@@ -346,12 +347,22 @@ class CoreLayoutDialog(RememberedToplevel):
         self.notice_label.pack(side='bottom',fill='x',before=self.panes)
         self.target.trace_add('write',self.target_changed);self.protocol('WM_DELETE_WINDOW',self.destroy)
         self.bind('<Control-f>',self.focus_find);self.bind('<Control-F>',self.focus_find)
+        self._compact=None;self.side_heading=heading
+        self.bind('<Configure>',self.resize_controls,add='+')
         self.reload(initial=True)
         if source in self.model['slots']:self.select_slot(source)
         self.after_idle(self.initial_view);self._watch=self.after(500,self.watch)
 
     def valid(self):
         return self.app.store is self.store and self._generation==getattr(self.store,'_view_generation',0) and completion_kind(self.store)=='after'
+
+    def resize_controls(self,event):
+        if event.widget is not self or self._closed:return
+        compact=event.height<740
+        if compact==self._compact:return
+        self._compact=compact;self.review_text.configure(height=2 if compact else 4)
+        if compact:self.edit_tip.pack_forget()
+        else:self.edit_tip.pack(side='bottom',fill='x',pady=(6,2),before=self.side_heading)
 
     def initial_view(self):
         if self._closed:return

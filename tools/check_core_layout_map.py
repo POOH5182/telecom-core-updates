@@ -341,6 +341,15 @@ def windows_ui():
             for control in (dialog.tree, dialog.target_entry, dialog.review_button, dialog.apply_button):
                 assert control.winfo_ismapped()
             assert dialog.source == selected
+            assert dialog._stage_kind == 'after' and dialog.title().startswith('[후도면]')
+            dialog.geometry('960x650')
+            app.update()
+            assert dialog.tree.winfo_height() >= 50
+            assert dialog._compact and int(dialog.review_text.cget('height')) == 2
+            dialog.geometry('960x800')
+            app.update()
+            assert not dialog._compact and dialog.edit_tip.winfo_ismapped()
+            assert int(dialog.review_text.cget('height')) == 4
             dialog.destroy()
             app.update()
             assert dialog._watch is None and app._core_layout_window is None
