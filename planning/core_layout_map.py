@@ -6,6 +6,29 @@ writes identities, changes a splice, or treats equal IDs as a physical edge.
 import math as _clm_math
 import json as _clm_json
 
+LAYOUT_MAP_CONTEXT='#ff7a00'
+LAYOUT_MAP_SELECTED='#7c3aed'
+LAYOUT_MAP_TARGET='#00897b'
+
+
+def core_layout_box_leader(anchor,box):
+    """A display-only leader starts at the facility, never on a cable."""
+    ax,ay=anchor;x,y,w,h=box
+    bx=max(x,min(ax,x+w));by=max(y,min(ay,y+h))
+    if x<=ax<=x+w and y<=ay<=y+h:by=y
+    return [ax,ay,bx,by]
+
+
+def core_layout_box_positions(value):
+    """Validate local drawing-relative offsets without changing the drawing."""
+    if not isinstance(value,dict):return {}
+    result={}
+    for key,position in value.items():
+        if not isinstance(key,str) or not isinstance(position,(list,tuple)) or len(position)!=2:continue
+        if any(type(v) not in (int,float) or not _clm_math.isfinite(v) or abs(v)>1e9 for v in position):continue
+        result[key]=tuple(float(v) for v in position)
+    return result
+
 
 def core_layout_reference_index(model,reference):
     """Physical component -> every number it reaches in the chosen cable."""
@@ -96,14 +119,15 @@ class _CoreLayoutMapSpace:
         box=(cx-w/2,bottom,w,h);self.add(box);return box
 
 
-def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descending=False):
+def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descending=False,positions=None,selected=(),selected_slot=None,selected_node=None):
     """Facility symbols and physical cables with selectable paired-number banks.
 
     ``anchors`` are exactly one uniform transform of saved coordinates; only
     number/identity annotations move to avoid collisions. ``connections`` keeps
     every valid stored pair in its visible order, including unnamed cores.
     """
-    primary=set(primary);secondary=set(secondary);nodes=model.get('nodes',{});cables=model.get('cables',{});slots=model.get('slots',{})
+    primary=set(primary);secondary=set(secondary);selected=set(selected);nodes=model.get('nodes',{});cables=model.get('cables',{});slots=model.get('slots',{})
+    positions=core_layout_box_positions(positions);node_boxes={}
     refindex=core_layout_reference_index(model,reference);shapes=[];cells=[];connections=[];annotations=[];space=_CoreLayoutMapSpace()
     # A stable scale is essential while a modeless view watches edits or undo.
     # Never derive scale from cable counts/lengths, which would move the viewport.
@@ -133,42 +157,31 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
         return (0 if basis else 1,signed(basis),signed((slot[1],)),slot)
     def number_label(slot):
         return str(slots.get(slot,{}).get('label') or slot[1]) if slot[0].startswith('PORT:') else str(slot[1])
+    def colors(members):
+        members=set(members);inks=[]
+        if members & (primary-selected):inks.append(LAYOUT_MAP_CONTEXT)
+        if members & selected:inks.append(LAYOUT_MAP_SELECTED)
+        if members & secondary:inks.append(LAYOUT_MAP_TARGET)
+        return inks
     def number(slot,x,y,w=27,h=23,**meta):
         color='#d97706' if slot in secondary else '#2563eb' if slot in primary else '#1d4ed8'
         fill='#ffedd5' if slot in secondary else '#dbeafe' if slot in primary else '#f0f7ff'
-        rect(x,y,w,h,fill,color if slot in primary or slot in secondary else '#bfdbfe',slot=slot,owner=slot[0],**meta)
+        pulse=colors((slot,))
+        rect(x,y,w,h,fill,color if slot in primary or slot in secondary else '#bfdbfe',slot=slot,owner=slot[0],blink_colors=pulse,**meta)
         label=number_label(slot);size=min(12,max(8,int((w-6)/max(1,_core_layout_map_label_width(label,1)))))
         shown=label
         if _core_layout_map_label_width(shown,size)>w-6:
             while shown and _core_layout_map_label_width(shown+'…',size)>w-6:shown=shown[:-1]
             shown+='…'
-        text(x+3,y+4,shown,color,size,slot in primary or slot in secondary,slot=slot,owner=slot[0],**meta)
-    def near_node(nid,owner,distance=36):
-        x,y=anchors[nid]
-        if owner.startswith('PORT:'):return x,y+distance
-        cable=cables.get(owner,{})
-        other=cable.get('n2id') if cable.get('n1id')==nid else cable.get('n1id')
-        ox,oy=anchors.get(other,(x,y-100));dx,dy=ox-x,oy-y;length=_clm_math.hypot(dx,dy) or 1
-        return x+dx/length*distance,y+dy/length*distance
-    def group_angle(nid,owners):
-        x,y=anchors[nid];vectors=[]
-        for owner in owners:
-            qx,qy=near_node(nid,owner);vectors.append((qx-x,qy-y))
-        dx=sum(v[0] for v in vectors);dy=sum(v[1] for v in vectors)
-        if _clm_math.hypot(dx,dy)<1:
-            dx,dy=-vectors[0][1],vectors[0][0]
-        return _clm_math.atan2(dy,dx)
+        text(x+3,y+4,shown,color,size,slot in primary or slot in secondary,slot=slot,owner=slot[0],blink_colors=pulse,**meta)
+        if slot==selected_slot and meta.get('node_id')==selected_node:
+            rect(x-2,y-2,w+4,h+4,'',LAYOUT_MAP_SELECTED,slot=slot,owner=slot[0],thickness=2,role='clicked_number',box_id=meta.get('box_id'),node_id=selected_node)
     def clipped_label(value,width,size=10):
         value=str(value);shown=''
         for ch in value:
             if _core_layout_map_label_width(shown+ch,size)>width-12:return shown+'…'
             shown+=ch
         return shown
-    def leader(nid,owner,box,color='#93a5bc'):
-        ax,ay=near_node(nid,owner);x,y,w,h=box
-        bx=max(x,min(ax,x+w));by=max(y,min(ay,y+h))
-        if x<=ax<=x+w and y<=ay<=y+h:by=y
-        line([ax,ay,bx,by],color,1,dash=(3,3),owner=owner,node_id=nid,nodeid=nid,role='leader')
     # Reserve all symbol footprints before labels/groups are placed.
     for x,y in anchors.values():space.add((x-21,y-21,42,42))
     bundles={}
@@ -177,7 +190,7 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
     cable_order=list(dict.fromkeys([cid for cid in model.get('cable_order',()) if cid in cables]+list(cables)))
     for cid in cable_order:
         cable=cables[cid];bundles.setdefault(tuple(sorted((cable.get('n1id',''),cable.get('n2id','')))),[]).append(cid)
-    cable_geometry={};cable_labels=[]
+    cable_labels=[]
     for ends,ids in sorted(bundles.items()):
         if any(n not in anchors for n in ends):continue
         ax,ay=anchors[ends[0]];bx,by=anchors[ends[1]];dx,dy=bx-ax,by-ay;length=_clm_math.hypot(dx,dy) or 1
@@ -188,24 +201,44 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
             points=[]
             for step in range(17):
                 t=step/16;u=1-t;points.extend((u*u*ax+2*u*t*mx+t*t*bx,u*u*ay+2*u*t*my+t*t*by))
-            cable_geometry[cid]=points
             try:size=int(cable.get('size') or 0)
             except (ValueError,TypeError):size=0
             color='#d32f2f' if size<=12 else '#1769aa' if size<=36 else '#19703a' if size<=72 else '#e24a9b' if size<=144 else '#795548'
             status=str(cable.get('status') or '기설');dash=(8,6) if status=='신설' else ()
             meta=dict(owner=cid,cable_id=cid,role='cable',status=status)
-            line(points,color,3,dash,**meta)
-            # An offset halo leaves original construction color/dashes legible.
-            for group,ink,shift in ((primary,'#2563eb',-4),(secondary,'#d97706',4)):
-                if any(s[0]==cid for s in group):
-                    halo=[value+(-dy/length*shift if i%2==0 else dx/length*shift) for i,value in enumerate(points)]
-                    line(halo,ink,2.2,(),**dict(meta,role='core_route'))
+            # Timer pulses use the original cable geometry and restore its base
+            # color/dashes. Shared cables alternate each applicable route color.
+            line(points,color,3,dash,blink_colors=colors(s for s in primary|selected|secondary if s[0]==cid),**meta)
             if status in ('철거','절단'):
                 text((ax+2*mx+bx)/4-7,(ay+2*my+by)/4-10,'×' if status=='철거' else '★','#111111' if status=='철거' else '#e11d48',18,True,**meta)
             spec=str(cable.get('spec') or str(size)+'C');lot=str(extra.get('lotNo') or '').strip()
             caption=owner_name(cid)+'\n'+('신설 ' if status=='신설' else status+' ' if status in ('철거','절단') else '')+spec+((' ='+lot+'=') if lot else '')
             cable_labels.append((cid,(ax+2*mx+bx)/4,(ay+2*my+by)/4,caption,color))
-    # Labels reserve room before paired banks; individual facilities never move.
+    layouts=[]
+    for panel in sorted(model.get('panels',()),key=lambda p:(float(p['node'].get('y') or 0),float(p['node'].get('x') or 0),p['node']['id'])):
+        nid=panel['node']['id']
+        if nid not in anchors:continue
+        sections=[];w=420 if panel['groups'] else 320
+        for gi,group in enumerate(panel['groups']):
+            owners=tuple(group['owners']);pairs=sorted(group['pairs'],key=pair_key)
+            if not pairs:continue
+            members=[slot for pair in pairs for slot in pair]
+            cell_w=max(27,min(75,max(_core_layout_map_label_width(number_label(s),11) for s in members)+9))
+            columns=max(1,min(7,int((w/2-30)/cell_w)));rows=_clm_math.ceil(len(pairs)/columns)
+            ambiguous=any(len(refindex.get(s,()))>1 for s in members)
+            disconnected=bool(reference) and all(not refindex.get(s) for s in members)
+            sections.append(dict(kind='pairs',index=gi,owners=owners,pairs=pairs,slots=members,cell_w=cell_w,columns=columns,rows=rows,
+                                 ambiguous=ambiguous,disconnected=disconnected,height=27+rows*25+(17 if ambiguous or disconnected else 0)))
+        for single in panel['singles']:
+            items=sorted(single['slots'],key=single_key)
+            cell_w=max(27,min(75,max((_core_layout_map_label_width(number_label(s),11) for s in items),default=18)+9))
+            columns=max(1,int((w-20)/cell_w));rows=_clm_math.ceil(len(items)/columns)
+            sections.append(dict(kind='single',owner=single['owner'],slots=items,single=single,cell_w=cell_w,columns=columns,height=24+rows*25))
+        h=45+sum(section['height'] for section in sections)+(18 if not sections else 0)
+        layouts.append((panel,w,h,sections))
+        if nid in positions:
+            nx,ny=anchors[nid];dx,dy=positions[nid];space.add((nx+dx*factor,ny+dy*factor,w,h))
+    # Labels reserve room before automatic boxes; pinned boxes retain their spot.
     for nid,node in sorted(nodes.items()):
         x,y=anchors[nid];extra=_core_layout_map_extra(node);name=str(node.get('name') or '(시설명 없음)');details=[]
         if node.get('type')=='hamche':
@@ -236,53 +269,52 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
         line([x,y,px+w/2,py+h],'#b9c3cb',1,owner=cid,role='leader')
         rect(px,py,w,h,'#fffde7','#ece9b8',owner=cid,cable_id=cid,role='cable_label')
         text(px+6,py+4,caption,color,10,True,width=w-10,owner=cid,cable_id=cid,role='cable_label')
-    # Pair banks have exactly the same dimensions/order on both sides. No range
-    # compression hides a nonconsecutive partner or makes selecting ambiguous.
-    for panel in sorted(model.get('panels',()),key=lambda p:(float(p['node'].get('y') or 0),float(p['node'].get('x') or 0),p['node']['id'])):
-        nid=panel['node']['id']
-        if nid not in anchors:continue
-        nx,ny=anchors[nid]
-        for gi,group in enumerate(panel['groups']):
-            owners=tuple(group['owners']);pairs=sorted(group['pairs'],key=pair_key)
-            if not pairs:continue
-            ambiguous=any(len(refindex.get(a,()))>1 or len(refindex.get(b,()))>1 for a,b in pairs)
-            disconnected=bool(reference) and all(not refindex.get(a) and not refindex.get(b) for a,b in pairs)
-            labels=[number_label(slot) for pair in pairs for slot in pair]
-            cell_w=max(27,min(75,max(_core_layout_map_label_width(v,11) for v in labels)+9))
-            columns=max(1,min(8,int(210/cell_w),len(pairs)));rows=_clm_math.ceil(len(pairs)/columns)
-            bank_w=max(76,columns*cell_w);gap=32;w=2*bank_w+gap+16;h=47+rows*25+(18 if ambiguous or disconnected else 0)
-            box=space.place(nx,ny,w,h,group_angle(nid,owners),55)
-            x,y,w,h=box;annotations.append(dict(kind='pairs',node_id=nid,owners=owners,x=x,y=y,w=w,h=h))
-            connection=dict(node_id=nid,owners=owners,pairs=pairs,multi_anchor=ambiguous,unanchored=disconnected,bounds=box)
-            connections.append(connection)
-            # Leaders end at their respective number bank rather than imply a
-            # new physical splice through an unrelated nearby cable.
-            leader(nid,owners[0],(x,y,bank_w+8,h));leader(nid,owners[1],(x+bank_w+gap+8,y,bank_w+8,h))
-            rect(x,y,w,h,'#ffffff','#bfdbfe',node_id=nid,nodeid=nid,role='pair_group')
-            text(x+6,y+5,clipped_label(owner_name(owners[0]),bank_w,10),'#1e40af',10,True,owner=owners[0],node_id=nid,role='owner')
-            text(x+bank_w+gap+8,y+5,clipped_label(owner_name(owners[1]),bank_w,10),'#1e40af',10,True,owner=owners[1],node_id=nid,role='owner')
-            text(x+6,y+22,clipped_label(str(panel['node'].get('name') or '')+' · '+str(len(pairs))+'접속',w-12,9),'#64748b',9,width=w-12,node_id=nid,role='pair_caption')
-            for i,(a,b) in enumerate(pairs):
-                row,col=divmod(i,columns);yy=y+42+row*25
-                common=dict(node_id=nid,nodeid=nid,pair_index=i,group_index=gi)
-                number(a,x+6+col*cell_w,yy,cell_w-2,**common);number(b,x+bank_w+gap+8+col*cell_w,yy,cell_w-2,**common)
-                if col==0:arrow(x+bank_w+10,yy+11,x+bank_w+gap+3,yy+11)
-            if ambiguous:text(x+6,y+h-16,'기준 케이블 번호가 여러 개인 연결 구간','#b45309',9,True,width=w-12,node_id=nid,role='multi_anchor')
-            elif disconnected:text(x+6,y+h-16,'기준 케이블과 별도 구간 · 자체 번호순','#64748b',9,width=w-12,node_id=nid,role='unanchored')
-        for single in panel['singles']:
-            owner=single['owner'];items=sorted(single['slots'],key=single_key)
-            # Empty physical cables remain identifiable with a compact free
-            # count, instead of hundreds of empty selectable number rectangles.
-            labels=[number_label(slot) for slot in items];cell_w=max(27,min(75,max((_core_layout_map_label_width(v,11) for v in labels),default=18)+9))
-            columns=max(1,min(8,int(235/cell_w),max(1,len(items))));rows=_clm_math.ceil(len(items)/columns)
-            title=owner_name(owner);summary=('미접속 '+str(len(items))+' · ' if items else '')+'빈 번호 '+str(single['free'])+'/'+str(single['total'])
-            w=max(142,min(268,max(columns*cell_w+12,_core_layout_map_label_width(title,10)+12,_core_layout_map_label_width(summary,10)+12)));h=40+rows*25
-            box=space.place(nx,ny,w,h,group_angle(nid,(owner,))+.55,65)
-            x,y,w,h=box;annotations.append(dict(kind='unpaired',node_id=nid,owner=owner,x=x,y=y,w=w,h=h))
-            leader(nid,owner,box,'#c2c9d0');rect(x,y,w,h,'#fafcff','#d5dfeb',owner=owner,node_id=nid,nodeid=nid,role='unpaired_group')
-            text(x+6,y+4,clipped_label(title,w-12,10),'#475569',10,True,owner=owner,node_id=nid,role='owner')
-            text(x+6,y+21,summary,'#a16207' if items else '#64748b',10,owner=owner,node_id=nid,role='unpaired_caption')
-            for i,slot in enumerate(items):r,c=divmod(i,columns);number(slot,x+6+c*cell_w,y+38+r*25,cell_w-2,node_id=nid,nodeid=nid,role='unpaired')
+    # One movable box owns every pair and unpaired number at this facility.
+    # Cable-pair sections are inside the box; only its facility leader leaves it.
+    for panel,w,h,sections in layouts:
+        nid=panel['node']['id'];nx,ny=anchors[nid]
+        if nid in positions:
+            dx,dy=positions[nid];box=(nx+dx*factor,ny+dy*factor,w,h)
+        else:box=space.place(nx,ny,w,h,.55,48)
+        x,y,w,h=box
+        node_boxes[nid]=dict(node_id=nid,x=x,y=y,w=w,h=h,offset=((x-nx)/factor,(y-ny)/factor))
+        annotations.append(dict(kind='node_box',node_id=nid,x=x,y=y,w=w,h=h))
+        represented={slot for section in sections for slot in section.get('slots',())}
+        line(core_layout_box_leader((nx,ny),box),'#8094ae',1.5,dash=(3,3),node_id=nid,leader_box_id=nid,role='node_box_leader',blink_colors=colors(represented))
+        meta=dict(box_id=nid,node_id=nid,nodeid=nid)
+        rect(x,y,w,h,'#ffffff','#94a3b8',role='node_box',**meta)
+        rect(x,y,w,32,'#ede9fe' if nid==selected_node else '#e7eef8','#94a3b8',role='box_header',**meta)
+        title=str(panel['node'].get('name') or '(시설명 없음)')+(' · 선택 위치' if nid==selected_node else '')
+        text(x+9,y+8,clipped_label(title,w-112,12),LAYOUT_MAP_SELECTED if nid==selected_node else '#163957',12,True,role='box_header',**meta)
+        text(x+w-92,y+9,'제목 드래그 이동','#64748b',10,role='box_header',**meta)
+        yy=y+39
+        if not sections:text(x+10,yy,'연결 케이블 없음','#64748b',10,**meta)
+        for section in sections:
+            if section['kind']=='pairs':
+                owners=section['owners'];pairs=section['pairs'];cell_w=section['cell_w'];columns=section['columns']
+                left=x+10;right=x+w/2+18;bank_w=w/2-30
+                bounds=(x+6,yy-3,w-12,section['height'])
+                connections.append(dict(node_id=nid,owners=owners,pairs=pairs,multi_anchor=section['ambiguous'],unanchored=section['disconnected'],bounds=bounds))
+                text(left,yy,clipped_label(owner_name(owners[0]),bank_w,10),'#1e40af',10,True,owner=owners[0],role='owner',**meta)
+                text(right,yy,clipped_label(owner_name(owners[1]),bank_w,10),'#1e40af',10,True,owner=owners[1],role='owner',**meta)
+                for i,(a,b) in enumerate(pairs):
+                    row,col=divmod(i,columns);number_y=yy+19+row*25
+                    common=dict(pair_index=i,group_index=section['index'],**meta)
+                    number(a,left+col*cell_w,number_y,cell_w-2,**common)
+                    number(b,right+col*cell_w,number_y,cell_w-2,**common)
+                    if col==0:arrow(x+w/2-12,number_y+11,x+w/2+10,number_y+11,**meta)
+                warning_y=yy+19+section['rows']*25
+                if section['ambiguous']:text(left,warning_y,'기준 케이블 번호가 여러 개인 연결 구간','#b45309',9,True,role='multi_anchor',**meta)
+                elif section['disconnected']:text(left,warning_y,'기준 케이블과 별도 구간 · 자체 번호순','#64748b',9,role='unanchored',**meta)
+            else:
+                owner=section['owner'];items=section['slots'];single=section['single']
+                summary=('미접속 '+str(len(items))+' · ' if items else '')+'빈 '+str(single['free'])+'/'+str(single['total'])
+                text(x+10,yy,clipped_label(owner_name(owner)+' · '+summary,w-20,10),'#a16207' if items else '#64748b',10,owner=owner,role='unpaired_caption',**meta)
+                for i,slot in enumerate(items):
+                    row,col=divmod(i,section['columns'])
+                    number(slot,x+10+col*section['cell_w'],yy+18+row*25,section['cell_w']-2,role='unpaired',**meta)
+            yy+=section['height']
+            if section is not sections[-1]:line([x+8,yy-5,x+w-8,yy-5],'#e2e8f0',1,**meta)
     # Facility glyphs paint last, remaining distinguishable at every zoom.
     for nid,node in sorted(nodes.items()):
         x,y=anchors[nid];kind,fill,stroke,label,ink=_core_layout_map_node_visual(node);r=12;meta=dict(node_id=nid,nodeid=nid,role='facility',facility_type=node.get('type','hamche'))
@@ -306,8 +338,9 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
         if s['kind'] in ('line','polygon'):s['points']=[v+(ox if i%2==0 else oy) for i,v in enumerate(s['points'])]
         else:s['x']+=ox;s['y']+=oy
     for item in annotations:item['x']+=ox;item['y']+=oy
+    for item in node_boxes.values():item['x']+=ox;item['y']+=oy
     for item in connections:
         x,y,w,h=item['bounds'];item['bounds']=(x+ox,y+oy,w,h)
     return dict(width=max(800,right+ox+60),height=max(500,bottom+oy+60),shapes=shapes,cells=cells,cards=[],
                 anchors={nid:(x+ox,y+oy) for nid,(x,y) in anchors.items()},transform=(factor,ox,oy),connections=connections,
-                annotations=annotations,reference=reference,descending=bool(descending),reference_index=refindex)
+                annotations=annotations,node_boxes=node_boxes,reference=reference,descending=bool(descending),reference_index=refindex)

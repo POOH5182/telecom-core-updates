@@ -39,7 +39,7 @@ jobs:
         run: python -m unittest discover -s tools -p "test_*.py" -v
       - name: 배포할 프로그램 준비
         run: python tools/materialize_release.py
-      - name: 도면형 전체 연결도·기준 케이블 정렬·실시간 접속·화면 유지 검증
+      - name: 함체 통합 연결도·초기 전체 보기·박스 이동·구간 점멸·실시간 갱신 검증
         run: python tools/check_core_layout_map.py --emit-screenshots
       - name: 새 창 케이블 우측 신호·연결 상태·선택 갱신·단계 격리 검증
         run: python tools/check_reference_core_status.py --emit-screenshots

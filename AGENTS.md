@@ -1,5 +1,24 @@
 # Telecom Core updater project
 
+- V123 groups every facility's splice and unpaired cable sections in one movable
+  drawing box. Its display leader starts at the exact facility anchor; do not
+  attach splice-box leaders to nearby cable points or invent physical edges.
+  Header/background drag changes only local per-drawing *.core-layout.json
+  offsets relative to the facility, retaining all other boxes, source geometry,
+  splices, drafts and history. Preserve positions through sorting, live edits,
+  preview, undo and reopen; reset positions is a display-only action.
+- Open the whole-core drawing fitted to the settled full canvas with the edit
+  pane collapsed, including very spread-out drawings below the old 8% limit.
+  A number click opens editing and marks the clicked facility. Pulse actual
+  cable strokes/numbers orange for same-ID context, purple for the selected
+  physical component, and teal for an edit target. Shared cables alternate
+  applicable colors and restore base styles between 330-ms pulses. Never join
+  disconnected matching IDs or repaint the entire scene on a timer tick.
+  Stop timers on clear/Escape, failed search, invalidated drawing and close;
+  keep main/reference highlights independent. Run the real native drag, persisted
+  reopen, first-open fit, observed pulse colors and cleanup gates in
+  check_core_layout_map.py plus the full existing release/launcher verification.
+
 - V122 opens the live whole-core layout in drawing mode by default. Canonical
   planning/core_layout_map.py paints facility symbols, saved cable geometry and
   selectable actual splice pairs using one uniform coordinate transform. Keep

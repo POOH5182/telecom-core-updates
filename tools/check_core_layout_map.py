@@ -62,6 +62,51 @@ class MapTests(unittest.TestCase):
     def model(self):
         return wf.core_layout_model(wf.plan_snapshot(self.store.conn))
 
+    def test_one_box_per_facility_contains_every_cable_section_and_leads_to_facility(self):
+        before=self.state();model=self.model();scene=wf.core_layout_map_scene(model)
+        boxes=scene['node_boxes'];self.assertEqual(set(boxes),set(model['nodes']))
+        self.assertEqual(len([s for s in scene['shapes'] if s.get('role')=='node_box']),len(boxes))
+        leaders=[s for s in scene['shapes'] if s.get('role')=='node_box_leader']
+        self.assertEqual(len(leaders),len(boxes))
+        for shape in leaders:
+            nid=shape['node_id'];box=boxes[nid];x,y,w,h=(box[k] for k in ('x','y','w','h'))
+            self.assertEqual(tuple(shape['points'][:2]),scene['anchors'][nid])
+            px,py=shape['points'][-2:];self.assertTrue(x<=px<=x+w and y<=py<=y+h)
+            self.assertNotIn('owner',shape)
+        for cell in scene['cells']:
+            box=boxes[cell['node_id']];self.assertEqual(cell['box_id'],cell['node_id'])
+            self.assertTrue(box['x']<=cell['x'] and box['y']<=cell['y'])
+            self.assertLessEqual(cell['x']+cell['w'],box['x']+box['w'])
+            self.assertLessEqual(cell['y']+cell['h'],box['y']+box['h'])
+        self.assertEqual(scene_pairs(scene),model_pairs(model));self.assertEqual(self.state(),before)
+
+    def test_manual_box_offsets_survive_sort_and_geometry_changes_without_rewiring(self):
+        model=self.model();before=self.state();nid=self.nodes[1];positions={nid:(-540.5,163.25)}
+        for direction in (False,True):
+            scene=wf.core_layout_map_scene(model,positions=positions,reference=self.cables[1],descending=direction)
+            box=scene['node_boxes'][nid];ax,ay=scene['anchors'][nid];factor=scene['transform'][0]
+            self.assertEqual(((box['x']-ax)/factor,(box['y']-ay)/factor),positions[nid])
+            self.assertEqual(scene_pairs(scene),model_pairs(model))
+        moved=copy.deepcopy(model);moved['nodes'][nid]['x']+=81;moved['nodes'][nid]['y']-=39
+        scene=wf.core_layout_map_scene(moved,positions=positions)
+        self.assertEqual(scene['node_boxes'][nid]['offset'],positions[nid]);self.assertEqual(self.state(),before)
+        self.assertEqual(wf.core_layout_box_positions({'good':[1,-2],'nan':[float('nan'),0],'bool':[True,0],'bad':[1]}),{'good':(1.,-2.)})
+
+    def test_selected_physical_component_pulses_separately_from_same_id_context(self):
+        model=self.model();slot=(self.cables[1],7);family,_=wf.core_layout_family(model,slot)
+        selected=wf.core_layout_component(model,slot);before=self.state()
+        scene=wf.core_layout_map_scene(model,family,selected=selected,selected_slot=slot,selected_node=self.nodes[1])
+        self.assertNotIn((self.cables[1],9),selected)
+        for shape in scene['shapes']:
+            if shape.get('slot') in selected and shape.get('role')!='clicked_number':
+                self.assertEqual(shape['blink_colors'],[wf.LAYOUT_MAP_SELECTED])
+            elif shape.get('slot') in family-selected:self.assertEqual(shape['blink_colors'],[wf.LAYOUT_MAP_CONTEXT])
+        cable=next(s for s in scene['shapes'] if s.get('role')=='cable' and s['cable_id']==self.cables[1])
+        self.assertEqual(cable['blink_colors'],[wf.LAYOUT_MAP_CONTEXT,wf.LAYOUT_MAP_SELECTED])
+        self.assertEqual({s['node_id'] for s in scene['shapes'] if s.get('role')=='clicked_number'},{self.nodes[1]})
+        self.assertFalse(any(s.get('blink_colors') for s in wf.core_layout_map_scene(model)['shapes']))
+        self.assertEqual(scene_pairs(scene),model_pairs(model));self.assertEqual(self.state(),before)
+
     def test_real_positions_every_pair_and_unconnected_used_numbers_are_visible(self):
         before = self.state()
         model = self.model()
@@ -361,8 +406,101 @@ def windows_ui():
     print('PASS Windows live drawing map, real click, reference sorting, external geometry/splices, focus/view preservation, preview/apply/undo and cleanup')
 
 
+
+def windows_facility_ui():
+    if sys.platform != 'win32':return
+    faulthandler.dump_traceback_later(180,exit=True)
+    with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,TELECOM_APP_HOME=temp), \
+         patch.object(code['messagebox'],'showinfo'),patch.object(code['messagebox'],'showwarning'), \
+         patch.object(code['messagebox'],'showerror') as error:
+        app=code['App']();errors=[];app.report_callback_exception=lambda *args:errors.append(args)
+        try:
+            s=app.store;nodes,cables=extended_fixture(s);s.backup_to(app.scenario_path('before'));app.update_title();app.refresh();app.update()
+            before=(wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())
+            dialog=wf.open_core_layout(app);dialog.geometry('1120x760+0+0');dialog.lift();app.update()
+            def wait(ms):
+                ready=wf.tk.BooleanVar();app.after(ms,lambda:ready.set(True));app.wait_variable(ready)
+            wait(80)
+            print('FACILITY MAP: automatic first-open whole drawing, no explicit fit call',flush=True)
+            assert not dialog.side_visible and not dialog.side.winfo_ismapped()
+            assert dialog.scene['width']*dialog.scale<=dialog.canvas.winfo_width()+1
+            assert dialog.scene['height']*dialog.scale<=dialog.canvas.winfo_height()+1
+            assert abs(dialog.canvas.canvasx(0))<2 and abs(dialog.canvas.canvasy(0))<2
+            assert set(dialog.scene['node_boxes'])==set(nodes)
+            if '--emit-screenshots' in sys.argv:
+                from check_desktop_design import screenshot
+                Path('dist').mkdir(exist_ok=True);screenshot(dialog,Path('dist')/'v123-initial-whole-map.png')
+
+            print('FACILITY MAP: real header drag, one facility leader, persisted local offset and no data/history write',flush=True)
+            nid=nodes[1];old_positions=copy.deepcopy(dialog.box_positions);dialog.zoom_to(1)
+            box=dialog.scene['node_boxes'][nid]
+            dialog.canvas.xview_moveto(max(0,box['x']-90)/dialog.scene['width'])
+            dialog.canvas.yview_moveto(max(0,box['y']-75)/dialog.scene['height']);app.update()
+            px=round((box['x']+70)*dialog.scale-dialog.canvas.canvasx(0));py=round((box['y']+15)*dialog.scale-dialog.canvas.canvasy(0))
+            assert dialog.hit_box(px,py)==nid and dialog.hit(px,py)[0] is None
+            dialog.canvas.event_generate('<ButtonPress-1>',x=px,y=py)
+            dialog.canvas.event_generate('<B1-Motion>',x=px+65,y=py+38)
+            app.update()
+            leader=dialog.box_leaders[nid]
+            assert tuple(dialog.canvas.coords(leader)[:2])==tuple(v*dialog.scale for v in dialog.scene['anchors'][nid])
+            dialog.canvas.event_generate('<ButtonRelease-1>',x=px+65,y=py+38);app.update()
+            actual=dialog.box_positions[nid];old=old_positions[nid]
+            assert abs(actual[0]-old[0]-65/1.5)<.001 and abs(actual[1]-old[1]-38/1.5)<.001
+            assert all(dialog.box_positions[n]==value for n,value in old_positions.items() if n!=nid)
+            assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==before
+            saved=copy.deepcopy(dialog.box_positions);path=dialog.position_path
+            assert path.is_file();dialog.destroy();app.update()
+            dialog=wf.open_core_layout(app);dialog.geometry('1120x760+0+0');app.update();wait(60)
+            assert dialog.box_positions==saved and not dialog.side_visible
+            assert dialog.scene['width']*dialog.scale<=dialog.canvas.winfo_width()+1
+            assert dialog.scene['height']*dialog.scale<=dialog.canvas.winfo_height()+1
+
+            print('FACILITY MAP: actual orange/purple/base timer colors on shared cable, clicked facility and Escape cleanup',flush=True)
+            slot=(cables[1],7);dialog.focus_slot(slot);app.update()
+            cell=next(c for c in dialog.scene['cells'] if c['slot']==slot)
+            x=round((cell['x']+cell['w']/2)*dialog.scale-dialog.canvas.canvasx(0));y=round((cell['y']+cell['h']/2)*dialog.scale-dialog.canvas.canvasy(0))
+            dialog.canvas.event_generate('<ButtonPress-1>',x=x,y=y);dialog.canvas.event_generate('<ButtonRelease-1>',x=x,y=y);app.update()
+            assert dialog.source==slot and dialog.source_node==cell['node_id'] and dialog.side_visible
+            item,base,styles=next((i,b,st) for i,b,st in dialog._blink_items
+                                 if dialog.items.get(i)==(None,cables[1]) and dialog.canvas.type(i)=='line')
+            observed={dialog.canvas.itemcget(item,'fill')};selected_item=next(i for i in dialog.items if dialog.items[i][0]==slot and dialog.canvas.type(i)=='rectangle')
+            outlines={dialog.canvas.itemcget(selected_item,'outline')}
+            for _ in range(10):
+                wait(110);observed.add(dialog.canvas.itemcget(item,'fill'));outlines.add(dialog.canvas.itemcget(selected_item,'outline'))
+            assert {base['fill'],wf.LAYOUT_MAP_CONTEXT,wf.LAYOUT_MAP_SELECTED}<=observed,observed
+            assert wf.LAYOUT_MAP_SELECTED in outlines and len(outlines)>=2,outlines
+            assert not app.highlight_cables
+            assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==before
+            dialog._blink_phase=2;dialog.paint_blink()
+            if '--emit-screenshots' in sys.argv:screenshot(dialog,Path('dist')/'v123-selected-component.png')
+            dialog.canvas.event_generate('<Escape>');app.update()
+            assert dialog.source is None and dialog._blink_job is None and not dialog._blink_items
+            dialog.select_slot(slot);app.update();assert dialog._blink_job is not None
+            dialog.query.set('SYNTH-no-such-core');dialog.find();assert dialog._blink_job is None
+            dialog.select_slot(slot);app.update();assert dialog._blink_job is not None
+            dialog.destroy();app.update();assert dialog._blink_job is None and dialog._fit_job is None
+
+            print('FACILITY MAP: very spread-out drawing still fits at first open, with all facilities and boxes',flush=True)
+            with s.action('후도면 선번 연결도 변경'):
+                s.conn.execute('UPDATE nodes SET x=x*80,y=y*80')
+            app.refresh();app.update();dialog=wf.open_core_layout(app);dialog.geometry('960x650+0+0');app.update();wait(80)
+            assert dialog.scale<.08
+            assert dialog.scene['width']*dialog.scale<=dialog.canvas.winfo_width()+1
+            assert dialog.scene['height']*dialog.scale<=dialog.canvas.winfo_height()+1
+            assert set(dialog.scene['anchors'])==set(nodes) and set(dialog.scene['node_boxes'])==set(nodes)
+            assert dialog.box_positions==saved
+            dialog.destroy();s.undo();app.refresh();app.update()
+            assert (wf.plan_snapshot(s.conn),wf.state(s))==before[:2]
+            assert not errors,errors
+            assert not error.called,error.call_args
+        finally:app.on_close()
+    faulthandler.cancel_dump_traceback_later()
+    print('PASS Windows facility boxes, first-open full map, real drag/persistence, facility leaders, orange/selected pulse colors and timer cleanup')
+
+
 if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(MapTests))
     if not result.wasSuccessful():
         raise SystemExit(1)
     windows_ui()
+    windows_facility_ui()

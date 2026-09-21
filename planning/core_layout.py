@@ -278,21 +278,26 @@ def core_layout_pending(app,store,cable_id):
 
 class CoreLayoutDialog(RememberedToplevel):
     def __init__(self,app,source=None):
-        self._stage_kind='after';self._stage_reference=False
+        self._stage_kind='after';self._stage_reference=False;self._stage_independent=True
         super().__init__(app);self.app=app;self.store=app.store;self._generation=self.store._view_generation
         self.title('후도면 전체 선번 연결도 · 실시간');self.geometry('1560x920');self.minsize(960,640)
         self.source=None;self.preview=None;self.scale=1.;self._watch=None;self._target_job=None;self._closed=False;self._syncing=False
         self.target=tk.StringVar();self.view=tk.StringVar(value='현재');self.query=tk.StringVar();self.info=tk.StringVar();self.summary=tk.StringVar();self.detail=tk.StringVar()
         self.cable_choice=tk.StringVar();self.notice=tk.StringVar(value='번호 클릭 → 변경할 번호 선택 → 변경 검토 → 적용')
         self.display_mode=tk.StringVar(value='도면형');self.sort_cable=tk.StringVar();self.sort_direction=tk.StringVar(value='오름차순')
-        self.sort_ref=None;self.sort_options={};self.side_visible=True
+        self.sort_ref=None;self.sort_options={};self.side_visible=False;self.source_node=None
+        self._blink_job=None;self._blink_phase=0;self._blink_items=[];self._fit_job=None;self._auto_fit=True;self._drag_active=False;self.drag_box=None
+        self.position_path=Path(self.store.path).with_suffix('.core-layout.json')
+        try:self.box_positions=core_layout_box_positions(json.loads(self.position_path.read_text(encoding='utf-8')).get('after',{}))
+        except (OSError,ValueError,AttributeError):self.box_positions={}
         toolbar=FlowToolbar(self);toolbar.pack(fill='x',padx=8,pady=6)
         toolbar.add(ttk.Label(toolbar,text='후도면 전체 선번 연결도',style='Title.TLabel'))
         self.search_entry=toolbar.add(ttk.Entry(toolbar,textvariable=self.query,width=20));self.search_entry.bind('<Return>',self.find)
         toolbar.add(ttk.Button(toolbar,text='코어ID 찾기',command=self.find))
         for label,command in (('전체 보기',self.fit),('100%',lambda:self.zoom_to(1)),('−',lambda:self.zoom_to(self.scale/1.2)),('+',lambda:self.zoom_to(self.scale*1.2)),('강조 해제',self.clear_selection),('실행취소',lambda:self.history(False)),('다시실행',lambda:self.history(True))):
             toolbar.add(ttk.Button(toolbar,text=label,command=command,width=9 if len(label)>2 else 3))
-        self.side_toggle_button=toolbar.add(ttk.Button(toolbar,text='편집 영역 접기',command=self.toggle_side))
+        self.side_toggle_button=toolbar.add(ttk.Button(toolbar,text='편집 영역 펼치기',command=self.toggle_side))
+        self.reset_boxes_button=toolbar.add(ttk.Button(toolbar,text='박스 위치 초기화',command=self.reset_boxes))
         sorting=FlowToolbar(self);sorting.pack(fill='x',padx=8,pady=(0,4))
         sorting.add(ttk.Label(sorting,text='보기'))
         self.display_mode_combo=sorting.add(ttk.Combobox(sorting,textvariable=self.display_mode,values=('도면형','함체별 목록'),state='readonly',width=12))
@@ -304,7 +309,7 @@ class CoreLayoutDialog(RememberedToplevel):
         self.sort_direction_combo.bind('<<ComboboxSelected>>',self.sort_changed)
         self.sort_selected_button=sorting.add(ttk.Button(sorting,text='선택 케이블 기준',command=self.sort_by_selected))
         ttk.Label(self,textvariable=self.summary,padding=(10,0,10,4),foreground='#1769aa').pack(fill='x')
-        self.guide=ttk.Label(self,text='번호 클릭: 경로 · Shift+번호: 대상 · 같은 줄 양쪽 번호끼리 접속 · 정렬은 표시만 변경 · 케이블 우클릭: 정렬 기준',padding=(10,0,10,5),wraplength=1480)
+        self.guide=ttk.Label(self,text='박스 제목 드래그: 위치 이동 · 번호 클릭: 선택 · Shift+번호: 변경 대상\n점멸 색상 — 주황: 같은 ID의 다른 구간 · 보라: 클릭한 실제 연결 구간 · 청록: 변경 대상 · 겹친 케이블은 색상 교대',padding=(10,0,10,5),wraplength=1480)
         self.guide.pack(fill='x');self.guide.bind('<Configure>',lambda e:self.guide.configure(wraplength=max(400,e.width-24)))
         self.panes=ttk.Panedwindow(self,orient='horizontal');self.panes.pack(fill='both',expand=True,padx=8,pady=(0,6))
         body=ttk.Frame(self.panes);body.rowconfigure(0,weight=1);body.columnconfigure(0,weight=1);self.panes.add(body,weight=4)
@@ -314,6 +319,7 @@ class CoreLayoutDialog(RememberedToplevel):
         self.canvas.bind('<MouseWheel>',lambda e:self.zoom_to(self.scale*(1.15 if e.delta>0 else 1/1.15),e))
         self.canvas.bind('<ButtonPress-1>',self.press);self.canvas.bind('<B1-Motion>',self.motion);self.canvas.bind('<ButtonRelease-1>',self.release)
         self.canvas.bind('<Button-3>',self.sort_context)
+        self.canvas.bind('<Configure>',self.schedule_initial_fit,add='+')
         self.sort_menu=tk.Menu(self,tearoff=False)
         self.canvas.bind('<Control-z>',lambda e:self.history(False));self.canvas.bind('<Control-y>',lambda e:self.history(True))
         side=ttk.Frame(self.panes,padding=8,width=440);self.side=side;self.panes.add(side,weight=1)
@@ -343,10 +349,12 @@ class CoreLayoutDialog(RememberedToplevel):
         # height instead of pushing Apply below the monitor's client area.
         for widget in (actions,self.review_text,viewing,change,edit_tip):
             widget.pack_configure(side='bottom',before=heading)
+        self.panes.forget(self.side)
         self.notice_label=ttk.Label(self,textvariable=self.notice,padding=(10,3,10,6),foreground='#1769aa',wraplength=900)
         self.notice_label.pack(side='bottom',fill='x',before=self.panes)
         self.target.trace_add('write',self.target_changed);self.protocol('WM_DELETE_WINDOW',self.destroy)
         self.bind('<Control-f>',self.focus_find);self.bind('<Control-F>',self.focus_find)
+        self.bind('<Escape>',self.clear_selection)
         self._compact=None;self.side_heading=heading
         self.bind('<Configure>',self.resize_controls,add='+')
         self.reload(initial=True)
@@ -370,12 +378,34 @@ class CoreLayoutDialog(RememberedToplevel):
         if self.side_visible:self.panes.sashpos(0,max(420,self.panes.winfo_width()-440))
         self.fit()
 
+    def schedule_initial_fit(self,event=None):
+        if self._closed or not self._auto_fit:return
+        if self._fit_job is not None:self.after_cancel(self._fit_job)
+        self._fit_job=self.after_idle(self.finish_initial_fit)
+
+    def finish_initial_fit(self):
+        self._fit_job=None
+        if not self._closed and self._auto_fit:self.initial_view()
+
     def toggle_side(self):
+        self._auto_fit=False
         self.side_visible=not self.side_visible
         if self.side_visible:
             self.panes.add(self.side,weight=1);self.update_idletasks();self.panes.sashpos(0,max(420,self.panes.winfo_width()-440))
         else:self.panes.forget(self.side)
         self.side_toggle_button.configure(text='편집 영역 접기' if self.side_visible else '편집 영역 펼치기')
+
+    def save_box_positions(self):
+        try:
+            path=self.position_path;temporary=path.with_suffix('.tmp')
+            temporary.write_text(json.dumps({'schema':1,'after':self.box_positions},ensure_ascii=False),encoding='utf-8');temporary.replace(path)
+            return True
+        except OSError:
+            self.notice.set('박스 위치는 이 창에 반영됐지만 위치 설정 파일을 저장하지 못했습니다.');return False
+
+    def reset_boxes(self):
+        self.box_positions={};self.paint();self.fit()
+        if self.save_box_positions():self.notice.set('함체 박스 위치를 자동 배치로 되돌렸습니다.')
 
     def focus_find(self,event=None):
         self.search_entry.focus_set();self.search_entry.selection_range(0,'end');return 'break'
@@ -414,6 +444,7 @@ class CoreLayoutDialog(RememberedToplevel):
 
     def refresh_shared_rows(self):
         if not self.valid():self.destroy();return
+        if self._drag_active:return
         if self.stamp!=(self.store.data_revision(),self.store.conn.total_changes):self.reload()
 
     def reload(self,initial=False):
@@ -435,6 +466,7 @@ class CoreLayoutDialog(RememberedToplevel):
         self.sort_combo.configure(values=tuple(self.sort_options))
         self.sort_cable.set(next(label for label,owner in self.sort_options.items() if owner==self.sort_ref))
         if self.source not in self.model['slots']:self.source=None
+        if self.source_node not in self.model['nodes']:self.source_node=None
         self.fill_table();self.paint();self.show_details()
         if had_preview:self.notice.set('도면 변경을 실시간 반영했습니다. 입력한 대상 번호를 확인하고 다시 검토하세요.')
         elif not initial:self.notice.set('실시간 갱신 완료 · 변경 내용이 전체 연결도에 반영됐습니다.')
@@ -457,7 +489,9 @@ class CoreLayoutDialog(RememberedToplevel):
         if self.preview and self.view.get()!='현재':source,target=target,source
         primary,_=core_layout_family(model,source);secondary,_=core_layout_family(model,target)
         if self.display_mode.get()=='도면형':
-            self.scene=core_layout_map_scene(model,primary,secondary,reference=self.sort_ref,descending=self.sort_direction.get()=='내림차순')
+            self.scene=core_layout_map_scene(model,primary,secondary,reference=self.sort_ref,descending=self.sort_direction.get()=='내림차순',positions=self.box_positions,
+                selected=core_layout_component(model,source),selected_slot=source,selected_node=self.source_node)
+            for nid,box in self.scene['node_boxes'].items():self.box_positions.setdefault(nid,box['offset'])
         else:self.scene=core_layout_scene(core_layout_sorted_model(model,self.sort_ref,self.sort_direction.get()=='내림차순'),primary,secondary)
         self.render()
         warning=f" · 접속정보 확인 {len(model['errors'])}개" if model['errors'] else ''
@@ -469,18 +503,47 @@ class CoreLayoutDialog(RememberedToplevel):
         if old_transform and transform:
             factor,ox,oy=old_transform;new_factor,nx,ny=transform
             x=(x-ox)/factor*new_factor+nx;y=(y-oy)/factor*new_factor+ny
-        self.canvas.delete('all');self.items={};k=self.scale
+        self.canvas.delete('all');self.items={};self.item_nodes={};self.box_items={};self.box_leaders={};self._blink_items=[];k=self.scale
         self.canvas.configure(scrollregion=(0,0,self.scene['width']*k,self.scene['height']*k))
         for s in self.scene['shapes']:
             if s['kind'] in ('rect','oval'):
                 draw=self.canvas.create_rectangle if s['kind']=='rect' else self.canvas.create_oval
-                item=draw(s['x']*k,s['y']*k,(s['x']+s['w'])*k,(s['y']+s['h'])*k,fill=s['fill'],outline=s['stroke'])
+                item=draw(s['x']*k,s['y']*k,(s['x']+s['w'])*k,(s['y']+s['h'])*k,fill=s['fill'],outline=s['stroke'],width=max(1,s.get('thickness',1)*k))
             elif s['kind']=='polygon':item=self.canvas.create_polygon(*[v*k for v in s['points']],fill=s['fill'],outline=s['stroke'])
             elif s['kind']=='line':item=self.canvas.create_line(*[v*k for v in s['points']],fill=s['fill'],width=max(1,s['thickness']*k),dash=s.get('dash',()),arrow=s.get('arrow','none'))
             else:item=self.canvas.create_text(s['x']*k,s['y']*k,text=s['text'],anchor='nw',fill=s['fill'],font=('Malgun Gothic',-max(2,round(s['size']*k)),'bold' if s['bold'] else 'normal'),width=(s.get('width') or 0)*k)
             if s.get('slot') or s.get('owner'):self.items[item]=(s.get('slot'),s.get('owner'))
+            if s.get('node_id'):self.item_nodes[item]=s['node_id']
+            if s.get('box_id'):
+                self.box_items[item]=s['box_id'];self.canvas.addtag_withtag('box:'+s['box_id'],item)
+            if s.get('leader_box_id'):self.box_leaders[s['leader_box_id']]=item
+            if s.get('blink_colors'):
+                if s['kind']=='line':base=dict(fill=s['fill'],width=max(1,s['thickness']*k),dash=s.get('dash',()));styles=[dict(fill=c,width=max(3,4.5*k),dash=()) for c in s['blink_colors']]
+                elif s['kind']=='text':base=dict(fill=s['fill']);styles=[dict(fill=c) for c in s['blink_colors']]
+                else:
+                    base=dict(fill=s['fill'],outline=s['stroke'],width=max(1,s.get('thickness',1)*k))
+                    lights={LAYOUT_MAP_CONTEXT:'#ffedd5',LAYOUT_MAP_SELECTED:'#ede9fe',LAYOUT_MAP_TARGET:'#ccfbf1'}
+                    styles=[dict(fill=lights[c] if s['kind']=='rect' else s['fill'],outline=c,width=max(2,2*k)) for c in s['blink_colors']]
+                self._blink_items.append((item,base,styles))
         self.canvas.xview_moveto(max(0,x)/self.scene['width']);self.canvas.yview_moveto(max(0,y)/self.scene['height'])
         self._render_scale=k;self._render_transform=transform
+        self.paint_blink()
+        if self._blink_items and self._blink_job is None:self._blink_job=self.after(330,self.blink_tick)
+        elif not self._blink_items:self.stop_blink()
+
+    def paint_blink(self):
+        for item,base,styles in self._blink_items:
+            self.canvas.itemconfigure(item,**(base if self._blink_phase%2 else styles[(self._blink_phase//2)%len(styles)]))
+
+    def blink_tick(self):
+        self._blink_job=None
+        if self._closed:return
+        if not self._blink_items:return
+        self._blink_phase+=1;self.paint_blink();self._blink_job=self.after(330,self.blink_tick)
+
+    def stop_blink(self):
+        if self._blink_job is not None:self.after_cancel(self._blink_job)
+        self._blink_job=None;self._blink_phase=0
 
     def fill_table(self):
         self._syncing=True
@@ -518,10 +581,10 @@ class CoreLayoutDialog(RememberedToplevel):
     def set_review_text(self,text):
         self.review_text.configure(state='normal');self.review_text.delete('1.0','end');self.review_text.insert('1.0',text);self.review_text.configure(state='disabled')
 
-    def select_slot(self,slot,target=False):
+    def select_slot(self,slot,target=False,node_id=None):
         if slot not in self.model['slots']:return
         if target and self.source and slot[0]==self.source[0]:self.target.set(str(slot[1]));return
-        self.preview=None;self.view.set('현재');self.apply_button.configure(state='disabled');self.source=slot
+        self.preview=None;self.view.set('현재');self.apply_button.configure(state='disabled');self.source=slot;self.source_node=node_id;self._blink_phase=0
         self._syncing=True;self.target.set('');self._syncing=False
         self.fill_table();self.tree.see(str(slot[1]));self.paint();self.show_details()
 
@@ -557,20 +620,54 @@ class CoreLayoutDialog(RememberedToplevel):
             if item in self.items:return self.items[item]
         return None,None
 
+    def hit_box(self,x,y):
+        wx=self.canvas.canvasx(x);wy=self.canvas.canvasy(y)
+        for item in reversed(self.canvas.find_overlapping(wx-1,wy-1,wx+1,wy+1)):
+            if item in self.box_items:return self.box_items[item]
+        return None
+
     def press(self,event):
-        self.drag_start=(event.x,event.y);self.drag_slot,self.drag_owner=self.hit(event.x,event.y);self.canvas.scan_mark(event.x,event.y);self.canvas.focus_set()
+        self._auto_fit=False;self._drag_active=True;self.drag_start=(event.x,event.y);self.drag_slot,self.drag_owner=self.hit(event.x,event.y)
+        self.drag_node=self.hit_box(event.x,event.y);self.drag_box=self.drag_node if not self.drag_slot else None
+        self.drag_delta=(0,0);self.drag_origin=dict(self.scene.get('node_boxes',{}).get(self.drag_box,{}))
+        self.canvas.scan_mark(event.x,event.y);self.canvas.focus_set()
 
     def motion(self,event):
-        if not self.drag_slot:self.canvas.scan_dragto(event.x,event.y,gain=1)
+        if not self._drag_active:return
+        if self.drag_box and self.drag_origin:
+            dx=(event.x-self.drag_start[0])/self.scale;dy=(event.y-self.drag_start[1])/self.scale
+            previous=self.drag_delta;self.canvas.move('box:'+self.drag_box,(dx-previous[0])*self.scale,(dy-previous[1])*self.scale)
+            self.drag_delta=(dx,dy);box=self.drag_origin
+            line=self.box_leaders.get(self.drag_box)
+            if line is not None:
+                points=core_layout_box_leader(self.scene['anchors'][self.drag_box],(box['x']+dx,box['y']+dy,box['w'],box['h']))
+                self.canvas.coords(line,*[v*self.scale for v in points])
+        elif not self.drag_slot:self.canvas.scan_dragto(event.x,event.y,gain=1)
 
     def release(self,event):
+        if not self._drag_active:return
+        self._drag_active=False
+        if not self.valid():self.destroy();return
         slot,owner=self.hit(event.x,event.y);moved=abs(event.x-self.drag_start[0])+abs(event.y-self.drag_start[1])>5
+        if self.drag_box and self.drag_origin:
+            if moved:
+                factor=self.scene['transform'][0];old=self.drag_origin['offset'];dx=(event.x-self.drag_start[0])/self.scale;dy=(event.y-self.drag_start[1])/self.scale
+                self.box_positions[self.drag_box]=(old[0]+dx/factor,old[1]+dy/factor)
+                if self.save_box_positions():self.notice.set('함체 박스 위치를 저장했습니다. 다음에 열어도 같은 위치로 표시됩니다.')
+            self.drag_box=None;self.paint();self.refresh_shared_rows()
+            if moved:return
         if moved:
             if self.drag_slot and slot and slot[0]==self.drag_slot[0] and slot!=self.drag_slot:
-                self.select_slot(self.drag_slot);self.target.set(str(slot[1]));self.review()
+                if not self.side_visible:self.toggle_side()
+                self.select_slot(self.drag_slot,node_id=self.drag_node);self.target.set(str(slot[1]));self.review()
             return
-        if slot:self.select_slot(slot,bool(event.state&1))
-        elif owner and self.model['owners'][owner]:self.select_slot(sorted(self.model['owners'][owner])[0])
+        if slot:
+            if not self.side_visible:self.toggle_side()
+            self.select_slot(slot,bool(event.state&1),node_id=self.drag_node)
+        elif owner and self.model['owners'][owner]:
+            if not self.side_visible:self.toggle_side()
+            self.select_slot(sorted(self.model['owners'][owner])[0],node_id=self.drag_node)
+        self.refresh_shared_rows()
 
     def review(self):
         if self._target_job is not None:self.after_cancel(self._target_job);self._target_job=None
@@ -613,9 +710,10 @@ class CoreLayoutDialog(RememberedToplevel):
         if not self.preview:self.view.set('현재')
         self.fill_table();self.paint()
 
-    def clear_selection(self):
-        self.source=None;self.preview=None;self._syncing=True;self.target.set('');self._syncing=False
+    def clear_selection(self,event=None):
+        self.source=None;self.source_node=None;self.preview=None;self._syncing=True;self.target.set('');self._syncing=False;self.stop_blink()
         self.view.set('현재');self.apply_button.configure(state='disabled');self.info.set('번호를 클릭하세요.');self.tree.delete(*self.tree.get_children());self.set_review_text('');self.paint()
+        return 'break'
 
     def find(self,event=None):
         query=self.query.get().strip()
@@ -623,10 +721,11 @@ class CoreLayoutDialog(RememberedToplevel):
         if query.startswith('임시코어'):query='임시-'+query[len('임시코어'):]
         slots=sorted(self.model['by_id'].get(query,()))
         if not slots:slots=sorted(s for s,r in self.model['slots'].items() if query.casefold() in str(r.get('core_id') or '').casefold())
-        if not slots:self.notice.set('일치하는 코어ID가 없습니다.');return 'break'
+        if not slots:self.clear_selection();self.notice.set('일치하는 코어ID가 없습니다.');return 'break'
         self.select_slot(slots[0]);self.focus_slot(slots[0]);return 'break'
 
     def focus_slot(self,slot):
+        self._auto_fit=False
         cell=next((c for c in self.scene['cells'] if c['slot']==slot),None)
         if not cell:return
         self.scale=max(.8,self.scale);self.render();self.update_idletasks()
@@ -635,13 +734,14 @@ class CoreLayoutDialog(RememberedToplevel):
 
     def zoom_to(self,value,event=None):
         if not getattr(self,'scene',None):return 'break'
+        self._auto_fit=False
         x=event.x if event else self.canvas.winfo_width()/2;y=event.y if event else self.canvas.winfo_height()/2
         wx=self.canvas.canvasx(x)/self.scale;wy=self.canvas.canvasy(y)/self.scale;self.scale=max(.08,min(3.,value));self.render()
         self.canvas.xview_moveto(max(0,wx*self.scale-x)/(self.scene['width']*self.scale));self.canvas.yview_moveto(max(0,wy*self.scale-y)/(self.scene['height']*self.scale));return 'break'
 
     def fit(self):
         if not getattr(self,'scene',None):return
-        self.update_idletasks();self.scale=max(.08,min(1.,(self.canvas.winfo_width()-20)/self.scene['width'],(self.canvas.winfo_height()-20)/self.scene['height']))
+        self.update_idletasks();self.scale=max(.0001,min(1.,(self.canvas.winfo_width()-20)/self.scene['width'],(self.canvas.winfo_height()-20)/self.scene['height']))
         self.render();self.canvas.xview_moveto(0);self.canvas.yview_moveto(0)
 
     def history(self,redo):
@@ -651,9 +751,9 @@ class CoreLayoutDialog(RememberedToplevel):
     def destroy(self):
         if self._closed:return
         self._closed=True
-        for job in (self._watch,self._target_job):
+        for job in (self._watch,self._target_job,self._blink_job,self._fit_job):
             if job is not None:self.after_cancel(job)
-        self._watch=None;self._target_job=None
+        self._watch=None;self._target_job=None;self._blink_job=None;self._fit_job=None
         if getattr(self.app,'_core_layout_window',None) is self:self.app._core_layout_window=None
         super().destroy()
 
