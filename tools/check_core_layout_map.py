@@ -473,8 +473,18 @@ def windows_facility_ui():
             assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==before
             dialog._blink_phase=2;dialog.paint_blink()
             if '--emit-screenshots' in sys.argv:screenshot(dialog,Path('dist')/'v123-selected-component.png')
-            dialog.canvas.event_generate('<Escape>');app.update()
-            assert dialog.source is None and dialog._blink_job is None and not dialog._blink_items
+            # Synthetic pointer events do not activate a native Windows window.
+            # Deliver the key to a verified focused widget, as the existing
+            # keyboard gates do, rather than silently dropping Escape in CI.
+            for focused in (dialog.canvas,dialog.search_entry,dialog.target_entry,dialog.tree):
+                dialog.select_slot(slot);app.update()
+                focused.focus_force();app.update()
+                assert app.focus_get() is focused,(app.focus_get(),focused)
+                focused.event_generate('<Escape>');app.update()
+                assert dialog.source is None and dialog._blink_job is None and not dialog._blink_items
+                wait(400)
+                assert dialog.source is None and dialog._blink_job is None and not dialog._blink_items
+                assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==before
             dialog.select_slot(slot);app.update();assert dialog._blink_job is not None
             dialog.query.set('SYNTH-no-such-core');dialog.find();assert dialog._blink_job is None
             dialog.select_slot(slot);app.update();assert dialog._blink_job is not None
