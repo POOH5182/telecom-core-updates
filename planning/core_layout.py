@@ -309,7 +309,7 @@ class CoreLayoutDialog(RememberedToplevel):
         self.sort_direction_combo.bind('<<ComboboxSelected>>',self.sort_changed)
         self.sort_selected_button=sorting.add(ttk.Button(sorting,text='선택 케이블 기준',command=self.sort_by_selected))
         ttk.Label(self,textvariable=self.summary,padding=(10,0,10,4),foreground='#1769aa').pack(fill='x')
-        self.guide=ttk.Label(self,text='박스 제목 드래그: 위치 이동 · 번호 클릭: 선택 · Shift+번호: 변경 대상\n점멸 색상 — 주황: 같은 ID의 다른 구간 · 보라: 클릭한 실제 연결 구간 · 청록: 변경 대상 · 겹친 케이블은 색상 교대',padding=(10,0,10,5),wraplength=1480)
+        self.guide=ttk.Label(self,text='박스 제목 드래그: 위치 이동 · 번호 클릭: 선택 · Shift+번호: 변경 대상\n접속 번호: 같으면 파랑 · 다르면 빨강 · 경로만 점멸: 주황=같은 ID의 다른 구간 · 보라=선택 구간 · 청록=변경 대상',padding=(10,0,10,5),wraplength=1480)
         self.guide.pack(fill='x');self.guide.bind('<Configure>',lambda e:self.guide.configure(wraplength=max(400,e.width-24)))
         self.panes=ttk.Panedwindow(self,orient='horizontal');self.panes.pack(fill='both',expand=True,padx=8,pady=(0,6))
         body=ttk.Frame(self.panes);body.rowconfigure(0,weight=1);body.columnconfigure(0,weight=1);self.panes.add(body,weight=4)

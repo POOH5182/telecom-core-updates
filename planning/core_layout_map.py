@@ -9,6 +9,8 @@ import json as _clm_json
 LAYOUT_MAP_CONTEXT='#ff7a00'
 LAYOUT_MAP_SELECTED='#7c3aed'
 LAYOUT_MAP_TARGET='#00897b'
+LAYOUT_MAP_NUMBER='#1d4ed8'
+LAYOUT_MAP_CROSSED='#dc2626'
 
 
 def core_layout_box_leader(anchor,box):
@@ -28,6 +30,16 @@ def core_layout_box_positions(value):
         if any(type(v) not in (int,float) or not _clm_math.isfinite(v) or abs(v)>1e9 for v in position):continue
         result[key]=tuple(float(v) for v in position)
     return result
+
+
+def core_layout_map_direction(model,owner,node_id):
+    """Name the facility at this cable's other end, without changing its ID."""
+    if owner.startswith('PORT:'):
+        return 'RN 내부포트' if model['nodes'].get(node_id,{}).get('type')=='rn' else '시설 내부포트'
+    cable=model['cables'].get(owner,{})
+    other=cable.get('n2id') if cable.get('n1id')==node_id else cable.get('n1id') if cable.get('n2id')==node_id else None
+    name=str(model['nodes'].get(other,{}).get('name') or '(시설명 없음)')
+    return name+' 방향'
 
 
 def core_layout_reference_index(model,reference):
@@ -163,17 +175,21 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
         if members & selected:inks.append(LAYOUT_MAP_SELECTED)
         if members & secondary:inks.append(LAYOUT_MAP_TARGET)
         return inks
-    def number(slot,x,y,w=27,h=23,**meta):
-        color='#d97706' if slot in secondary else '#2563eb' if slot in primary else '#1d4ed8'
-        fill='#ffedd5' if slot in secondary else '#dbeafe' if slot in primary else '#f0f7ff'
-        pulse=colors((slot,))
-        rect(x,y,w,h,fill,color if slot in primary or slot in secondary else '#bfdbfe',slot=slot,owner=slot[0],blink_colors=pulse,**meta)
+    def number(slot,x,y,w=27,h=23,crossed=False,**meta):
+        # Number color describes the local pair, independently of route selection.
+        # Only physical cable strokes blink; selection uses separate steady rims.
+        color=LAYOUT_MAP_CROSSED if crossed else LAYOUT_MAP_NUMBER
+        fill='#fef2f2' if crossed else '#f0f7ff'
+        rect(x,y,w,h,fill,color,slot=slot,owner=slot[0],**meta)
         label=number_label(slot);size=min(12,max(8,int((w-6)/max(1,_core_layout_map_label_width(label,1)))))
         shown=label
         if _core_layout_map_label_width(shown,size)>w-6:
             while shown and _core_layout_map_label_width(shown+'…',size)>w-6:shown=shown[:-1]
             shown+='…'
-        text(x+3,y+4,shown,color,size,slot in primary or slot in secondary,slot=slot,owner=slot[0],blink_colors=pulse,**meta)
+        text(x+3,y+4,shown,color,size,slot in primary or slot in secondary,slot=slot,owner=slot[0],**meta)
+        if slot in secondary:
+            rim=dict(meta,role='target_number',thickness=2)
+            rect(x-1,y-1,w+2,h+2,'',LAYOUT_MAP_TARGET,slot=slot,owner=slot[0],**rim)
         if slot==selected_slot and meta.get('node_id')==selected_node:
             rect(x-2,y-2,w+4,h+4,'',LAYOUT_MAP_SELECTED,slot=slot,owner=slot[0],thickness=2,role='clicked_number',box_id=meta.get('box_id'),node_id=selected_node)
     def clipped_label(value,width,size=10):
@@ -218,6 +234,11 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
     for panel in sorted(model.get('panels',()),key=lambda p:(float(p['node'].get('y') or 0),float(p['node'].get('x') or 0),p['node']['id'])):
         nid=panel['node']['id']
         if nid not in anchors:continue
+        # A one-cable endpoint without a local splice has no connection to show.
+        # Keep its symbol, cable, source data and saved box offset; an actual RN
+        # internal-port splice (or any other valid pair) always keeps the box.
+        external={single['owner'] for single in panel['singles'] if single['owner'] in cables}
+        if len(external)<=1 and not any(group['pairs'] for group in panel['groups']):continue
         sections=[];w=420 if panel['groups'] else 320
         for gi,group in enumerate(panel['groups']):
             owners=tuple(group['owners']);pairs=sorted(group['pairs'],key=pair_key)
@@ -279,8 +300,7 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
         x,y,w,h=box
         node_boxes[nid]=dict(node_id=nid,x=x,y=y,w=w,h=h,offset=((x-nx)/factor,(y-ny)/factor))
         annotations.append(dict(kind='node_box',node_id=nid,x=x,y=y,w=w,h=h))
-        represented={slot for section in sections for slot in section.get('slots',())}
-        line(core_layout_box_leader((nx,ny),box),'#8094ae',1.5,dash=(3,3),node_id=nid,leader_box_id=nid,role='node_box_leader',blink_colors=colors(represented))
+        line(core_layout_box_leader((nx,ny),box),'#8094ae',1.5,dash=(3,3),node_id=nid,leader_box_id=nid,role='node_box_leader')
         meta=dict(box_id=nid,node_id=nid,nodeid=nid)
         rect(x,y,w,h,'#ffffff','#94a3b8',role='node_box',**meta)
         rect(x,y,w,32,'#ede9fe' if nid==selected_node else '#e7eef8','#94a3b8',role='box_header',**meta)
@@ -295,11 +315,13 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
                 left=x+10;right=x+w/2+18;bank_w=w/2-30
                 bounds=(x+6,yy-3,w-12,section['height'])
                 connections.append(dict(node_id=nid,owners=owners,pairs=pairs,multi_anchor=section['ambiguous'],unanchored=section['disconnected'],bounds=bounds))
-                text(left,yy,clipped_label(owner_name(owners[0]),bank_w,10),'#1e40af',10,True,owner=owners[0],role='owner',**meta)
-                text(right,yy,clipped_label(owner_name(owners[1]),bank_w,10),'#1e40af',10,True,owner=owners[1],role='owner',**meta)
+                text(left,yy,clipped_label(core_layout_map_direction(model,owners[0],nid),bank_w,10),'#1e40af',10,True,owner=owners[0],role='owner',**meta)
+                text(right,yy,clipped_label(core_layout_map_direction(model,owners[1],nid),bank_w,10),'#1e40af',10,True,owner=owners[1],role='owner',**meta)
                 for i,(a,b) in enumerate(pairs):
                     row,col=divmod(i,columns);number_y=yy+19+row*25
-                    common=dict(pair_index=i,group_index=section['index'],**meta)
+                    # RN labels such as MP1 are port names, not cable core numbers.
+                    crossed=a[0] in cables and b[0] in cables and a[1]!=b[1]
+                    common=dict(pair_index=i,group_index=section['index'],crossed=crossed,**meta)
                     number(a,left+col*cell_w,number_y,cell_w-2,**common)
                     number(b,right+col*cell_w,number_y,cell_w-2,**common)
                     if col==0:arrow(x+w/2-12,number_y+11,x+w/2+10,number_y+11,**meta)
@@ -309,7 +331,7 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
             else:
                 owner=section['owner'];items=section['slots'];single=section['single']
                 summary=('미접속 '+str(len(items))+' · ' if items else '')+'빈 '+str(single['free'])+'/'+str(single['total'])
-                text(x+10,yy,clipped_label(owner_name(owner)+' · '+summary,w-20,10),'#a16207' if items else '#64748b',10,owner=owner,role='unpaired_caption',**meta)
+                text(x+10,yy,clipped_label(core_layout_map_direction(model,owner,nid)+' · '+summary,w-20,10),'#a16207' if items else '#64748b',10,owner=owner,role='unpaired_caption',**meta)
                 for i,slot in enumerate(items):
                     row,col=divmod(i,section['columns'])
                     number(slot,x+10+col*section['cell_w'],yy+18+row*25,section['cell_w']-2,role='unpaired',**meta)

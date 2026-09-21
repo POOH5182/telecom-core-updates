@@ -1,6 +1,7 @@
 """Drawing-shaped whole-core map, reference sorting and live native Windows edits."""
 import copy
 import faulthandler
+import json
 import os
 from pathlib import Path
 import sys
@@ -36,6 +37,7 @@ def extended_fixture(store):
     detached = store.add_node('SYNTH 독립 말단', -260, 230, 'sub')
     branch = store.add_cable(nodes[1], detached, 'SYNTH-D', '12C', '신설')
     with store.action('후도면 선번 연결도 변경'):
+        store.conn.execute("UPDATE nodes SET extra_json=? WHERE id=?", (json.dumps({'subscriberKind':'ijp'}), detached))
         store.conn.execute("UPDATE nodes SET type='rn' WHERE id=?", (nodes[0],))
         store.conn.execute("INSERT INTO ports VALUES(?,1,'MP1','SYNTH-X','RN 내역','normal','','on')", (nodes[0],))
         insert_pair(store, nodes[0], ('PORT:' + nodes[0], 1), (cables[0], 3))
@@ -64,7 +66,8 @@ class MapTests(unittest.TestCase):
 
     def test_one_box_per_facility_contains_every_cable_section_and_leads_to_facility(self):
         before=self.state();model=self.model();scene=wf.core_layout_map_scene(model)
-        boxes=scene['node_boxes'];self.assertEqual(set(boxes),set(model['nodes']))
+        boxes=scene['node_boxes'];self.assertEqual(set(boxes),set(self.nodes[:3]))
+        self.assertEqual(set(scene['anchors']),set(model['nodes']))
         self.assertEqual(len([s for s in scene['shapes'] if s.get('role')=='node_box']),len(boxes))
         leaders=[s for s in scene['shapes'] if s.get('role')=='node_box_leader']
         self.assertEqual(len(leaders),len(boxes))
@@ -98,14 +101,93 @@ class MapTests(unittest.TestCase):
         scene=wf.core_layout_map_scene(model,family,selected=selected,selected_slot=slot,selected_node=self.nodes[1])
         self.assertNotIn((self.cables[1],9),selected)
         for shape in scene['shapes']:
-            if shape.get('slot') in selected and shape.get('role')!='clicked_number':
-                self.assertEqual(shape['blink_colors'],[wf.LAYOUT_MAP_SELECTED])
-            elif shape.get('slot') in family-selected:self.assertEqual(shape['blink_colors'],[wf.LAYOUT_MAP_CONTEXT])
+            if shape.get('blink_colors'):self.assertEqual(shape.get('role'),'cable')
+            if shape.get('slot'):self.assertFalse(shape.get('blink_colors'))
         cable=next(s for s in scene['shapes'] if s.get('role')=='cable' and s['cable_id']==self.cables[1])
         self.assertEqual(cable['blink_colors'],[wf.LAYOUT_MAP_CONTEXT,wf.LAYOUT_MAP_SELECTED])
         self.assertEqual({s['node_id'] for s in scene['shapes'] if s.get('role')=='clicked_number'},{self.nodes[1]})
         self.assertFalse(any(s.get('blink_colors') for s in wf.core_layout_map_scene(model)['shapes']))
         self.assertEqual(scene_pairs(scene),model_pairs(model));self.assertEqual(self.state(),before)
+
+    def test_terminal_boxes_hide_without_losing_geometry_slots_or_rn_connections(self):
+        before=self.state();model=self.model();positions={self.nodes[0]:(43.,-72.),self.nodes[4]:(-14.,50.)}
+        frozen=copy.deepcopy(model)
+        for reference in (None,self.cables[1]):
+            for descending in (False,True):
+                scene=wf.core_layout_map_scene(model,reference=reference,descending=descending,positions=positions)
+                self.assertEqual(set(scene['node_boxes']),set(self.nodes[:3]))
+                self.assertEqual(set(scene['anchors']),set(self.nodes))
+                self.assertEqual({s['cable_id'] for s in scene['shapes'] if s.get('role')=='cable'},set(self.cables))
+                self.assertFalse(any(c['node_id'] in self.nodes[3:] for c in scene['cells']))
+                self.assertIn(pair_key(self.nodes[0],('PORT:'+self.nodes[0],1),(self.cables[0],3)),scene_pairs(scene))
+                self.assertEqual(scene_pairs(scene),model_pairs(model))
+        self.assertEqual(model,frozen);self.assertEqual(self.state(),before)
+        # An RN symbol and an existing port alone are not a saved connection.
+        with self.store.action('후도면 선번 연결도 변경'):
+            self.store.conn.execute('DELETE FROM splices WHERE node_id=?',(self.nodes[0],))
+        scene=wf.core_layout_map_scene(self.model(),positions=positions)
+        self.assertNotIn(self.nodes[0],scene['node_boxes'])
+        self.assertIn(('PORT:'+self.nodes[0],1),self.model()['slots'])
+        self.store.undo()
+        scene=wf.core_layout_map_scene(self.model(),positions=positions)
+        self.assertEqual(scene['node_boxes'][self.nodes[0]]['offset'],positions[self.nodes[0]])
+        self.assertEqual(self.state()[:2],before[:2])
+        # A multi-cable facility without splices still needs an unpaired ledger.
+        with self.store.action('후도면 선번 연결도 변경'):
+            self.store.conn.execute('DELETE FROM splices WHERE node_id=?',(self.nodes[1],))
+        self.assertIn(self.nodes[1],wf.core_layout_map_scene(self.model())['node_boxes'])
+
+    def test_edit_target_number_is_steady_while_its_cable_still_pulses(self):
+        model=self.model();source=(self.cables[1],7);target=(self.cables[1],3)
+        primary,_=wf.core_layout_family(model,source);secondary,_=wf.core_layout_family(model,target)
+        scene=wf.core_layout_map_scene(model,primary,secondary,selected=wf.core_layout_component(model,source))
+        target_cells=[s for s in scene['cells'] if s['slot']==target and s.get('role')=='target_number']
+        self.assertTrue(target_cells)
+        self.assertTrue(all(s['stroke']==wf.LAYOUT_MAP_TARGET and not s.get('blink_colors') for s in target_cells))
+        cable=next(s for s in scene['shapes'] if s.get('role')=='cable' and s['cable_id']==target[0])
+        self.assertIn(wf.LAYOUT_MAP_TARGET,cable['blink_colors'])
+
+    def test_pair_number_colors_are_local_and_survive_route_selection(self):
+        s=self.store;a,b,c=self.cables[:3];middle=self.nodes[2]
+        with s.action('후도면 선번 연결도 변경'):
+            insert_pair(s,self.nodes[1],(a,2),(b,2))
+            s.conn.execute('DELETE FROM splices WHERE node_id=?',(middle,))
+            insert_pair(s,middle,(b,7),(c,7))
+        before=self.state();model=self.model();source=(b,7);primary,_=wf.core_layout_family(model,source)
+        for selected in ((),wf.core_layout_component(model,source)):
+            scene=wf.core_layout_map_scene(model,primary,selected=selected,selected_slot=source,selected_node=self.nodes[1])
+            for group in scene['connections']:
+                for pair in group['pairs']:
+                    expected=wf.LAYOUT_MAP_CROSSED if all(slot[0] in model['cables'] for slot in pair) and pair[0][1]!=pair[1][1] else wf.LAYOUT_MAP_NUMBER
+                    for slot in pair:
+                        shapes=[shape for shape in scene['shapes'] if shape.get('node_id')==group['node_id'] and shape.get('slot')==slot and shape.get('role') not in ('clicked_number','target_number')]
+                        self.assertTrue(shapes)
+                        for shape in shapes:
+                            self.assertEqual(shape['stroke'] if shape['kind']=='rect' else shape['fill'],expected)
+                            self.assertFalse(shape.get('blink_colors'))
+            # The same physical 7 is red at one splice and blue at its other end.
+            cells=[cell for cell in scene['cells'] if cell['slot']==source and cell.get('role')!='clicked_number']
+            self.assertEqual({cell['node_id']:cell['stroke'] for cell in cells},{self.nodes[1]:wf.LAYOUT_MAP_CROSSED,middle:wf.LAYOUT_MAP_NUMBER})
+        self.assertEqual(self.state(),before)
+
+    def test_box_directions_use_opposite_facility_and_keep_physical_owner(self):
+        model=self.model();before=self.state()
+        scene=wf.core_layout_map_scene(model)
+        for shape in scene['shapes']:
+            if shape.get('role') not in ('owner','unpaired_caption'):continue
+            owner=shape['owner'];nid=shape['node_id']
+            if owner.startswith('PORT:'):self.assertTrue(shape['text'].startswith('RN 내부포트'))
+            else:
+                cable=model['cables'][owner];other=cable['n2id'] if cable['n1id']==nid else cable['n1id']
+                self.assertTrue(shape['text'].startswith(model['nodes'][other]['name']+' 방향'),shape)
+                self.assertNotIn(cable['cable_id'],shape['text'])
+        self.assertEqual(wf.core_layout_map_direction(model,self.cables[0],self.nodes[0]),'SYNTH 시설 2 방향')
+        self.assertEqual(wf.core_layout_map_direction(model,self.cables[0],self.nodes[1]),'SYNTH 시설 1 방향')
+        changed=copy.deepcopy(model);changed['nodes'][self.nodes[0]]['name']='새 RN 이름'
+        cable=changed['cables'][self.cables[0]];cable['n1id'],cable['n2id']=cable['n2id'],cable['n1id']
+        updated=wf.core_layout_map_scene(changed)
+        self.assertTrue(any(shape.get('role')=='owner' and shape.get('owner')==self.cables[0] and shape.get('node_id')==self.nodes[1] and shape['text']=='새 RN 이름 방향' for shape in updated['shapes']))
+        self.assertEqual(scene_pairs(scene),scene_pairs(updated));self.assertEqual(self.state(),before)
 
     def test_real_positions_every_pair_and_unconnected_used_numbers_are_visible(self):
         before = self.state()
@@ -426,10 +508,11 @@ def windows_facility_ui():
             assert dialog.scene['width']*dialog.scale<=dialog.canvas.winfo_width()+1
             assert dialog.scene['height']*dialog.scale<=dialog.canvas.winfo_height()+1
             assert abs(dialog.canvas.canvasx(0))<2 and abs(dialog.canvas.canvasy(0))<2
-            assert set(dialog.scene['node_boxes'])==set(nodes)
+            assert set(dialog.scene['node_boxes'])==set(nodes[:3])
+            assert set(dialog.scene['anchors'])==set(nodes)
             if '--emit-screenshots' in sys.argv:
                 from check_desktop_design import screenshot
-                Path('dist').mkdir(exist_ok=True);screenshot(dialog,Path('dist')/'v123-initial-whole-map.png')
+                Path('dist').mkdir(exist_ok=True);screenshot(dialog,Path('dist')/'v124-initial-whole-map.png')
 
             print('FACILITY MAP: real header drag, one facility leader, persisted local offset and no data/history write',flush=True)
             nid=nodes[1];old_positions=copy.deepcopy(dialog.box_positions);dialog.zoom_to(1)
@@ -463,16 +546,19 @@ def windows_facility_ui():
             assert dialog.source==slot and dialog.source_node==cell['node_id'] and dialog.side_visible
             item,base,styles=next((i,b,st) for i,b,st in dialog._blink_items
                                  if dialog.items.get(i)==(None,cables[1]) and dialog.canvas.type(i)=='line')
-            observed={dialog.canvas.itemcget(item,'fill')};selected_item=next(i for i in dialog.items if dialog.items[i][0]==slot and dialog.canvas.type(i)=='rectangle')
-            outlines={dialog.canvas.itemcget(selected_item,'outline')}
+            observed={dialog.canvas.itemcget(item,'fill')}
+            selected_item=next(i for i in dialog.items if dialog.items[i][0]==slot and dialog.canvas.type(i)=='text')
+            static_items=set(dialog.box_items)|set(dialog.box_leaders.values())
+            static_styles={i:dialog.canvas.itemconfigure(i) for i in static_items}
             for _ in range(10):
-                wait(110);observed.add(dialog.canvas.itemcget(item,'fill'));outlines.add(dialog.canvas.itemcget(selected_item,'outline'))
+                wait(110);observed.add(dialog.canvas.itemcget(item,'fill'))
+                assert {i:dialog.canvas.itemconfigure(i) for i in static_items}==static_styles
             assert {base['fill'],wf.LAYOUT_MAP_CONTEXT,wf.LAYOUT_MAP_SELECTED}<=observed,observed
-            assert wf.LAYOUT_MAP_SELECTED in outlines and len(outlines)>=2,outlines
+            assert dialog.canvas.itemcget(selected_item,'fill')==wf.LAYOUT_MAP_CROSSED
             assert not app.highlight_cables
             assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==before
             dialog._blink_phase=2;dialog.paint_blink()
-            if '--emit-screenshots' in sys.argv:screenshot(dialog,Path('dist')/'v123-selected-component.png')
+            if '--emit-screenshots' in sys.argv:screenshot(dialog,Path('dist')/'v124-steady-box-selected-route.png')
             # Synthetic pointer events do not activate a native Windows window.
             # Deliver the key to a verified focused widget, as the existing
             # keyboard gates do, rather than silently dropping Escape in CI.
@@ -488,6 +574,16 @@ def windows_facility_ui():
             dialog.select_slot(slot);app.update();assert dialog._blink_job is not None
             dialog.query.set('SYNTH-no-such-core');dialog.find();assert dialog._blink_job is None
             dialog.select_slot(slot);app.update();assert dialog._blink_job is not None
+            print('FACILITY MAP: RN box hides on disconnect, reappears on undo with its saved position',flush=True)
+            rn_offset=dialog.box_positions[nodes[0]]
+            with s.action('후도면 선번 연결도 변경'):
+                s.conn.execute('DELETE FROM splices WHERE node_id=?',(nodes[0],))
+            wait(750)
+            assert nodes[0] not in dialog.scene['node_boxes'] and nodes[0] in dialog.scene['anchors']
+            assert dialog.box_positions[nodes[0]]==rn_offset
+            s.undo();app.refresh();app.update()
+            assert dialog.scene['node_boxes'][nodes[0]]['offset']==rn_offset
+            assert scene_pairs(dialog.scene)==model_pairs(dialog.model)
             dialog.destroy();app.update();assert dialog._blink_job is None and dialog._fit_job is None
 
             print('FACILITY MAP: very spread-out drawing still fits at first open, with all facilities and boxes',flush=True)
@@ -497,7 +593,7 @@ def windows_facility_ui():
             assert dialog.scale<.08
             assert dialog.scene['width']*dialog.scale<=dialog.canvas.winfo_width()+1
             assert dialog.scene['height']*dialog.scale<=dialog.canvas.winfo_height()+1
-            assert set(dialog.scene['anchors'])==set(nodes) and set(dialog.scene['node_boxes'])==set(nodes)
+            assert set(dialog.scene['anchors'])==set(nodes) and set(dialog.scene['node_boxes'])==set(nodes[:3])
             assert dialog.box_positions==saved
             dialog.destroy();s.undo();app.refresh();app.update()
             assert (wf.plan_snapshot(s.conn),wf.state(s))==before[:2]
@@ -505,7 +601,7 @@ def windows_facility_ui():
             assert not error.called,error.call_args
         finally:app.on_close()
     faulthandler.cancel_dump_traceback_later()
-    print('PASS Windows facility boxes, first-open full map, real drag/persistence, facility leaders, orange/selected pulse colors and timer cleanup')
+    print('PASS Windows steady facility boxes/leaders, terminal hiding, RN splice visibility/undo, first-open full map, real drag/persistence, cable-only pulse colors and timer cleanup')
 
 
 if __name__ == '__main__':

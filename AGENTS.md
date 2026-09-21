@@ -1,5 +1,23 @@
 # Telecom Core updater project
 
+- V124 drawing-mode facility number boxes and their display leaders never
+  blink. A cable-to-cable pair uses blue for equal numbers, red for unequal
+  numbers on both sides. Classify per local pair, never by core ID or a remote
+  partner. RN port names and unpaired numbers stay blue. Selection/target rims
+  are separate and cannot replace the number colors. Only physical cable
+  strokes use the V123 timer. Keep selection and editing intact.
+  Box direction headings name the cable's opposite endpoint facility; RN
+  internal connections say RN internal port. Resolve from actual endpoint IDs,
+  including reversed cable orientation, and update on facility renames. Retain
+  physical cable IDs for hit testing, sorting, editing and cable labels.
+  Hide a number box when at most one physical cable meets its facility and no
+  valid local splice exists. Keep every facility symbol, cable, underlying slot,
+  diagnostic and saved offset. Actual RN internal-port splices always remain
+  visible; an RN type or unused port alone is insufficient. Multi-cable unpaired
+  ledgers remain visible. Live disconnect/undo must hide/restore the box without
+  losing its position or changing drawing data. Run the native stationary-box,
+  cable-pulse and RN visibility gates plus the complete release verification.
+
 - V123 groups every facility's splice and unpaired cable sections in one movable
   drawing box. Its display leader starts at the exact facility anchor; do not
   attach splice-box leaders to nearby cable points or invent physical edges.
