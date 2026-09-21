@@ -168,7 +168,16 @@ def windows_ui():
             assert dialog.display_model()['slots'][c[1],3]['core_id']=='SYNTH-X'
             assert dialog.tree.selection()==('3',) and dialog.tree.item('3','tags')==('source',)
             assert dialog.tree.item('7','tags')==('target',)
-            assert {slot for shape in dialog.scene['cells'] for slot in (shape['slot'],) if shape['fill']=='#dbeafe'}
+            # Preview swaps the two paths: equal 3-to-3 stays blue, while
+            # 4-to-7 stays red. Selection is a separate steady outline.
+            for slot,color in (((c[1],3),wf.LAYOUT_MAP_NUMBER),((c[1],7),wf.LAYOUT_MAP_CROSSED)):
+                labels=[shape for shape in dialog.scene['shapes'] if shape.get('slot')==slot and shape['kind']=='text']
+                assert len(labels)==2 and all(shape['fill']==color and not shape.get('blink_colors') for shape in labels)
+            selected=[shape for shape in dialog.scene['cells'] if shape.get('role')=='clicked_number']
+            assert len(selected)==1 and selected[0]['slot']==(c[1],3) and selected[0]['node_id']==dialog.source_node
+            assert selected[0]['stroke']==wf.LAYOUT_MAP_SELECTED and not selected[0].get('blink_colors')
+            targets=[shape for shape in dialog.scene['cells'] if shape.get('role')=='target_number' and shape['slot']==(c[1],7)]
+            assert len(targets)==2 and all(shape['stroke']==wf.LAYOUT_MAP_TARGET and not shape.get('blink_colors') for shape in targets)
             assert (wf.plan_snapshot(s.conn),wf.state(s),s.history_rows())==before
             if '--emit-screenshots' in sys.argv:
                 from check_desktop_design import screenshot
