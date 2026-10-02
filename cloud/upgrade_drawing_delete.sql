@@ -1,47 +1,7 @@
--- Account approval and optimistic, account-isolated drawing synchronization.
-create schema if not exists telecom_private;
-revoke all on schema telecom_private from public, anon;
-grant usage on schema telecom_private to authenticated;
-
-create table telecom_private.admin_emails (
-  email text primary key check (email = lower(email))
-);
-create table telecom_private.members (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  email text not null,
-  role text not null default 'user' check (role in ('admin','user')),
-  status text not null default 'pending' check (status in ('approved','pending','blocked')),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create table telecom_private.drawings (
-  id uuid primary key,
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  name text not null check (char_length(name) between 1 and 120),
-  revision bigint not null check (revision > 0),
-  payload text not null check (octet_length(payload) <= 12000000),
-  sha256 text not null,
-  operation_id uuid not null,
-  deleted_at timestamptz,
-  updated_at timestamptz not null default now()
-);
-create index drawings_owner_updated on telecom_private.drawings(owner_id, updated_at desc);
-create table telecom_private.approval_audit (
-  id bigint generated always as identity primary key,
-  actor_id uuid not null,
-  target_id uuid not null,
-  status text not null,
-  created_at timestamptz not null default now()
-);
-alter table telecom_private.admin_emails enable row level security;
-alter table telecom_private.members enable row level security;
-alter table telecom_private.drawings enable row level security;
-alter table telecom_private.approval_audit enable row level security;
-revoke all on all tables in schema telecom_private from public, anon, authenticated;
-
--- Privileged implementation is deliberately outside the exposed public schema.
--- Every action validates the authenticated Google identity and current membership.
-create function telecom_private.dispatch(request jsonb) returns jsonb
+-- V125 additive upgrade: preserve all drawing payloads and existing access checks.
+begin;
+alter table telecom_private.drawings add column if not exists deleted_at timestamptz;
+create or replace function telecom_private.dispatch(request jsonb) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
   actor uuid := auth.uid();
@@ -168,9 +128,5 @@ $$;
 revoke all on function telecom_private.dispatch(jsonb) from public, anon, authenticated;
 grant execute on function telecom_private.dispatch(jsonb) to authenticated;
 
-create function public.telecom_call(request jsonb) returns jsonb
-language sql security invoker set search_path = '' set statement_timeout = '20s' as $$
-  select telecom_private.dispatch(request);
-$$;
-revoke all on function public.telecom_call(jsonb) from public, anon;
-grant execute on function public.telecom_call(jsonb) to authenticated;
+
+commit;

@@ -78,12 +78,26 @@ class Server:
         with self.lock:
             if self.fail=='network':
                 raise cloud.CloudError('Synthetic network outage','network')
-            if action=='list':
-                return [{k:v for k,v in r.items() if k!='payload'} for r in copy.deepcopy(list(self.rows.values()))]
+            if action in ('list','catalog'):
+                rows=[{k:v for k,v in r.items() if k!='payload'} for r in copy.deepcopy(list(self.rows.values())) if not r.get('deleted')]
+                if action=='catalog':return {'drawings':rows,'deleted':[{'id':r['id'],'name':r['name']} for r in self.rows.values() if r.get('deleted')]}
+                return rows
             if action=='load':
+                if self.rows[request['id']].get('deleted'):raise cloud.CloudError('DRAWING_DELETED','PT410')
                 return copy.deepcopy(self.rows[request['id']])
+            if action=='delete':
+                old=self.rows.get(request['id'])
+                if not old or not old.get('deleted'):
+                    if (old['revision'] if old else 0)!=request['base_revision']:raise cloud.CloudError('DRAWING_CONFLICT','40001')
+                    row=dict(old or request,deleted=True,revision=request['base_revision']+1)
+                    self.rows[request['id']]=row
+                if self.fail=='lost_ack':
+                    self.fail=None
+                    raise cloud.CloudError('Synthetic lost acknowledgement','network')
+                return dict(id=request['id'],deleted=True,revision=self.rows[request['id']]['revision'])
             if action=='save':
                 old=self.rows.get(request['id'])
+                if old and old.get('deleted'):raise cloud.CloudError('DRAWING_DELETED','PT410')
                 if old and old['operation_id']==request['operation_id']:
                     return copy.deepcopy(old)
                 if (old['revision'] if old else 0)!=request['base_revision']:

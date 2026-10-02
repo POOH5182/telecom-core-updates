@@ -90,6 +90,7 @@ def cloud_http(path, body=None, token=None):
         code = str(detail.get('code') or e.code)
         message = str(detail.get('message') or detail.get('msg') or detail.get('error_description') or '서버 요청 실패')
         friendly = {'DRAWING_CONFLICT': '다른 PC에서 수정된 도면입니다.',
+                    'DRAWING_DELETED': '삭제된 도면입니다. 이 PC의 작업은 삭제 보관함에 보존됩니다.',
                     'APPROVAL_REQUIRED': '관리자 승인이 필요하거나 사용이 차단됐습니다.',
                     'GOOGLE_LOGIN_REQUIRED': 'Google 계정으로 다시 로그인해 주세요.',
                     'ADMIN_REQUIRED': '관리자 권한이 필요합니다.'}
@@ -517,6 +518,9 @@ class CloudController:
         if self.jobs.busy:
             return False
         self.queue_drawing_copies()
+        # Complete quarantine after an interrupted index/outbox transition.
+        for drawing_id in self.index.get('deleted',{}):
+            self.quarantine_outbox(drawing_id)
         pending=sorted(self.outbox().glob('*.json'))
         if not pending:
             self.publish_save_status()
@@ -550,6 +554,14 @@ class CloudController:
                 self.failed(error,drawing_id)
                 if failed:failed(error)
         def failure(error):
+            if isinstance(error,CloudError) and error.code=='PT410':
+                try:
+                    self.archive_deleted(drawing_id)
+                    self.send_next(done,failed)
+                except Exception as problem:
+                    self.failed(problem,drawing_id)
+                    if failed:failed(problem)
+                return
             if isinstance(error,CloudError) and error.code=='40001':
                 # Keep both revisions: local changes become a distinct cloud drawing.
                 if '_conflict_id' not in request:
@@ -603,7 +615,7 @@ class CloudController:
             notice.grab_set()
 
     def sync_now(self):
-        if self.jobs.busy or self.access_lost:
+        if self.jobs.busy or self.access_lost or getattr(self,'delete_review',False):
             return
         try:
             self.capture()
@@ -615,7 +627,7 @@ class CloudController:
         if self.closing:
             return
         try:
-            if not self.access_lost and not self.jobs.busy and (self.current or any(self.outbox().glob('*.json')) or any(e.get('copy_pending') for e in self.index['docs'].values())) and time.monotonic()>=self.retry_at:
+            if not getattr(self,'delete_review',False) and not self.access_lost and not self.jobs.busy and (self.current or any(self.outbox().glob('*.json')) or any(e.get('copy_pending') for e in self.index['docs'].values())) and time.monotonic()>=self.retry_at:
                 if self.editable_idle():
                     self.capture()
                 if any(self.outbox().glob('*.json')) or any(e.get('copy_pending') for e in self.index['docs'].values()):
@@ -634,13 +646,103 @@ class CloudController:
     def poll_remote(self):
         drawing_id=self.current
         signature=self.signature()
-        def checked(rows):
+        def checked(catalog):
+            rows=self.reconcile_catalog(catalog)
             row=next((r for r in rows if r['id']==drawing_id),None)
             if not row or self.current!=drawing_id or self.signature()!=signature or self.has_dialogs():
                 return
             if row['revision']>self.entry()['base_revision']:
                 self.fetch_drawing(drawing_id,expected_signature=signature)
-        self.jobs.run(lambda:self.session.call('list'),checked,self.failed)
+        self.jobs.run(lambda:self.session.call('catalog'),checked,self.failed)
+
+    def delete_idle(self):
+        if not self.editable_idle() or getattr(self.app,'_saving_now',False):
+            raise CloudError('진행 중인 편집·저장을 먼저 마쳐 주세요.')
+        if stage_open_editors(self.app):
+            raise CloudError('열린 케이블·함체·코어 편집창을 먼저 저장하거나 닫아 주세요. 입력 내용은 유지됩니다.')
+
+    def quarantine_outbox(self,drawing_id):
+        drawing_id=str(uuid.UUID(drawing_id))
+        path=self.outbox()/(drawing_id+'.json')
+        if path.exists():
+            cloud_atomic(self.home/'cloud_deleted'/drawing_id/'pending.json',path.read_bytes())
+            path.unlink()
+
+    def archive_deleted(self,drawing_id,name=None):
+        """Hide one confirmed tombstone, preserving snapshots and unsent local work."""
+        drawing_id=str(uuid.UUID(drawing_id));entry=self.index['docs'].get(drawing_id)
+        active=self.current==drawing_id
+        if active:self.delete_idle()
+        if entry:
+            path=self.working(entry)
+            if path.exists():
+                data=cloud_bundle(self.app.store if active else path,self.home/'scenarios'/entry['stem'])
+                cloud_atomic(self.home/'cloud_deleted'/drawing_id/'drawing.zip',data)
+        previous=json.loads(json.dumps(self.index))
+        self.index.setdefault('deleted',{})[drawing_id]={'name':name or (entry or {}).get('name','삭제된 도면'),'entry':entry}
+        self.index['docs'].pop(drawing_id,None)
+        if self.index.get('current')==drawing_id:self.index['current']=None
+        try:self.persist()
+        except Exception:
+            self.index=previous
+            raise
+        # A failed quarantine is recoverable from the durable tombstone at next send.
+        try:self.quarantine_outbox(drawing_id)
+        finally:
+            if active:
+                self.current=None;self.switching=True
+                try:self.app.switch_project(self.home/'data'/('unselected_'+uuid.uuid4().hex+'.sqlite3'))
+                finally:self.switching=False
+                if not self.closing:self.app.after(0,self.projects)
+        self.status.set('도면 삭제 완료 · 이 PC의 작업과 전송 대기 내용은 삭제 보관함에 보존됩니다.')
+
+    def reconcile_catalog(self,catalog):
+        if not isinstance(catalog,dict) or not isinstance(catalog.get('drawings'),list) or not isinstance(catalog.get('deleted'),list):
+            raise CloudError('도면 목록 응답이 올바르지 않습니다.')
+        for row in catalog['deleted']:
+            key=str(uuid.UUID(row['id']))
+            if key not in self.index.get('deleted',{}) or key in self.index['docs']:
+                self.archive_deleted(key,row['name'])
+        return [row for row in catalog['drawings'] if row['id'] not in self.index.get('deleted',{})]
+
+    def delete_drawing(self,row,changed=None):
+        if self.access_lost or self.closing:return
+        parent=self.dialog if self.dialog and self.dialog.winfo_exists() else self.app
+        if self.jobs.busy:
+            messagebox.showinfo('도면 삭제','진행 중인 동기화가 끝난 뒤 다시 눌러 주세요.',parent=parent);return
+        try:self.delete_idle()
+        except Exception as error:
+            messagebox.showwarning('도면 삭제 보류',str(error),parent=parent);return
+        drawing_id=str(uuid.UUID(row['id']));name=row['name']
+        if drawing_id in self.index.get('deleted',{}):return
+        self.delete_review=True
+        try:
+            confirmed=messagebox.askyesno('도면 삭제 확인','“'+name+'” 도면을 목록에서 삭제할까요?\n\n'
+                '같은 계정의 다른 PC 목록에서도 삭제됩니다.\nGIS·현장반영·후도면을 포함한 도면 전체가 대상입니다.\n'
+                '이 PC에 저장된 작업과 전송 대기 내용은 삭제 보관함에 보존합니다.',parent=parent,default='no')
+        finally:self.delete_review=False
+        if not confirmed or self.access_lost or self.closing or self.jobs.busy:return
+        try:
+            self.delete_idle()
+            entry=self.index['docs'].get(drawing_id)
+            if entry and self.working(entry).exists():
+                data=cloud_bundle(self.app.store if self.current==drawing_id else self.working(entry),self.home/'scenarios'/entry['stem'])
+                cloud_atomic(self.home/'cloud_deleted'/drawing_id/'drawing.zip',data)
+            request=dict(id=drawing_id,name=name,base_revision=int(row.get('revision',0)),operation_id=str(uuid.uuid4()))
+        except Exception as error:
+            messagebox.showwarning('도면 삭제 보류',str(error),parent=parent);return
+        def deleted(result):
+            try:
+                if result.get('id')!=drawing_id or result.get('deleted') is not True:raise CloudError('서버에서 삭제 완료를 확인하지 못했습니다.')
+                self.archive_deleted(drawing_id,name)
+                if changed:changed()
+            except Exception as error:failure(error)
+        def failure(error):
+            self.failed(error,drawing_id)
+            messagebox.showwarning('도면 삭제 확인 필요',
+                '다른 PC에서 도면이 변경되었습니다. 새로고침 후 다시 확인해 주세요.' if isinstance(error,CloudError) and error.code=='40001'
+                else '삭제 완료를 확인하지 못했습니다. 작업은 보존됩니다.\n목록을 새로고침하거나 다시 시도해 주세요.\n'+str(error),parent=parent)
+        self.jobs.run(lambda:self.session.call('delete',**request),deleted,failure)
 
     def ensure_saved(self, continuation):
         if self.jobs.busy:
@@ -698,6 +800,7 @@ class CloudController:
         self.app.update_title()
 
     def open_drawing(self,row):
+        if row['id'] in self.index.get('deleted',{}):return
         def open_it():
             entry=self.index['docs'].get(row['id'])
             if entry and self.working(entry).exists():
@@ -928,10 +1031,10 @@ class CloudController:
         window=tk.Toplevel(self.app)
         self.dialog=window
         window.title('내 도면 · '+self.session.profile['email'])
-        window.geometry('940x500')
+        window.geometry('940x540')
         window.transient(self.app)
         window.grab_set()
-        window.protocol('WM_DELETE_WINDOW',window.destroy if self.current else self.close)
+        window.protocol('WM_DELETE_WINDOW',lambda:window.destroy() if self.current else self.close())
         ttk.Label(window,text='같은 Google 계정으로 다른 PC에서도 이 목록의 도면을 열 수 있습니다.',padding=12).pack(fill='x')
         tree=ttk.Treeview(window,columns=('name','version','updated'),show='headings',selectmode='browse')
         for key,title,width in [('name','도면 이름',420),('version','서버 버전',80),('updated','수정 시각',250)]:
@@ -946,7 +1049,7 @@ class CloudController:
                 return
             selected_id=selected_id or (tree.selection()[0] if tree.selection() else self.index.get('current'))
             rows.clear()
-            rows.update({r['id']:r for r in remote})
+            rows.update({r['id']:r for r in remote if r['id'] not in self.index.get('deleted',{})})
             for key,entry in self.index['docs'].items():
                 if key not in rows:
                     rows[key]={'id':key,'name':entry['name'],'revision':entry.get('base_revision',0),'updated_at':'PC 저장 · 동기화 대기'}
@@ -955,11 +1058,14 @@ class CloudController:
                 tree.insert('','end',iid=key,values=(row['name'],row['revision'],row['updated_at']))
             if selected_id in rows:
                 tree.selection_set(selected_id)
-            label.configure(text='도면을 선택하고 열기·도면 복사·이름 변경을 누르세요.' if rows else '새 도면을 만들거나 기존 PC 도면을 가져오세요.')
+            label.configure(text='도면을 선택하고 열기·도면 복사·이름 변경·도면 삭제를 누르세요.' if rows else '새 도면을 만들거나 기존 PC 도면을 가져오세요.')
+        def loaded(catalog):
+            try:populate(self.reconcile_catalog(catalog))
+            except Exception as error:label.configure(text=str(error))
         def load_rows():
             if not window.winfo_exists():
                 return
-            if not self.jobs.run(lambda:self.session.call('list'),populate,lambda e:(populate([]),label.configure(text=str(e)))):
+            if not self.jobs.run(lambda:self.session.call('catalog'),loaded,lambda e:(populate([]),label.configure(text=str(e)))):
                 window.after(300,load_rows)
         def selected():
             if tree.selection():
@@ -978,10 +1084,14 @@ class CloudController:
         def copy_selected():
             if tree.selection():self.copy_drawing(rows[tree.selection()[0]],changed=copied)
             else:label.configure(text='복사할 도면을 먼저 선택하세요.')
+        def delete_selected():
+            if tree.selection():self.delete_drawing(rows[tree.selection()[0]],changed=load_rows)
+            else:label.configure(text='삭제할 도면을 먼저 선택하세요.')
         buttons=ttk.Frame(window,padding=10)
         buttons.pack(fill='x')
-        for text,command in [('열기',selected),('도면 복사',copy_selected),('이름 변경',rename_selected),('새 도면',self.new_drawing),('기존 PC 도면 가져오기',self.import_previous),('파일 선택해서 가져오기',self.import_external),('새로고침',load_rows)]:
-            ttk.Button(buttons,text=text,command=command).pack(side='left',padx=3)
+        for i,(text,command) in enumerate([('열기',selected),('도면 복사',copy_selected),('이름 변경',rename_selected),('도면 삭제',delete_selected),('새 도면',self.new_drawing),('기존 PC 도면 가져오기',self.import_previous),('파일 선택해서 가져오기',self.import_external),('새로고침',load_rows)]):
+            ttk.Button(buttons,text=text,command=command).grid(row=i//4,column=i%4,padx=3,pady=3,sticky='ew')
+        for i in range(4):buttons.columnconfigure(i,weight=1)
         tree.bind('<Double-1>',lambda e:selected())
         tree.bind('<F2>',rename_selected)
         load_rows()

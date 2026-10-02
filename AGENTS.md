@@ -1,5 +1,21 @@
 # Telecom Core updater project
 
+- V125 My Drawings has a named, default-No deletion confirmation. Deletion covers
+  one entire owned drawing (all stages), never another account or an individual
+  stage. Keep source payloads on the server with deleted_at tombstones; list/load
+  hide them, save rejects them before idempotent acknowledgement, and catalog
+  propagates tombstones to other PCs. Delete uses the save advisory lock and CAS;
+  retries are idempotent, including never-uploaded local IDs. Existing list/save
+  clients keep their protocol and cannot recreate a deleted ID.
+  Client archives current/cached SQLite snapshots and pending uploads before
+  removing only its index entry. Keep original local files, close the active
+  drawing into an empty selection state, guard live editors and busy operations,
+  and recover interrupted index/outbox transitions. Never silently re-upload
+  tombstones as conflict copies. Run check_drawing_delete.py including native
+  buttons/screenshot, the cloud/copy gates, transactional synthetic SQL permission
+  tests, and full Windows publication. Server upgrade is additive, applies no
+  real drawing deletions, and preserves existing Google/approval/owner checks.
+
 - V124 drawing-mode facility number boxes and their display leaders never
   blink. A cable-to-cable pair uses blue for equal numbers, red for unequal
   numbers on both sides. Classify per local pair, never by core ID or a remote
