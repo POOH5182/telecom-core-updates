@@ -9,7 +9,12 @@ AGENTS.md의 버전별 규칙(V48~최신)은 이 파일보다 구체적이며, �
 
 1. 원격 `main`과 최신 Release(`gh release list`, `releases/latest/download/latest.json`)를
    확인해 현재 최신 버전을 기준으로 작업한다. (2026-10-06 기준 최신: V125)
-2. 처음 내려받은 상태에서 `app/`이 없으면 `python tools/materialize_release.py`로 준비한다.
+2. 최신 원격 소스를 반영(`git fetch origin main` 후 fast-forward)한 다음 수정한다.
+   로컬에 아직 게시하지 않은 작업(커밋 안 된 변경, push 안 된 커밋, 수정된 `app/`)이 있으면
+   덮어쓰거나 버리지 말고 먼저 내용을 확인한 뒤 원격 변경과 합친다.
+3. 배포(push) 직전에도 원격 main과 최신 Release를 다시 확인한다. 다른 곳에서 같은 번호나 더 높은
+   버전이 배포되었으면 그 위에 합치고 버전 번호를 다시 올려 충돌을 피한다.
+4. 처음 내려받은 상태에서 `app/`이 없으면 `python tools/materialize_release.py`로 준비한다.
    이미 수정 중인 `app/`이나 소스가 있으면 materialize를 다시 실행해 덮어쓰지 않는다.
 
 ## 사용자 승인 범위 (상시)
