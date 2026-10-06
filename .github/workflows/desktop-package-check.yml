@@ -1,0 +1,23 @@
+name: 실행파일 묶음 확인
+on:
+  push:
+    branches: [desktop-package-check]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: python .ci_desktop/build_desktop_package.py . dist_pkg
+        env:
+          PYTHONUTF8: '1'
+      - run: python .ci_desktop/check_package.py dist_pkg/통신코어도면_V125.zip
+        env:
+          PYTHONUTF8: '1'
