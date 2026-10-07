@@ -75,7 +75,7 @@ def ui():
             assert not errors, errors
             print('UI: new-installation cable long dashes verified', flush=True)
         finally:
-            app.destroy()
+            app.on_close()
 
 
 def report(text):
