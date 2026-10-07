@@ -73,13 +73,14 @@ def ui():
                 assert windows_style(dash, float(dialog.canvas.itemcget(i, 'width'))) == 'dash', dash
             dialog.destroy()
             assert not errors, errors
-            print('UI: 신설 cable long dashes verified', flush=True)
+            print('UI: new-installation cable long dashes verified', flush=True)
         finally:
             app.destroy()
 
 
 def report(text):
     # GitHub annotations keep the failure reason readable without job logs.
+    text = text.encode('ascii', 'backslashreplace').decode('ascii')
     print('::error title=check_new_cable_dash::' + text.replace('%', '%25').replace('\r', '').replace('\n', '%0A'), flush=True)
 
 
@@ -88,7 +89,7 @@ if __name__ == '__main__':
     import traceback
     stream = io.StringIO()
     result = unittest.TextTestRunner(stream=stream, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(NewCableDashTests))
-    print(stream.getvalue(), flush=True)
+    print(stream.getvalue().encode('ascii', 'backslashreplace').decode('ascii'), flush=True)
     if not result.wasSuccessful():
         report(stream.getvalue()[-3000:])
         raise SystemExit(1)
