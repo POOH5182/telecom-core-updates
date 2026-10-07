@@ -78,8 +78,22 @@ def ui():
             app.destroy()
 
 
+def report(text):
+    # GitHub annotations keep the failure reason readable without job logs.
+    print('::error title=check_new_cable_dash::' + text.replace('%', '%25').replace('\r', '').replace('\n', '%0A'), flush=True)
+
+
 if __name__ == '__main__':
-    result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(NewCableDashTests))
+    import io
+    import traceback
+    stream = io.StringIO()
+    result = unittest.TextTestRunner(stream=stream, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(NewCableDashTests))
+    print(stream.getvalue(), flush=True)
     if not result.wasSuccessful():
+        report(stream.getvalue()[-3000:])
         raise SystemExit(1)
-    ui()
+    try:
+        ui()
+    except BaseException:
+        report(traceback.format_exc()[-3000:])
+        raise
