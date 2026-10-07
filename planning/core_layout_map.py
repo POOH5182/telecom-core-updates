@@ -220,7 +220,7 @@ def core_layout_map_scene(model,primary=(),secondary=(),reference=None,descendin
             try:size=int(cable.get('size') or 0)
             except (ValueError,TypeError):size=0
             color='#d32f2f' if size<=12 else '#1769aa' if size<=36 else '#19703a' if size<=72 else '#e24a9b' if size<=144 else '#795548'
-            status=str(cable.get('status') or '기설');dash=(8,6) if status=='신설' else ()
+            status=str(cable.get('status') or '기설');dash=(16,8) if status=='신설' else ()
             meta=dict(owner=cid,cable_id=cid,role='cable',status=status)
             # Timer pulses use the original cable geometry and restore its base
             # color/dashes. Shared cables alternate each applicable route color.

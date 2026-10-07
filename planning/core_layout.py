@@ -171,6 +171,14 @@ def core_layout_commit(store,preview):
     return backup
 
 
+def layout_line_dash(shape,width):
+    """Tk dash for a scene line. 신설 cables get long dashes (- - -) scaled to
+    the drawn width: Windows Tk renders a first dash <= 4x line width as dots."""
+    dash=tuple(shape.get('dash') or ())
+    if not dash or shape.get('status')!='신설':return dash
+    width=max(1.0,float(width))
+    return (min(255,max(dash[0],int(round(width*4))+6)),min(255,max(dash[1] if len(dash)>1 else 8,int(round(width*2))+4)))
+
 def core_layout_scene(model,primary=(),secondary=()):
     """Number boxes for every facility, laid out in the drawing's relative order."""
     primary=set(primary);secondary=set(secondary);cards=[];width=410;cell=27;columns=6
@@ -510,7 +518,7 @@ class CoreLayoutDialog(RememberedToplevel):
                 draw=self.canvas.create_rectangle if s['kind']=='rect' else self.canvas.create_oval
                 item=draw(s['x']*k,s['y']*k,(s['x']+s['w'])*k,(s['y']+s['h'])*k,fill=s['fill'],outline=s['stroke'],width=max(1,s.get('thickness',1)*k))
             elif s['kind']=='polygon':item=self.canvas.create_polygon(*[v*k for v in s['points']],fill=s['fill'],outline=s['stroke'])
-            elif s['kind']=='line':item=self.canvas.create_line(*[v*k for v in s['points']],fill=s['fill'],width=max(1,s['thickness']*k),dash=s.get('dash',()),arrow=s.get('arrow','none'))
+            elif s['kind']=='line':item=self.canvas.create_line(*[v*k for v in s['points']],fill=s['fill'],width=max(1,s['thickness']*k),dash=layout_line_dash(s,max(1,s['thickness']*k)),arrow=s.get('arrow','none'))
             else:item=self.canvas.create_text(s['x']*k,s['y']*k,text=s['text'],anchor='nw',fill=s['fill'],font=('Malgun Gothic',-max(2,round(s['size']*k)),'bold' if s['bold'] else 'normal'),width=(s.get('width') or 0)*k)
             if s.get('slot') or s.get('owner'):self.items[item]=(s.get('slot'),s.get('owner'))
             if s.get('node_id'):self.item_nodes[item]=s['node_id']
@@ -518,7 +526,7 @@ class CoreLayoutDialog(RememberedToplevel):
                 self.box_items[item]=s['box_id'];self.canvas.addtag_withtag('box:'+s['box_id'],item)
             if s.get('leader_box_id'):self.box_leaders[s['leader_box_id']]=item
             if s.get('blink_colors'):
-                if s['kind']=='line':base=dict(fill=s['fill'],width=max(1,s['thickness']*k),dash=s.get('dash',()));styles=[dict(fill=c,width=max(3,4.5*k),dash=()) for c in s['blink_colors']]
+                if s['kind']=='line':base=dict(fill=s['fill'],width=max(1,s['thickness']*k),dash=layout_line_dash(s,max(1,s['thickness']*k)));styles=[dict(fill=c,width=max(3,4.5*k),dash=()) for c in s['blink_colors']]
                 elif s['kind']=='text':base=dict(fill=s['fill']);styles=[dict(fill=c) for c in s['blink_colors']]
                 else:
                     base=dict(fill=s['fill'],outline=s['stroke'],width=max(1,s.get('thickness',1)*k))

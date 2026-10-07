@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V126 신설 cables use long dashes (- - -), never dots. Windows Tk maps a
+  two-value dash to PS_DOT unless dash[0] > 4*line width, so always compute the
+  dash from the drawn width (new_cable_dash in the app, layout_line_dash in
+  planning/core_layout.py), including selection glow and blink width changes
+  in apply_highlight_visuals. SVG uses "16 8". Other dashed guides (leaders,
+  box selection) are unchanged. Display only; no drawing data changes. Run
+  check_new_cable_dash.py plus the full release verification.
+
 - V125 My Drawings has a named, default-No deletion confirmation. Deletion covers
   one entire owned drawing (all stages), never another account or an individual
   stage. Keep source payloads on the server with deleted_at tombstones; list/load
