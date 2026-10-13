@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V127 adds an explicit cable-sheet connected-route identity review in field slot
+  mode. Existing local 수정하기 and all other slot APIs remain local. Follow valid
+  saved splices including RN ports, never equal IDs or GIS links. Apply only edited
+  ID/name columns; preserve per-slot signal/status, numbering, topology and source
+  snapshots. Refuse conflicting real identities, disconnected duplicate new IDs,
+  inconsistent multirow requests, invalid/duplicate splices and remote locks.
+  Review every location, revalidate scope/revision/generation and sheet drafts,
+  back up and commit atomically with annotation/temporary-phase transport and one
+  undo group. Cancel/failure preserves inputs including cable header drafts.
+  Canonical helpers/UI live in planning/field_slots.py; run
+  check_field_route_identity.py including native review/cancel/compact apply,
+  then full Windows publication and installed-launcher download verification.
+
 - V126 신설 cables use long dashes (- - -), never dots. Windows Tk maps a
   two-value dash to PS_DOT unless dash[0] > 4*line width, so always compute the
   dash from the drawn width (new_cable_dash in the app, layout_line_dash in

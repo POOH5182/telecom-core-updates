@@ -799,3 +799,111 @@ class FieldSlotEditorDialog(RememberedToplevel):
     def open_confirm(self):
         try:self.valid();FieldSlotConfirmDialog(self,self.store,self.selected_slot())
         except ValueError as error:messagebox.showerror('현장 경로 조회',str(error),parent=self)
+
+
+# V127: explicit cable-sheet edits across saved physical field connections.
+def field_route_identity_preview(store,cable_id,changes):
+    if not field_slot_mode(store):raise ValueError('현장반영 도면에서 사용하세요.')
+    if locked(store):raise ValueError('현재 도면의 편집 잠금을 해제하세요.')
+    net=Network(store.conn);proposed={};requests=[];assigned_ids={}
+    for index,new_id,new_detail in changes:
+        seed=(cable_id,int(index));source=store.core(*seed)
+        if not source:raise ValueError('케이블·코어번호를 확인하세요.')
+        old_id=str(source['core_id'] or '').strip();old_detail=str(source['detail'] or '').strip()
+        new_id=str(new_id or '').strip() or old_id
+        new_detail=str(new_detail or '').strip() or old_detail
+        edit_id=new_id!=old_id;edit_detail=new_detail!=old_detail
+        if not (edit_id or edit_detail):continue
+        if not new_id:raise ValueError('연결 구간에 반영할 코어ID를 입력하세요.')
+        requests.append((int(index),new_id,new_detail))
+        members=set();stack=[seed]
+        while stack:
+            slot=stack.pop()
+            if slot in members:continue
+            members.add(slot)
+            if net.bad.get(slot):raise ValueError(store._slot_title(*slot)+': 잘못된 접속을 먼저 수정하세요.')
+            links=net.links.get(slot,())
+            if len({nid for nid,peer in links})!=len(links):raise ValueError(store._slot_title(*slot)+': 중복 접속을 먼저 수정하세요.')
+            stack.extend(peer for nid,peer in links)
+        # Renaming a coherent real route is allowed; a different real service is not.
+        for slot in sorted(members):
+            row=store.core(*slot)
+            if not row:raise ValueError('연결 구간의 코어번호가 없습니다.')
+            cid=str(row['core_id'] or '').strip()
+            if cid and not cid.startswith('임시-') and cid not in {old_id,new_id}:
+                raise ValueError(store._slot_title(*slot)+': 다른 실제 코어ID '+cid+'가 연결되어 있습니다. 먼저 내역을 확인하세요.')
+            cable=net.cables.get(slot[0]);nodes=(cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)
+            if any(node_locked(store,nid) for nid in nodes):raise ValueError(store._slot_title(*slot)+': 잠긴 구간이 있습니다.')
+            before=tuple(str(row[k] or '') for k in FIELD_SLOT_FIELDS)
+            target=proposed.setdefault(slot,dict(before=before,fields={}))
+            for key,value in ((0,new_id),(1,new_detail)):
+                if not (edit_id if key==0 else edit_detail):continue
+                if key in target['fields'] and target['fields'][key]!=value:
+                    raise ValueError('같은 연결 구간의 여러 행에 서로 다른 값을 입력했습니다. 한 행에서 수정하세요.')
+                target['fields'][key]=value
+        if edit_id and not new_id.startswith('임시-'):
+            if new_id in assigned_ids and assigned_ids[new_id]!=members:raise ValueError('서로 다른 연결 구간에 같은 코어ID를 입력할 수 없습니다.')
+            assigned_ids[new_id]=members
+            if any((r['cable_id'],int(r['core_index'])) not in members for r in store.all_core_rows(new_id)):
+                raise ValueError('코어ID '+new_id+'가 연결되지 않은 다른 구간에 이미 있습니다. 중복 ID를 만들지 않았습니다.')
+    rows=[]
+    for slot,item in sorted(proposed.items()):
+        after=list(item['before'])
+        for key,value in item['fields'].items():after[key]=value
+        rows.append(dict(slot=slot,before=item['before'],after=tuple(after),location=store._slot_title(*slot)))
+    if not any(r['before']!=r['after'] for r in rows):raise ValueError('수정표에서 코어ID 또는 코어내역을 먼저 변경하세요.')
+    return dict(cable_id=cable_id,changes=tuple(requests),rows=rows,revision=store.data_revision(),generation=store._view_generation)
+
+
+def field_route_identity_commit(store,preview):
+    current=field_route_identity_preview(store,preview['cable_id'],preview['changes'])
+    if current!=preview:raise ValueError('검토 중 도면이 변경되었습니다. 연결 구간을 다시 확인하세요.')
+    backup=store.path.parent/'backup'/(store.path.stem+'_field_route_identity_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.sqlite3')
+    store.backup_to(backup);changed=0;renames=set()
+    with store.action('현장 연결 구간 코어ID·내역 변경'):
+        for row in current['rows']:
+            before,after=row['before'],row['after']
+            if before==after:continue
+            store._write_core_identity(*row['slot'],after[0],after[1],True)
+            if before[0]!=after[0]:renames.add((before[0],after[0]))
+            changed+=1
+        for old,new in sorted(renames):phase_promote_identity(store,old,new)
+    return dict(changed=changed,backup=backup)
+
+
+class FieldRouteIdentityDialog(RememberedToplevel):
+    def __init__(self,editor,preview,draft):
+        super().__init__(editor);self.editor=editor;self.store=editor.store;self.preview=preview;self.draft=draft
+        self.title('현장 연결 구간 코어ID·내역 반영');self.geometry('1060x560');self.minsize(740,360)
+        ttk.Label(self,text=f"실제 접속으로 이어진 {len(preview['rows'])}개 위치를 확인하세요. 변경한 열만 반영하며 번호별 신호·상태와 접속은 유지합니다.",padding=10,wraplength=1000).pack(fill='x')
+        actions=ttk.Frame(self,padding=10);actions.pack(side='bottom',fill='x')
+        self.notice=tk.StringVar(value='취소하면 수정표 입력은 그대로 남습니다. 적용 전 백업하며 Ctrl+Z로 전체 실행취소할 수 있습니다.')
+        ttk.Label(self,textvariable=self.notice,wraplength=1000,padding=8).pack(side='bottom',fill='x')
+        self.apply_button=ttk.Button(actions,text='연결 구간에 적용',command=self.apply);self.apply_button.pack(side='right',padx=6)
+        self.cancel_button=ttk.Button(actions,text='취소',command=self.destroy);self.cancel_button.pack(side='right')
+        frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=10,pady=5)
+        cols=('location','old_id','new_id','old_detail','new_detail')
+        self.tree=SortableTreeview(frame,columns=cols,show='headings')
+        for col,label,width in zip(cols,('케이블·번호 / RN 포트','현재 코어ID','변경 코어ID','현재 내역','변경 내역'),(240,140,140,230,230)):
+            self.tree.heading(col,text=label);self.tree.column(col,width=width,minwidth=100)
+        y=ttk.Scrollbar(frame,orient='vertical',command=self.tree.yview);x=ttk.Scrollbar(frame,orient='horizontal',command=self.tree.xview)
+        self.tree.configure(yscrollcommand=y.set,xscrollcommand=x.set)
+        self.tree.grid(row=0,column=0,sticky='nsew');y.grid(row=0,column=1,sticky='ns');x.grid(row=1,column=0,sticky='ew')
+        frame.rowconfigure(0,weight=1);frame.columnconfigure(0,weight=1)
+        for row in preview['rows']:
+            self.tree.insert('','end',values=(row['location'],row['before'][0],row['after'][0],row['before'][1],row['after'][1]))
+        self.bind('<Escape>',lambda e:self.destroy());self.cancel_button.focus_set()
+
+    def apply(self):
+        editor=self.editor
+        try:
+            if not editor.winfo_exists() or not editor.ensure_cable_editable():return
+            if editor.route_identity_draft()!=self.draft:raise ValueError('수정표 입력이 바뀌었습니다. 검토창을 닫고 다시 확인하세요.')
+            if editor.edit_vars[2].get()!=getattr(editor,'_signal_original',editor.edit_vars[2].get()):raise ValueError('입력 중인 신호를 먼저 적용하세요. 코어 입력은 유지됩니다.')
+            result=field_route_identity_commit(self.store,self.preview)
+        except (ValueError,sqlite3.Error,OSError) as error:
+            self.notice.set(str(error));messagebox.showerror('반영하지 않음',str(error),parent=self);return
+        selected=editor.identity_tree.selection();index=int(selected[0]) if selected else self.preview['changes'][-1][0]
+        editor.reload_identity(index);editor.parent.refresh()
+        editor.info.set(f"연결 구간 {result['changed']}곳의 코어ID·내역 반영 완료 · Ctrl+Z로 실행취소")
+        self.destroy()
