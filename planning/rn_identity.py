@@ -74,6 +74,8 @@ class RNIdentityDialog(RememberedToplevel):
         ttk.Label(self,text='포트 선택 → 코어ID·코어내역 입력 → 저장. 케이블 연결 전에도 입력할 수 있습니다.\n빈칸은 기존 값 유지 · 엑셀 두 열은 시작 포트를 선택한 뒤 붙여넣으세요.',padding=10,wraplength=820).pack(fill='x')
         controls=ttk.Frame(self,padding=10);controls.pack(side='bottom',fill='x')
         self.save_button=ttk.Button(controls,text='저장',command=self.save);self.save_button.pack(side='right')
+        if completion_kind(store)=='after':
+            self.allocation_button=ttk.Button(controls,text='도면에서 코어배정',command=self.open_allocation);self.allocation_button.pack(side='right',padx=5)
         self.close_button=ttk.Button(controls,text='닫기',command=self.close);self.close_button.pack(side='right',padx=5)
         self.paste_button=ttk.Button(controls,text='엑셀 두 열 붙여넣기',command=self.paste);self.paste_button.pack(side='left')
         self.notice=tk.StringVar(value='입력은 저장 버튼을 눌러야 반영됩니다.');ttk.Label(self,textvariable=self.notice,padding=8,wraplength=820,foreground='#1769aa').pack(side='bottom',fill='x')
@@ -130,6 +132,7 @@ class RNIdentityDialog(RememberedToplevel):
     def show_path(self):
         if self._path_job is not None:self.after_cancel(self._path_job)
         self._path_job=None;app=self.app
+        if not getattr(self,'_core_trace_enabled',True):return
         if not app or app.store is not self.store or self.generation!=self.store._view_generation:
             self.clear_path();self.path_notice.set('작업 도면이 변경되었습니다. 창을 다시 열어 주세요.');return
         selected=self.tree.selection()
@@ -147,6 +150,32 @@ class RNIdentityDialog(RememberedToplevel):
     def refresh_shared_rows(self):
         # Saved topology/history refreshes tracing only, never editor drafts.
         if getattr(self.app,'highlight_owner',None) is self:self.show_path()
+
+    def open_allocation(self):
+        try:
+            if not self.app or self.app.store is not self.store or self.generation!=self.store._view_generation:raise ValueError('작업 도면이 변경되었습니다. 창을 다시 열어 주세요.')
+            AfterPlanner(self.app).require_after()
+            if self.drafts!=self.original:raise ValueError('RN 내부 입력을 먼저 저장한 뒤 코어배정을 시작하세요. 입력 내용은 유지됩니다.')
+            selected=self.tree.selection()
+            if not selected:raise ValueError('배정할 코어ID가 있는 RN 내부 포트를 선택하세요.')
+            panel=getattr(self.app,'_map_allocation_panel',None)
+            if panel is not None and panel.winfo_exists() and not panel.close_requested():return
+            return MapCoreAllocationPanel(self.app,('PORT:'+self.node_id,int(selected[0])),self)
+        except (ValueError,sqlite3.Error,OSError) as error:messagebox.showerror('RN 코어배정',str(error),parent=self)
+
+    def allocation_return(self):
+        if self.drafts!=self.original:return
+        self.revision=self.store.data_revision()
+        self.rows=rn_identity_rows(self.store,self.node_id);self.indices=[int(r['core_index']) for r in self.rows]
+        self.original={int(r['core_index']):(str(r['core_id'] or ''),str(r['detail'] or '')) for r in self.rows};self.drafts=dict(self.original)
+        self.tree.delete(*self.tree.get_children())
+        for r in self.rows:self.tree.insert('','end',iid=str(r['core_index']),values=(r['label'],r['core_id'],r['detail']))
+
+    def clear_core_trace(self):self.clear_path()
+    def queue_core_trace(self):self.queue_path()
+    def focus_core(self,index):
+        if self.tree.exists(str(index)):
+            self.tree.selection_set(str(index));self.tree.see(str(index));self.select()
 
     def focus_cell(self,event):
         row=self.tree.identify_row(event.y)

@@ -1,5 +1,19 @@
 # Telecom Core updater project
 
+- V132 main-map incremental allocation uses RNIncrementalCoreAllocator to expose
+  physical RN internal ports as both saved source and empty destination. RN map
+  clicks show labelled IN/MP/SP/P capacity; the RN identity editor has an after-only
+  allocation button, rejects unsaved drafts and resumes safely on return.
+  Preserve legacy whole-route allocation. Reuse reviewed/sealed incremental
+  previews, unique compatible free local splices, locks/fixed/used capacity,
+  selected-only exclusion handling, backups, atomic rollback and grouped undo.
+  Port writes must validate all port metadata/labels and unselected rows as well
+  as cable rows. Never overwrite an occupied port or invent internal splitter
+  connections. Test RN SP5 -> cable 5 -> other RN IN, cable-origin port allocation,
+  partial/reopen/history, read-only previews, stale/tamper/failure and native
+  map clicks/review cancel/apply/editor return with check_rn_allocation.py.
+  Finish the full Windows publication and installed-launcher download gates.
+
 - V131 valid_endpoint_pair accepts two real RN internal-port endpoints at
   distinct facility IDs, including SP5 -> cable 5 -> IN. Apply consistently in
   Network.inspect and legacy cable/work diagnostics; field physical audit already
