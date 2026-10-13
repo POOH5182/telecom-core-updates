@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V130 supersedes V129 legacy RN real-ID replacement refusal and mandatory ID
+  for name entry. The explicit RN editor may change its local port ID/name in
+  GIS, old/new field and after drawings, including name-only preassignment.
+  Preserve blank-cell keep semantics, other slot values, existing splices,
+  locks, stale checks, backups and atomic undo. Never propagate a local rename.
+  Double-click selects the corresponding ID/name entry. Run existing RN editor
+  tests with real-ID replacement and name-only edits in every stage and actual
+  Windows successive save/reopen/history, plus the full release workflow.
+
 - V129 planning/rn_identity.py adds RN-local port ID/name drafts, available even
   without cables. Save explicitly, preserve blank cells, stable physical indices
   through sorting/paste (including blank row offsets), signals, existing splices,

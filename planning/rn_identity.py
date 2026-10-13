@@ -25,9 +25,6 @@ def rn_identity_save(store,node_id,changes,revision,generation):
         detail=str(new_detail or '').strip() or str(old['detail'] or '')
         if (cid,detail)==(str(old['core_id'] or ''),str(old['detail'] or '')):
             proposed[index]=(cid,detail);continue
-        if detail and not cid:raise ValueError(old['label']+': 코어ID도 입력하세요.')
-        if str(old['core_id'] or '') and not str(old['core_id']).startswith('임시-') and cid!=old['core_id'] and not field_slot_mode(store):
-            raise ValueError(old['label']+': 기존 실제 코어ID를 다른 ID로 바꿀 수 없습니다. 기존 연결과 내역을 먼저 확인하세요.')
         proposed[index]=(cid,detail)
     changed=[(i,v) for i,v in proposed.items() if v!=(str(rows[i]['core_id'] or ''),str(rows[i]['detail'] or ''))]
     if not changed:return 0
@@ -87,7 +84,7 @@ class RNIdentityDialog(RememberedToplevel):
         sx=ttk.Scrollbar(frame,orient='horizontal',command=self.tree.xview);sx.grid(row=1,column=0,sticky='ew');self.tree.configure(xscrollcommand=sx.set)
         for r in self.rows:self.tree.insert('','end',iid=str(r['core_index']),values=(r['label'],r['core_id'],r['detail']))
         self.tree.bind('<<TreeviewSelect>>',self.select);self.tree.bind('<Control-v>',self.paste)
-        self.tree.bind('<Double-Button-1>',lambda e:self.id_entry.focus_set())
+        self.tree.bind('<Double-Button-1>',self.focus_cell)
         self.bind('<Control-s>',self.save);self.bind('<Escape>',self.close);self.protocol('WM_DELETE_WINDOW',self.close)
         if self.indices:self.tree.selection_set(str(self.indices[0]));self.select()
         else:self.notice.set('RN규격/가입자포트에서 내부 포트를 먼저 설정하세요.');self.save_button.state(['disabled'])
@@ -98,6 +95,13 @@ class RNIdentityDialog(RememberedToplevel):
         self.active=int(selected[0]);self.loading=True
         self.port_name.set('선택 포트: '+str(self.tree.set(selected[0],'port')))
         self.core_id.set(self.drafts[self.active][0]);self.detail.set(self.drafts[self.active][1]);self.loading=False
+
+    def focus_cell(self,event):
+        row=self.tree.identify_row(event.y)
+        if not row:return
+        self.tree.selection_set(row);self.select()
+        entry=self.detail_entry if self.tree.identify_column(event.x)=='#3' else self.id_entry
+        entry.focus_set();entry.selection_range(0,'end');return 'break'
 
     def draft_changed(self,*args):
         if self.loading or self.active is None:return

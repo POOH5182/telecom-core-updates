@@ -41,7 +41,7 @@ class RNIdentityTests(unittest.TestCase):
         self.assertTrue(wf.completion_report(s)['by_id']['SYNTH-1']['complete'])
     def test_atomic_validation_stale_lock_backup_and_write_failure(self):
         before=self.snap()
-        for changes in ([(1,'VALID','ok'),(9999,'BAD','bad')],[(1,'','name')],[(1,'A',''),(1,'B','')]):
+        for changes in ([(1,'VALID','ok'),(9999,'BAD','bad')],[(1,'A',''),(1,'B','')]):
             with self.assertRaises(ValueError):self.save(changes)
             self.assertEqual(self.snap(),before)
         with self.assertRaises(ValueError):wf.rn_identity_save(self.s,self.rn,[(1,'A','')],-1,self.s._view_generation)
@@ -53,9 +53,29 @@ class RNIdentityTests(unittest.TestCase):
             original(owner,index,*args)
         with patch.object(self.s,'_write_core_identity',side_effect=fail),self.assertRaises(ValueError):self.save([(1,'A',''),(2,'B','')])
         self.assertEqual(self.snap(),before)
-        self.save([(1,'A','')]);saved=self.snap()
-        with self.assertRaises(ValueError):self.save([(2,'B',''),(1,'OTHER','')])
-        self.assertEqual(self.snap(),saved)
+    def test_existing_real_id_and_name_edit_in_every_stage(self):
+        s=self.s
+        a=s.add_node('합성 끝단',300,0);c=s.add_cable(a,self.rn,'SYNTH','6C','기설')
+        s.update_core(c,1,('ORIGINAL','케이블 원본','normal','','on'));s.connect(self.rn,(c,1),(self.owner,1))
+        for kind,slots in (('gis',False),('before',False),('before',True),('after',False)):
+            with self.subTest(kind=kind,slots=slots):
+                s.conn.execute("INSERT OR REPLACE INTO meta VALUES('active_scenario',?)",(kind,))
+                s.conn.execute("DELETE FROM meta WHERE key='field_identity_policy'")
+                if slots:s.conn.execute('INSERT INTO meta VALUES(?,?)',('field_identity_policy',wf.FIELD_SLOT_POLICY))
+                s.conn.commit();before=self.snap();old=s.core(self.owner,1)
+                self.save([(1,'EDITED-'+kind+str(slots),'변경 내역')]);after=self.snap()
+                self.assertEqual(s.core(self.owner,1)['detail'],'변경 내역')
+                self.assertEqual(s.core(self.owner,1)['core_id'],'EDITED-'+kind+str(slots))
+                self.assertEqual(before[0]['splices'],after[0]['splices']);self.assertEqual(before[0]['cores'],after[0]['cores'])
+                self.assertEqual(tuple(s.core(self.owner,1)[k] for k in ('status1','status2','signal')),tuple(old[k] for k in ('status1','status2','signal')))
+                s.undo();self.assertEqual(self.snap(),before);s.redo();self.assertEqual(self.snap(),after)
+                self.save([(1,'','내역만 재수정')]);self.assertEqual(s.core(self.owner,1)['detail'],'내역만 재수정')
+        self.save([(2,'','ID 없이 내역만')]);self.assertEqual(s.core(self.owner,2)['detail'],'ID 없이 내역만')
+        self.assertFalse(s.core(self.owner,2)['core_id'])
+        self.save([(2,'NEW-ID','')]);self.assertEqual(s.core(self.owner,2)['detail'],'ID 없이 내역만')
+        path=s.path;s.close();self.s=code['Store'](path)
+        self.assertEqual(self.s.core(self.owner,2)['core_id'],'NEW-ID')
+
     def test_after_existing_unique_auto_join_preserves_metadata(self):
         s=self.s;s.conn.execute("INSERT OR REPLACE INTO meta VALUES('active_scenario','after')");s.conn.execute('INSERT OR REPLACE INTO meta VALUES(?,?)',(wf.AFTER_AUTO_POLICY,'1'));s.conn.commit()
         a=s.add_node('합성 끝단',300,0);c=s.add_cable(a,self.rn,'SYNTH','6C','기설');s.update_core(c,1,('SYNTH-1','케이블','normal','','on'))
@@ -97,12 +117,23 @@ def windows_ui():
             after=wf.plan_snapshot(s.conn);editor.close();app.update()
             s.undo();app.refresh();assert wf.plan_snapshot(s.conn)==before
             s.redo();app.refresh();assert wf.plan_snapshot(s.conn)==after
+            click(node.rn_identity_button);editor=node._rn_identity_dialog
+            # Reopen an existing real port, edit its real ID, then edit only its name.
+            editor.id_entry.delete(0,'end');editor.id_entry.insert(0,'SYNTH-CHANGED');click(editor.save_button)
+            assert not error.called,error.call_args
+            assert s.core('PORT:'+rn,1)['core_id']=='SYNTH-CHANGED'
+            editor.detail_entry.delete(0,'end');editor.detail_entry.insert(0,'기존 RN 내역 수정');click(editor.save_button)
+            assert not error.called and s.core('PORT:'+rn,1)['detail']=='기존 RN 내역 수정'
+            screenshot(editor,Path(temp)/'v130-rn-identity-edit.png')
+            editor.close();s.undo();assert s.core('PORT:'+rn,1)['detail']=='RN 양끝 사전 배정'
+            s.undo();assert s.core('PORT:'+rn,1)['core_id']=='SYNTH-1'
+            s.redo();s.redo();app.refresh();app.update()
             click(node.rn_identity_button);editor=node._rn_identity_dialog;editor.core_id.set('UNSAVED')
             s.set_node_details(rn,'변경된 RN');saved=wf.plan_snapshot(s.conn);editor.save();assert error.called and wf.plan_snapshot(s.conn)==saved
             assert editor.core_id.get()=='UNSAVED'
             with patch.object(code['messagebox'],'askyesno',return_value=True):node.close_dialog()
             assert not node.winfo_exists() and not errors,errors
-            print('PASS Windows RN input button, no-cable drafts, paste/sort, compact save, cancel, stale input and undo/redo')
+            print('PASS Windows RN existing real ID and name edits, reopen and undo, input button, no-cable drafts, paste/sort, compact save, cancel, stale input and undo/redo')
         finally:
             app.store.close();app.destroy()
 
