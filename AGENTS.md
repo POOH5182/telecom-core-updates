@@ -1,5 +1,20 @@
 # Telecom Core updater project
 
+- V131 RN identity-table selection traces its saved physical PORT slot through
+  the existing core_connection_highlight/main-canvas renderer. Same-ID islands
+  remain separate context groups; never trace unsaved text or infer splices.
+  Preserve identity drafts on selection, external refresh and undo. Only the
+  current highlight owner may refresh/clear; cancel idle jobs on destruction,
+  blank selection, missing ports and generation changes. Keep timer blinking
+  and number labels identical to cable selection. Test native clicks, actual
+  timer states, disconnect/undo, competing owners and cleanup.
+- After-only RN assignment badges are hidden once the IN-labelled port has one
+  valid local cable splice. Other unused ports must not keep that badge alive.
+  This is display-only: retain raw assignment needs, cable/port diagnostics,
+  completion, duplicate-ID warnings, existing topology and all other stages.
+  Duplicate/invalid IN splices cannot qualify. Run check_rn_path.py and the full
+  Windows release suite and installed-launcher download gate.
+
 - V130 supersedes V129 legacy RN real-ID replacement refusal and mandatory ID
   for name entry. The explicit RN editor may change its local port ID/name in
   GIS, old/new field and after drawings, including name-only preassignment.

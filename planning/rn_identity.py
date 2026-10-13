@@ -51,6 +51,18 @@ def rn_identity_paste(raw,indices,start):
     return result
 
 
+def rn_identity_path(store,node_id,index):
+    slot=('PORT:'+node_id,int(index));row=store.core(*slot)
+    if not row:return None
+    model=core_connection_highlight(store,[slot])
+    cables={owner for group in model['groups'] if group['selected'] for owner,number in group['slots'] if not owner.startswith('PORT:')}
+    identity=str(row['core_id'] or '') or 'ID 없음'
+    summary='저장된 내역 기준 · '+str(row['label'])+' · '+identity+' · '
+    summary+=f'실제 연결 {len(cables)}개 케이블' if cables else '아직 연결된 케이블 없음'
+    if any(not group['selected'] for group in model['groups']):summary+=' · 같은 ID의 다른 구간도 별도 색상으로 표시'
+    return dict(slot=slot,model=model,summary=summary)
+
+
 class RNIdentityDialog(RememberedToplevel):
     def __init__(self,parent,store,node_id):
         super().__init__(parent);self.store=store;self.app=top_app(parent);self.node_id=node_id
@@ -58,13 +70,15 @@ class RNIdentityDialog(RememberedToplevel):
         self.title('RN 내부 코어ID·내역 입력 · '+store.node(node_id)['name']);self.geometry('900x620');self.minsize(640,420)
         self.rows=rn_identity_rows(store,node_id);self.indices=[int(r['core_index']) for r in self.rows]
         self.original={int(r['core_index']):(str(r['core_id'] or ''),str(r['detail'] or '')) for r in self.rows}
-        self.drafts=dict(self.original);self.active=None;self.loading=False
+        self.drafts=dict(self.original);self.active=None;self.loading=False;self._path_job=None;self._path_key=None
         ttk.Label(self,text='포트 선택 → 코어ID·코어내역 입력 → 저장. 케이블 연결 전에도 입력할 수 있습니다.\n빈칸은 기존 값 유지 · 엑셀 두 열은 시작 포트를 선택한 뒤 붙여넣으세요.',padding=10,wraplength=820).pack(fill='x')
         controls=ttk.Frame(self,padding=10);controls.pack(side='bottom',fill='x')
         self.save_button=ttk.Button(controls,text='저장',command=self.save);self.save_button.pack(side='right')
         self.close_button=ttk.Button(controls,text='닫기',command=self.close);self.close_button.pack(side='right',padx=5)
         self.paste_button=ttk.Button(controls,text='엑셀 두 열 붙여넣기',command=self.paste);self.paste_button.pack(side='left')
         self.notice=tk.StringVar(value='입력은 저장 버튼을 눌러야 반영됩니다.');ttk.Label(self,textvariable=self.notice,padding=8,wraplength=820,foreground='#1769aa').pack(side='bottom',fill='x')
+        self.path_notice=tk.StringVar(value='포트를 선택하면 저장된 코어 경로를 도면에 표시합니다.')
+        ttk.Label(self,textvariable=self.path_notice,padding=(10,4),wraplength=820,foreground='#7c3aed').pack(side='bottom',fill='x')
         form=ttk.Frame(self,padding=10);form.pack(side='bottom',fill='x');form.columnconfigure(1,weight=1)
         self.port_name=tk.StringVar();ttk.Label(form,textvariable=self.port_name).grid(row=0,column=0,columnspan=2,sticky='w')
         self.core_id=tk.StringVar();self.detail=tk.StringVar()
@@ -85,16 +99,54 @@ class RNIdentityDialog(RememberedToplevel):
         for r in self.rows:self.tree.insert('','end',iid=str(r['core_index']),values=(r['label'],r['core_id'],r['detail']))
         self.tree.bind('<<TreeviewSelect>>',self.select);self.tree.bind('<Control-v>',self.paste)
         self.tree.bind('<Double-Button-1>',self.focus_cell)
+        self.tree.bind('<ButtonRelease-1>',self.queue_path,add='+')
+        self.bind('<Destroy>',self.path_destroyed,add='+')
         self.bind('<Control-s>',self.save);self.bind('<Escape>',self.close);self.protocol('WM_DELETE_WINDOW',self.close)
         if self.indices:self.tree.selection_set(str(self.indices[0]));self.select()
         else:self.notice.set('RN규격/가입자포트에서 내부 포트를 먼저 설정하세요.');self.save_button.state(['disabled'])
 
     def select(self,event=None):
         selected=self.tree.selection()
-        if not selected:return
+        if not selected:
+            self.clear_path();self.path_notice.set('포트를 선택하면 저장된 코어 경로를 도면에 표시합니다.');return
         self.active=int(selected[0]);self.loading=True
         self.port_name.set('선택 포트: '+str(self.tree.set(selected[0],'port')))
         self.core_id.set(self.drafts[self.active][0]);self.detail.set(self.drafts[self.active][1]);self.loading=False
+        self.queue_path()
+
+    def queue_path(self,event=None):
+        if self._path_job is not None:self.after_cancel(self._path_job)
+        self._path_job=self.after_idle(self.show_path)
+
+    def clear_path(self):
+        if self._path_job is not None:
+            self.after_cancel(self._path_job);self._path_job=None
+        self._path_key=None
+        if self.app is not None and getattr(self.app,'highlight_owner',None) is self:self.app.stop_highlight_blink(clear=True)
+
+    def path_destroyed(self,event):
+        if event.widget is self:self.clear_path()
+
+    def show_path(self):
+        if self._path_job is not None:self.after_cancel(self._path_job)
+        self._path_job=None;app=self.app
+        if not app or app.store is not self.store or self.generation!=self.store._view_generation:
+            self.clear_path();self.path_notice.set('작업 도면이 변경되었습니다. 창을 다시 열어 주세요.');return
+        selected=self.tree.selection()
+        if not selected:self.clear_path();return
+        key=(self.store.data_revision(),self.store.conn.total_changes,selected[0])
+        if key==self._path_key and getattr(app,'highlight_owner',None) is self:return
+        path=rn_identity_path(self.store,self.node_id,int(selected[0]))
+        if not path:self.clear_path();self.path_notice.set('선택한 RN 포트가 없습니다.');return
+        self.path_notice.set(path['summary']);model=path['model']
+        if not model['colors']:self.clear_path();return
+        self._path_key=key
+        app.start_highlight_blink(model['colors'],owner=self,core_slots=[path['slot']])
+        app.status.set(path['summary']+' · 미접속 함체 안내를 더블클릭해 연결을 확인하세요.')
+
+    def refresh_shared_rows(self):
+        # Saved topology/history refreshes tracing only, never editor drafts.
+        if getattr(self.app,'highlight_owner',None) is self:self.show_path()
 
     def focus_cell(self,event):
         row=self.tree.identify_row(event.y)
@@ -127,7 +179,7 @@ class RNIdentityDialog(RememberedToplevel):
             self.revision=self.store.data_revision();self.original={int(r['core_index']):(str(r['core_id'] or ''),str(r['detail'] or '')) for r in rn_identity_rows(self.store,self.node_id)}
             self.drafts=dict(self.original)
             for i,values in self.drafts.items():self.tree.set(str(i),'id',values[0]);self.tree.set(str(i),'detail',values[1])
-            self.select();self.master.reload_all();self.app.refresh()
+            self.select();self.master.reload_all();self.app.refresh();self.queue_path()
             self.notice.set(f'RN 내부 {count}개 포트 저장 완료 · Ctrl+Z로 실행취소' if count else '변경된 내용이 없습니다.')
         except (ValueError,sqlite3.Error,OSError) as error:
             self.notice.set(str(error));messagebox.showerror('RN 내부 입력',str(error),parent=self)
@@ -136,3 +188,17 @@ class RNIdentityDialog(RememberedToplevel):
     def close(self,event=None):
         if self.drafts!=self.original and not messagebox.askyesno('입력 취소','저장하지 않은 RN 내부 입력을 버리고 닫을까요?',parent=self,default='no'):return 'break'
         self.destroy();return 'break'
+
+
+def after_rn_in_connected(store,node_id,net=None):
+    """Display-only RN assignment exemption; other port diagnostics stay intact."""
+    if completion_kind(store)!='after':return False
+    if net is None:net=Network(store.conn)
+    node=net.nodes.get(node_id,{})
+    if node.get('type')!='rn':return False
+    ports=[('PORT:'+node_id,int(r['core_index'])) for r in store.cores('PORT:'+node_id) if str(r['label']).strip().upper()=='IN']
+    if len(ports)!=1:return False
+    slot=ports[0];links=net.links.get(slot,())
+    if len(links)!=1 or net.bad.get(slot):return False
+    nid,peer=links[0]
+    return nid==node_id and peer[0] in net.cables and not net.bad.get(peer) and sum(n==node_id for n,p in net.links.get(peer,()))==1
