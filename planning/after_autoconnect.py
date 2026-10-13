@@ -22,6 +22,7 @@ def after_auto_groups(net,node_ids=None,store=None):
         if cable and str(cable.get('spec') or '').strip()=='드랍':continue
         for nid in ((cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)):
             if net.nodes.get(nid,{}).get('type') not in ('hamche','rn'):continue
+            if net.nodes[nid]['type']=='rn' and terminal_marked(net.nodes[nid]):continue
             # Unused OFF capacity is not an allocation candidate. Keep actual
             # connected OFF legs so their saved physical route remains visible.
             if (cid in off_ids or core_connection_exempt(row)) and not net.links.get(slot):continue
@@ -211,6 +212,7 @@ def after_auto_changed(store):
         table=event['table_name']
         if table not in fields:continue
         new=json.loads(event['new_json']) if event['new_json'] else {};old=json.loads(event['old_json']) if event['old_json'] else {}
+        if table=='nodes' and new.get('type')=='rn' and terminal_marked(old)!=terminal_marked(new):continue # Endpoint choice cannot create splices.
         if not any(new.get(k)!=old.get(k) for k in fields[table]):continue
         for record in (old,new):
             if not record:continue

@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V128 explicitly allows RN cable endpoints only when rn_terminal_v128 is set
+  by the user through 말단으로 처리 in NodeDialog or NodePropertiesDialog.
+  This supersedes V59 for opt-in RNs; dormant legacy terminal flags remain inert.
+  terminal_marked/cable_terminal drive completion, trace, needs and field scope.
+  Keep all existing port/splice data and real identity/signal diagnostics; an
+  endpoint flag cannot connect/disconnect slots or automatically join marked RNs.
+  Untoggle, undo, reopen and per-drawing scenario boundaries must be preserved.
+  Run check_rn_terminal.py with real Windows checkbox/properties/cancel/history
+  checks, the existing locks/RN and auto-join gates, and the full release workflow.
+
 - V127 adds an explicit cable-sheet connected-route identity review in field slot
   mode. Existing local 수정하기 and all other slot APIs remain local. Follow valid
   saved splices including RN ports, never equal IDs or GIS links. Apply only edited

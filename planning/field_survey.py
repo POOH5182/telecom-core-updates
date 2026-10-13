@@ -120,7 +120,7 @@ def field_display_rows(store,node_id,record=None):
 
 def field_required(store,node,cable_count=None):
     if not node:return False
-    if node['type']=='rn':return True
+    if node['type']=='rn':return not terminal_marked(node)
     if node['type']!='hamche':return False
     if cable_count is None:cable_count=sum(str(c['spec'] or '').strip()!='드랍' for c in store.node_cables(node['id']))
     return not cable_terminal(node,cable_count)
