@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V131 valid_endpoint_pair accepts two real RN internal-port endpoints at
+  distinct facility IDs, including SP5 -> cable 5 -> IN. Apply consistently in
+  Network.inspect and legacy cable/work diagnostics; field physical audit already
+  accepts this. Preserve actual-splice, distinct-facility, ID, branch and signal
+  checks. RN-to-RN is not an exemption for missing or conflicting connections.
+
 - V131 RN identity-table selection traces its saved physical PORT slot through
   the existing core_connection_highlight/main-canvas renderer. Same-ID islands
   remain separate context groups; never trace unsaved text or infer splices.

@@ -56,6 +56,30 @@ class RNPathTests(unittest.TestCase):
                     self.assertFalse(wf.after_rn_in_connected(s,rn));self.assertTrue(s.node_warning_summary()[rn]['rn_in'])
             finally:s.close()
 
+    def test_rn_sp5_to_cable5_to_rn_in_complete_in_all_stages(self):
+        with tempfile.TemporaryDirectory() as temp:
+            s=code['Store'](Path(temp)/'rn_to_rn.sqlite3')
+            try:
+                a=s.add_node('같은 이름 RN',0,0,node_type='rn');b=s.add_node('같은 이름 RN',300,0,node_type='rn')
+                s.ensure_ports(a,{'mp':4,'sp':5,'p':4});sp5=next(r['core_index'] for r in s.cores('PORT:'+a) if r['label']=='SP5')
+                c=s.add_cable(a,b,'SYNTH-RN','12C','기설');s.update_core(c,5,('RN-TO-RN','RN 내부 간 회선','normal','','on'))
+                s.connect(a,('PORT:'+a,sp5),(c,5));s.connect(b,(c,5),('PORT:'+b,1))
+                before=wf.plan_snapshot(s.conn)
+                for stage in ('gis','before','after'):
+                    s.conn.execute("INSERT OR REPLACE INTO meta VALUES('active_scenario',?)",(stage,));s.conn.commit();s._cable_warning_cache=None;s._warning_cache=None
+                    self.assertTrue(wf.Network(s.conn).inspect('RN-TO-RN',wf.DEFAULTS)['complete'])
+                    self.assertTrue(wf.completion_report(s)['by_id']['RN-TO-RN']['complete'])
+                    badge=s.cable_core_warning_summary()[c];self.assertEqual(badge['incomplete'],0);self.assertEqual(badge['unassigned'],0)
+                    self.assertFalse(s.node_assignment_needs(a));self.assertFalse(s.node_assignment_needs(b))
+                    self.assertFalse(s.trace_core_paths('RN-TO-RN',slot=(c,5))['issues'])
+                self.assertEqual(wf.plan_snapshot(s.conn)['splices'],before['splices'])
+                self.assertFalse(wf.valid_endpoint_pair([('rn',a,'SP5'),('rn',a,'IN')]))
+                s.disconnect(b,c,5);self.assertFalse(wf.completion_report(s)['by_id']['RN-TO-RN']['complete'])
+                s.undo();self.assertTrue(wf.completion_report(s)['by_id']['RN-TO-RN']['complete'])
+                wf.rn_identity_save(s,b,[(1,'CONFLICT','')],s.data_revision(),s._view_generation)
+                self.assertFalse(wf.completion_report(s)['by_id']['RN-TO-RN']['complete'])
+            finally:s.close()
+
     def test_wrong_port_or_duplicate_in_splice_does_not_hide_warning(self):
         with tempfile.TemporaryDirectory() as temp:
             s,rn,h,left,right=fixture(Path(temp)/'drawing.sqlite3','after')
