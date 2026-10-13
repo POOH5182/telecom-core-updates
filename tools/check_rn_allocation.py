@@ -75,6 +75,7 @@ def windows_ui():
             editor.detail.set(editor.original[source[1]][1]);editor.allocation_button.invoke();app.update();panel=app._map_allocation_panel
             assert editor.state()=='withdrawn' and panel.service.source==source
             assert panel.capacity_table.item(str(source[1]),'values')[0]=='SP5'
+            app.fit_view();app.update()
             # Real pointer clicks on the cable and RN symbol enter their capacities.
             def target_click(kind,key):
                 mapping=app.item_to_cable if kind=='cable' else app.item_to_node
@@ -116,7 +117,10 @@ def windows_ui():
             s.redo();app.refresh();app.update();assert wf.completion_report(s)['by_id']['RN-SERVICE']['complete']
             assert not errors and not error.called and not warning.called,(errors,error.call_args,warning.call_args)
             print('PASS Windows RN SP5 source button, cable 5 and RN IN pointer selection, labels, reviewed cancel/apply, complete path, editor return and undo/redo')
-        finally:app.store.close();app.destroy()
+        finally:
+            panel=getattr(app,'_map_allocation_panel',None)
+            if panel is not None and panel.winfo_exists():panel.destroy(restore_editor=False)
+            app.store.close();app.destroy()
 
 
 if __name__=='__main__':
