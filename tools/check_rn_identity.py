@@ -103,7 +103,8 @@ def windows_ui():
             with patch.object(code['messagebox'],'askyesno',return_value=True):node.close_dialog()
             assert not node.winfo_exists() and not errors,errors
             print('PASS Windows RN input button, no-cable drafts, paste/sort, compact save, cancel, stale input and undo/redo')
-        finally:app.destroy()
+        finally:
+            app.store.close();app.destroy()
 
 
 if __name__=='__main__':
