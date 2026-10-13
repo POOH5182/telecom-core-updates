@@ -81,7 +81,8 @@ def reference_slot_highlight(store,slots):
         visited.update(members);number=len(groups)+1;color=core_segment_color(number-1)
         identities={str(rows[slot].get('core_id') or '').strip() for slot in members
                     if str(rows[slot].get('core_id') or '').strip() and not str(rows[slot].get('core_id')).startswith('임시-')}
-        groups.append(dict(number=number,color=color,slots=tuple(sorted(members))))
+        groups.append(dict(number=number,color=color,slots=tuple(sorted(members)),ids=tuple(sorted(identities)),
+                           faults=('코어ID 다름',) if len(identities)>1 else ()))
         cable_lines=defaultdict(list)
         for slot in sorted(members):
             row=rows[slot];core_id=str(row.get('core_id') or '')
@@ -102,7 +103,8 @@ def reference_slot_highlight(store,slots):
     colors={cable:OVERLAP_COLOR if cable in overlaps else items[0]['color'] for cable,items in bands.items()}
     labels={cable:('겹침 · '+str(len(cable_slots[cable]))+'개 선번\n' if cable in overlaps else '')+
             '\n'.join(item['text'] for item in items) for cable,items in bands.items()}
-    return dict(seed_slots=seeds,slots=frozenset(visited),groups=groups,nodes=frozenset(nodes),colors=colors,labels=labels,
+    short_labels,legend=compact_route_display(groups,rows,net.cables,overlaps)
+    return dict(seed_slots=seeds,slots=frozenset(visited),groups=groups,nodes=frozenset(nodes),colors=colors,labels=labels,short_labels=short_labels,legend=legend,
                 bands=dict(bands),label_colors=label_colors,overlaps=overlaps,boundaries=[],
                 summary=f'실제 접속 {len(groups)}구간 · {len(visited)}개 선번')
 

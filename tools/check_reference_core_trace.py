@@ -163,6 +163,11 @@ def canvas_text(view):
                      if view.canvas.type(item)=='text')
 
 
+def legend_text(view):
+    legend=view.__dict__.get('_route_legend')
+    return ' '.join(w.cget('text') for w in legend.winfo_children()) if legend is not None else ''
+
+
 def assert_route(view,expected):
     owners={owner for owner,index in expected if not owner.startswith('PORT:')}
     assert view.highlight_cables==owners,(view.highlight_cables,owners)
@@ -170,7 +175,8 @@ def assert_route(view,expected):
     visible=canvas_text(view)
     for owner,index in expected:
         assert str(index) in visible,(index,visible)
-    assert CORE_ID in visible,visible
+    # V133: the cable shows core numbers only; the core ID is in the route legend.
+    assert CORE_ID not in visible and CORE_ID in legend_text(view),(visible,legend_text(view))
     assert view.canvas.find_withtag('core_path_number'),'No visible route labels'
 
 
@@ -273,9 +279,9 @@ def windows_ui():
             # must also include their physically connected blank/different IDs.
             gis.find_text.set(CORE_ID);gis.find_next();app.update()
             assert gis.highlight_cables==set(cables)
-            assert CORE_ID in canvas_text(gis)
+            assert CORE_ID in legend_text(gis)
             job=gis.highlight_blink_job;key(app,gis.canvas,'<Escape>')
-            assert not gis.highlight_cables and gis.highlight_blink_job is None
+            assert not gis.highlight_cables and gis.highlight_blink_job is None and not legend_text(gis)
             assert job not in app.tk.splitlist(app.tk.call('after','info'))
             # Save/reload closes descendants and their timers before old data dies.
             detail=wf.open_reference_detail(gis,'cable',left);detail.geometry('780x600+10+10');app.update()

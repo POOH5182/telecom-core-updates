@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V133 CoreCheckDialog single-click traces the selected row on the main map
+  (owner=dialog, after_idle, real slot for ID-less temporary rows); double-click
+  still opens TraceDialog. A list reload must not reclaim the map from another
+  owner; close/clear stops only its own highlight. Map/reference route labels
+  show only cable core numbers (model short_labels); core IDs, cables/numbers,
+  faults and overlaps go to the fixed top-right legend whose swatches blink with
+  the cable timer. Keep model labels (full text) for existing callers and
+  highlight_core_labels unchanged. Test with check_route_legend.py.
+
 - V132 main-map incremental allocation uses RNIncrementalCoreAllocator to expose
   physical RN internal ports as both saved source and empty destination. RN map
   clicks show labelled IN/MP/SP/P capacity; the RN identity editor has an after-only

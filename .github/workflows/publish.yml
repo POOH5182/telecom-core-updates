@@ -125,6 +125,8 @@ jobs:
         run: python tools/check_off_assignment.py
       - name: 함체 코어 연결도·임시 완료 상태·ID 충돌 케이블 표시 검증
         run: python tools/check_node_diagram.py
+      - name: 코어확인 클릭 경로·코어번호만 표시·깜빡이는 색 안내표 검증
+        run: python tools/check_route_legend.py
       - name: Windows 화면 및 저장 확인
         run: python tools/smoke_windows.py
       - name: Windows 로그인과 도면 동기화 검증

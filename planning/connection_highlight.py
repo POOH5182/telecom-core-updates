@@ -15,6 +15,35 @@ def core_segment_color(index):
     return '#'+''.join(f'{round(c*255):02x}' for c in rgb)
 
 
+def _route_id_text(value):
+    value=str(value or '').strip()
+    return ('임시코어'+value[3:]) if value.startswith('임시-') and value[3:].isdigit() else value
+
+
+def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLOR):
+    """Cable text is only the core number; IDs, cables and segment colors go to a legend."""
+    numbers=defaultdict(list);legend=[]
+    def cable_name(cable_id):
+        cable=cables.get(cable_id) or {}
+        return str(cable.get('cable_id') or cable.get('spec') or cable_id)
+    for group in groups:
+        ids=[_route_id_text(i) for i in group.get('ids') or ()]
+        if not ids:ids=list(dict.fromkeys(_route_id_text(rows.get(s,{}).get('core_id')) for s in group['slots'] if str(rows.get(s,{}).get('core_id') or '').strip()))
+        parts=[]
+        for slot in group['slots']:
+            if slot[0] in cables:
+                numbers[slot[0]].append(int(slot[1]));parts.append(f'{cable_name(slot[0])} {slot[1]}번')
+            elif slot[0].startswith('PORT:'):parts.append('RN 포트 '+str(rows.get(slot,{}).get('label') or slot[1]))
+        legend.append(dict(kind='segment',number=group['number'],color=group['color'],ids=tuple(ids),
+            core_text=' / '.join(ids) or 'ID 없음',cable_text=', '.join(dict.fromkeys(parts)),
+            fault=' · '.join(group.get('faults') or ())))
+    short={cable:'·'.join(str(n) for n in sorted(set(values)))+'번' for cable,values in numbers.items()}
+    shared=sorted(overlaps,key=cable_name)
+    if shared:legend.append(dict(kind='overlap',number=0,color=overlap_color,ids=(),core_text='겹침',
+        cable_text='같은 케이블에 여러 코어: '+', '.join(cable_name(c) for c in shared),fault=''))
+    return short,legend
+
+
 def core_connection_highlight(store,slots):
     audit=field_slot_audit(store);net=audit['net'];seeds=set(map(tuple,slots))
     chosen={audit['by_slot'][s]['key']:audit['by_slot'][s] for s in seeds if s in audit['by_slot']}
@@ -42,6 +71,7 @@ def core_connection_highlight(store,slots):
         faults=[]
         for cause,label in (('identity','코어ID 다름'),('signal','신호 불일치'),('branch','중복·분기'),('invalid','접속정보 오류'),('marked','오류 상태')):
             if cause in comp['causes']:faults.append(label)
+        group['faults']=tuple(faults)
         for cable,lines in cable_lines.items():
             text=f'구간 {number}'+(' · ID 충돌' if 'identity' in comp['causes'] else '')+'\n'+'\n'.join(lines)
             if faults:text+='\n'+' · '.join(faults);label_colors[cable]='#c62828'
@@ -93,6 +123,7 @@ def core_connection_highlight(store,slots):
     overlaps={c for c,slots in cable_slots.items() if len(slots)>1}
     colors={c:OVERLAP_COLOR if c in overlaps else items[0]['color'] for c,items in bands.items()}
     labels={c:(f'겹침 · {len(cable_slots[c])}개 코어\n' if c in overlaps else '')+'\n'.join(item['text'] for item in items) for c,items in bands.items()}
+    short_labels,legend=compact_route_display(groups,audit['rows'],net.cables,overlaps)
     summary=f'실제 접속 {len(groups)}구간 · 미접속 함체 {len(boundaries)}곳 · 겹침 케이블 {len(overlaps)}개(진분홍)'
-    return dict(groups=groups,by_slot=by_slot,bands=dict(bands),colors=colors,labels=labels,label_colors=label_colors,
+    return dict(groups=groups,by_slot=by_slot,bands=dict(bands),colors=colors,labels=labels,short_labels=short_labels,legend=legend,label_colors=label_colors,
                 boundaries=boundaries,summary=summary,seed_slots=tuple(sorted(seeds)),overlaps=frozenset(overlaps))
