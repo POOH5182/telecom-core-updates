@@ -1,5 +1,16 @@
 # Telecom Core updater project
 
+- V129 planning/rn_identity.py adds RN-local port ID/name drafts, available even
+  without cables. Save explicitly, preserve blank cells, stable physical indices
+  through sorting/paste (including blank row offsets), signals, existing splices,
+  other slots and snapshots. Retain existing after-only unique-ID auto joining;
+  GIS/field save never joins or propagates. Reject stale revision/generation,
+  locked drawings and legacy conflicting real-ID replacement. Back up and save
+  the batch atomically with one undo group; failed save keeps all input. Reuse
+  the modeless editor without dropping drafts and confirm closing dirty input.
+  Run check_rn_identity.py native button/paste/compact/save/cancel/history and
+  end-to-end preassignment gates, then the full Windows release workflow.
+
 - V128 explicitly allows RN cable endpoints only when rn_terminal_v128 is set
   by the user through 말단으로 처리 in NodeDialog or NodePropertiesDialog.
   This supersedes V59 for opt-in RNs; dormant legacy terminal flags remain inert.
