@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V134 route views also mark the RN internal port where a traced core is
+  assigned: compact_route_display returns port_labels {node_id: text/color/ports}
+  from saved PORT slots only (never inferred splitter links), drawn at the RN
+  with tag core_path_port (item_to_node -> RN) and listed in the legend as
+  "RN이름 포트". Read-only; test with check_route_legend.py.
+
 - V133 CoreCheckDialog single-click traces the selected row on the main map
   (owner=dialog, after_idle, real slot for ID-less temporary rows); double-click
   still opens TraceDialog. A list reload must not reclaim the map from another

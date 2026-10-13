@@ -20,9 +20,9 @@ def _route_id_text(value):
     return ('임시코어'+value[3:]) if value.startswith('임시-') and value[3:].isdigit() else value
 
 
-def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLOR):
+def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLOR,nodes=None):
     """Cable text is only the core number; IDs, cables and segment colors go to a legend."""
-    numbers=defaultdict(list);legend=[]
+    numbers=defaultdict(list);legend=[];ports=defaultdict(list);nodes=nodes or {}
     def cable_name(cable_id):
         cable=cables.get(cable_id) or {}
         return str(cable.get('cable_id') or cable.get('spec') or cable_id)
@@ -33,7 +33,11 @@ def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLO
         for slot in group['slots']:
             if slot[0] in cables:
                 numbers[slot[0]].append(int(slot[1]));parts.append(f'{cable_name(slot[0])} {slot[1]}번')
-            elif slot[0].startswith('PORT:'):parts.append('RN 포트 '+str(rows.get(slot,{}).get('label') or slot[1]))
+            elif slot[0].startswith('PORT:'):
+                # RN internal assignment is shown at the RN itself and in the legend.
+                nid=slot[0][5:];port=str(rows.get(slot,{}).get('label') or slot[1])
+                parts.append(str((nodes.get(nid) or {}).get('name') or 'RN')+' '+port)
+                ports[nid].append(dict(port=port,color=group['color'],number=group['number']))
         legend.append(dict(kind='segment',number=group['number'],color=group['color'],ids=tuple(ids),
             core_text=' / '.join(ids) or 'ID 없음',cable_text=', '.join(dict.fromkeys(parts)),
             fault=' · '.join(group.get('faults') or ())))
@@ -41,7 +45,9 @@ def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLO
     shared=sorted(overlaps,key=cable_name)
     if shared:legend.append(dict(kind='overlap',number=0,color=overlap_color,ids=(),core_text='겹침',
         cable_text='같은 케이블에 여러 코어: '+', '.join(cable_name(c) for c in shared),fault=''))
-    return short,legend
+    port_labels={nid:dict(text=str((nodes.get(nid) or {}).get('name') or 'RN')+' · '+' / '.join(dict.fromkeys(i['port'] for i in items)),
+                          color=items[0]['color'],ports=tuple(dict.fromkeys(i['port'] for i in items))) for nid,items in ports.items()}
+    return short,legend,port_labels
 
 
 def core_connection_highlight(store,slots):
@@ -123,7 +129,7 @@ def core_connection_highlight(store,slots):
     overlaps={c for c,slots in cable_slots.items() if len(slots)>1}
     colors={c:OVERLAP_COLOR if c in overlaps else items[0]['color'] for c,items in bands.items()}
     labels={c:(f'겹침 · {len(cable_slots[c])}개 코어\n' if c in overlaps else '')+'\n'.join(item['text'] for item in items) for c,items in bands.items()}
-    short_labels,legend=compact_route_display(groups,audit['rows'],net.cables,overlaps)
+    short_labels,legend,port_labels=compact_route_display(groups,audit['rows'],net.cables,overlaps,nodes=net.nodes)
     summary=f'실제 접속 {len(groups)}구간 · 미접속 함체 {len(boundaries)}곳 · 겹침 케이블 {len(overlaps)}개(진분홍)'
-    return dict(groups=groups,by_slot=by_slot,bands=dict(bands),colors=colors,labels=labels,short_labels=short_labels,legend=legend,label_colors=label_colors,
+    return dict(groups=groups,by_slot=by_slot,bands=dict(bands),colors=colors,labels=labels,short_labels=short_labels,legend=legend,port_labels=port_labels,label_colors=label_colors,
                 boundaries=boundaries,summary=summary,seed_slots=tuple(sorted(seeds)),overlaps=frozenset(overlaps))
