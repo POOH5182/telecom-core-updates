@@ -8,6 +8,8 @@
   dark-blue cell in sheet/matrix, or right-click in the matrix) asks askyesno,
   keeps columns and still-valid drafts after reload. Gate:
   tools/check_unassign_allocation.py.
+  Route legend name height now uses route_legend_lines (measured char-wrap
+  with tkfont) instead of len//chars, which cut wide Korean names.
 
 - V146 excluded-core allocation: ManualCoreAllocator.load raises
   ExcludedAllocationCore (a ValueError, .reason = completion excluded_reason)
