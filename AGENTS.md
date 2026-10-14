@@ -1,5 +1,8 @@
 # Telecom Core updater project
 
+- V135 drops the 「배정」 prefix from the RN port route label: show only
+  "RN이름 · 포트" (user request). Keep everything else from V134.
+
 - V134 route views also mark the RN internal port where a traced core is
   assigned: compact_route_display returns port_labels {node_id: text/color/ports}
   from saved PORT slots only (never inferred splitter links), drawn at the RN

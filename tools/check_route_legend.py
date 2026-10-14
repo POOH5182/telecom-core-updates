@@ -96,7 +96,7 @@ def windows_ui():
                 # V134: the RN shows which internal port the core is assigned to.
                 dialog.tree.selection_set(next(i for i,key in dialog.row_meta.items() if key[0]=='CORE-A'));app.update()
                 ports=[app.canvas.itemcget(i,'text') for i in app.canvas.find_withtag('core_path_port') if app.canvas.type(i)=='text']
-                assert ports==['배정 RN-1 · SP1'],ports
+                assert ports==['RN-1 · SP1'],ports
                 item=next(i for i in app.canvas.find_withtag('core_path_port') if app.canvas.type(i)=='text');assert app.item_to_node[item]==rn
                 assert 'RN-1 SP1' in ' '.join(w.cget('text') for w in app._route_legend.winfo_children())
                 # The legend swatches blink with the actual cable timer.
