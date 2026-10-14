@@ -57,6 +57,14 @@ class MatrixTests(unittest.TestCase):
                 net=wf.Network(s.conn);label=wf.plan_number_label(net,(B,2))
                 self.assertTrue(label.startswith('케이블ID 없음 / 12C'),label);self.assertNotIn(B,label)
             finally:s.close()
+        row=lambda available,empty:dict(available=available,empty=empty)
+        self.assertEqual(wf.allocation_cell_kind(row(False,False),True,True),'existing')
+        self.assertEqual(wf.allocation_cell_kind(row(True,True),False,True),'draft')
+        self.assertEqual(wf.allocation_cell_kind(row(True,True),False,False),'empty')
+        self.assertEqual(wf.allocation_cell_kind(row(False,True),False,False),'blocked')
+        self.assertEqual(wf.allocation_cell_kind(row(False,False),False,False),'used')
+        fills={kind:value[0] for kind,value in wf.ALLOCATION_CELL_COLORS.items()}
+        self.assertEqual(len(set(fills.values())),5);self.assertEqual(fills['empty'],'#bae6fd');self.assertEqual(fills['used'],'#d1d5db')
         colors={kind:value[0] for kind,value in wf.ALLOCATION_STATE_COLORS.items()}
         self.assertEqual(len(set(colors.values())),3)
 
@@ -124,9 +132,13 @@ def windows_ui():
             assert column_state(A)=='saved' and column_state(B)=='unassigned' and column_state(C)=='unassigned',[column_state(c) for c in (A,B,C)]
             assert '미배정' in panel.matrix_summary.cget('text') and panel.matrix_state['unassigned']>=2
             assert '미배정' in app.highlight_core_labels[B] and '배정 1번' in app.highlight_core_labels[A]
+            def cell_kind(cid,index):
+                return next(tag[5:] for tag in panel.matrix.gettags(panel.matrix.find_withtag('matrix:'+cid+':'+str(index))[0]) if tag.startswith('cell:'))
+            assert cell_kind(A,1)=='existing' and cell_kind(B,4)=='used' and cell_kind(B,2)=='empty' and cell_kind(A,2)=='blocked',[cell_kind(A,1),cell_kind(B,4),cell_kind(B,2),cell_kind(A,2)]
             cell(B,4);assert B not in panel.selected # Used is inspection only.
             cell(C,4);assert C not in panel.selected # Reserved is inspection only.
             cell(B,2);cell(C,3);chosen=dict(panel.selected)
+            assert cell_kind(B,2)=='draft' and cell_kind(C,3)=='draft'
             assert column_state(B)=='draft' and column_state(C)=='draft' and '배정안 2번' in app.highlight_core_labels[B]
             assert panel.matrix_state['unassigned']==0,panel.matrix_state
             header('start',C);assert [c for c in panel.columns if c in (A,B,C)]==[C,B,A] and panel.selected==chosen

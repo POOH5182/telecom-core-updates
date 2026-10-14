@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V142 (user request): allocation core cells use allocation_cell_kind() +
+  ALLOCATION_CELL_COLORS in the matrix, single-cable sheet and ledger tags:
+  empty/selectable sky blue #bae6fd, used gray #d1d5db, empty-but-blocked white
+  with muted text, existing solid blue, draft solid orange (white text). Matrix
+  cells carry a 'cell:<kind>' tag. Keep these distinct from header state colors.
+
 - V141 (user request): never show internal cable keys ("C"+hex) as a cable
   name. cable_display_id(cable) (after_plan.py) returns the entered cable_id or
   「케이블ID 없음」; used by plan_number_label, the allocation cable_title/map

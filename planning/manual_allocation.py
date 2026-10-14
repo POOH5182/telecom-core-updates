@@ -610,6 +610,20 @@ ALLOCATION_STATE_COLORS={'saved':('#1d4ed8','#dbeafe','#1e3a8a'),'draft':('#ea58
                          'unassigned':('#dc2626','#fee2e2','#991b1b')}
 
 
+# Core cell kinds: (fill, title text, detail text, outline). Used numbers are gray,
+# selectable empty numbers sky blue; the kept/chosen number is a solid strong color.
+ALLOCATION_CELL_COLORS={'existing':('#1d4ed8','#ffffff','#dbeafe','#1e3a8a'),'draft':('#f97316','#ffffff','#ffedd5','#9a3412'),
+                        'empty':('#bae6fd','#0c4a6e','#075985','#7dd3fc'),'blocked':('#ffffff','#94a3b8','#94a3b8','#e2e8f0'),
+                        'used':('#d1d5db','#374151','#4b5563','#9ca3af')}
+
+
+def allocation_cell_kind(row,existing,chosen):
+    if existing:return 'existing'
+    if chosen:return 'draft'
+    if row['available']:return 'empty'
+    return 'blocked' if row['empty'] else 'used'
+
+
 def allocation_column_state(existing,selected,cid,labels=None):
     """Return (kind, short label) for one compared cable/RN column."""
     def number(n):return str((labels or {}).get(n) or str(n)+'번')
@@ -707,15 +721,15 @@ class AllocationMatrixView:
                 row=rs.get(index);y=pos*self.MATRIX_H
                 if not row:continue
                 chosen=self.selected.get(cid)==index;existing=s.existing.get(cid)==index
-                fill='#dbeafe' if existing else '#ffedd5' if chosen else '#dcfce7' if row['available'] else '#f1f5f9'
+                kind=allocation_cell_kind(row,existing,chosen);fill,ink,sub,edge=ALLOCATION_CELL_COLORS[kind]
                 common=index in self.common_numbers and cid in eligible
                 tag='matrix:'+cid+':'+str(index)
-                self.matrix.create_rectangle(x+1,y+1,x+self.MATRIX_W-1,y+self.MATRIX_H-1,fill=fill,outline='#f97316' if chosen and not existing else '#16a34a' if common else '#cbd5e1',width=2 if chosen or common else 1,tags=(tag,))
+                self.matrix.create_rectangle(x+1,y+1,x+self.MATRIX_W-1,y+self.MATRIX_H-1,fill=fill,outline='#0f766e' if common and kind=='empty' else edge,width=3 if kind in ('existing','draft') else 2 if common else 1,tags=(tag,'cell:'+kind))
                 label=row.get('label') or str(index)+'번'
-                state='기존 유지' if existing else '배정안' if chosen else row['state']
-                self.matrix.create_text(x+6,y+11,anchor='w',text=label+' · '+state+(' ★' if common else ''),font=('Malgun Gothic',9,'bold'),tags=(tag,))
-                detail=str(row['core_id'] or row['reason']).replace('\n',' ')
-                self.matrix.create_text(x+6,y+31,anchor='w',text=detail[:25]+('…' if len(detail)>25 else ''),font=('Malgun Gothic',8),fill='#475569',tags=(tag,))
+                state='기존 유지' if existing else '배정안' if chosen else '선택 가능' if kind=='empty' else row['state']
+                self.matrix.create_text(x+6,y+11,anchor='w',text=label+' · '+state+(' ★' if common else ''),font=('Malgun Gothic',9,'bold'),fill=ink,tags=(tag,))
+                detail=str(row['core_id'] or ('다시 클릭하면 선택 해제' if kind=='draft' else row['reason'])).replace('\n',' ')
+                self.matrix.create_text(x+6,y+31,anchor='w',text=detail[:25]+('…' if len(detail)>25 else ''),font=('Malgun Gothic',8),fill=sub,tags=(tag,))
 
     def matrix_slot(self,event):
         col=int(self.matrix.canvasx(event.x)//self.MATRIX_W);pos=int(self.matrix.canvasy(event.y)//self.MATRIX_H)
@@ -798,10 +812,10 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
         ly=ttk.Scrollbar(ledger,orient='vertical',command=self.capacity_table.yview);ly.grid(row=0,column=1,sticky='ns')
         lx=ttk.Scrollbar(ledger,orient='horizontal',command=self.capacity_table.xview);lx.grid(row=1,column=0,sticky='ew')
         self.capacity_table.configure(yscrollcommand=ly.set,xscrollcommand=lx.set)
-        for tag,color in (('empty','#dcfce7'),('blocked','#e2e8f0'),('used','#f1f5f9'),('existing','#dbeafe'),('draft','#ffedd5')):self.capacity_table.tag_configure(tag,background=color)
+        for tag,(color,ink,_,_) in ALLOCATION_CELL_COLORS.items():self.capacity_table.tag_configure(tag,background=color,foreground=ink)
         self.capacity_table.bind('<ButtonRelease-1>',self.table_click)
         self.capacity_table.bind('<Return>',self.table_click)
-        self.hover=tk.StringVar(value='케이블 머리: 파랑 배정 · 주황 배정안 · 빨강 미배정 / 번호칸: 초록 배정 가능 · 파랑 기존 유지 · 주황 배정안 · 회색 사용·잠금·예약 · ★ 미배정 케이블 공통 빈 번호')
+        self.hover=tk.StringVar(value='케이블 머리: 파랑 배정 · 주황 배정안 · 빨강 미배정 / 번호칸: 하늘색 선택 가능 · 회색 사용 중 · 흰색 빈 코어(선택 불가) · 진한 파랑 기존 유지 · 진한 주황 배정안 · ★ 미배정 케이블 공통 빈 번호')
         ttk.Label(left,textvariable=self.hover,wraplength=650).grid(row=2,column=0,columnspan=2,sticky='ew')
         ttk.Label(right,text='기존 구간 · 배정안 · 양쪽 접속',padding=2).pack(fill='x')
         self.details=field_readonly_text(right,6)
@@ -850,16 +864,15 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
         for position,row in enumerate(shown):
             index=row['core_index'];allowed=row['available'];reason=row['reason']
             chosen=self.selected.get(cid)==index;existing=s.existing.get(cid)==index
-            tag='existing' if existing else 'draft' if chosen else 'blocked' if row['empty'] and not allowed else 'empty' if row['empty'] else 'used'
-            fill={'existing':'#dbeafe','draft':'#ffedd5','blocked':'#e2e8f0','empty':'#dcfce7','used':'#f1f5f9'}[tag]
+            tag=allocation_cell_kind(row,existing,chosen);fill,ink,sub,edge=ALLOCATION_CELL_COLORS[tag]
             label='배정안' if chosen and not existing else row['state']
             subtitle=str(row['core_id'] or ('클릭하여 배정' if allowed else reason)).replace('\n',' ')
             x=(position%self._grid_columns)*cell;y=(position//self._grid_columns)*self.GRID_H
-            self.sheet.create_rectangle(x+1,y+1,x+cell-1,y+self.GRID_H-1,fill=fill,outline='#f97316' if chosen and not existing else '#94a3b8',width=2 if chosen else 1,tags=('number:'+str(index),))
+            self.sheet.create_rectangle(x+1,y+1,x+cell-1,y+self.GRID_H-1,fill=fill,outline=edge,width=3 if chosen else 1,tags=('number:'+str(index),'cell:'+tag))
             visible_label=label.split(' · ')[-1] if tag=='blocked' else label.split(' · ')[0]
-            self.sheet.create_text(x+5,y+12,anchor='w',text=f"{row.get('label') or str(index)+'번'} {visible_label}",font=('Malgun Gothic',9,'bold'),fill='#166534' if row['empty'] and allowed and not chosen else '#172033',tags=('number:'+str(index),'state:'+str(index)))
+            self.sheet.create_text(x+5,y+12,anchor='w',text=f"{row.get('label') or str(index)+'번'} {visible_label}",font=('Malgun Gothic',9,'bold'),fill=ink,tags=('number:'+str(index),'state:'+str(index)))
             limit=max(7,int((cell-12)/8));short=subtitle if len(subtitle)<=limit else subtitle[:limit-1]+'…'
-            self.sheet.create_text(x+5,y+34,anchor='w',text=short,font=('Malgun Gothic',8),fill='#475569',tags=('number:'+str(index),))
+            self.sheet.create_text(x+5,y+34,anchor='w',text=short,font=('Malgun Gothic',8),fill=sub,tags=('number:'+str(index),))
             signal={'on':'ON','off':'OFF','unknown':'확인필요','':'확인필요'}.get(row['signal'],row['signal'])
             self.capacity_table.insert('','end',iid=str(index),values=(row.get('label') or index,label,row['core_id'],row['detail'],signal),tags=(tag,))
         if old_selected and self.capacity_table.exists(old_selected[0]):self.capacity_table.selection_set(old_selected[0])

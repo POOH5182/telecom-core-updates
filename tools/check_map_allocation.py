@@ -86,7 +86,7 @@ def windows_ui():
             assert '빈 코어' in panel.sheet.itemcget(panel.sheet.find_withtag('state:74')[0],'text')
             assert panel.sheet.itemcget(panel.sheet.find_withtag('state:68')[0],'text')=='68번 예약'
             reserved=next(item for item in panel.sheet.find_withtag('number:68') if panel.sheet.type(item)=='rectangle')
-            assert panel.sheet.itemcget(reserved,'fill')=='#e2e8f0'
+            assert panel.sheet.itemcget(reserved,'fill')==wf.ALLOCATION_CELL_COLORS['blocked'][0]
             click_number(68);assert i['direct'] not in panel.selected
             assert '실제 예비번호' in panel.details.get('1.0','end')
             click_number(2)
