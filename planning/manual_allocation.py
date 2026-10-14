@@ -5,10 +5,45 @@ chosen slots and required local splices, preserving every existing component.
 """
 
 
+class ExcludedAllocationCore(ValueError):
+    """The core is outside the after-drawing targets but may be assigned on request."""
+
+
+EXCLUDED_ALLOCATION_TEXT='이 코어는 후도면 배정 대상에서 제외된 상태입니다. 신호·상태를 확인하세요.'
+
+
+def open_allowing_excluded(parent,title,factory):
+    """Open an allocation window; an excluded core (e.g. a temporary core without
+    signal) is assigned only after the user explicitly says yes once."""
+    try:return factory(False)
+    except ExcludedAllocationCore as error:
+        reason=getattr(error,'reason','')
+        text=('배정 대상에서 제외된 코어입니다'+(' ('+reason+')' if reason else '')+'.\n'
+              '배정하지 않아도 미완료로 세지 않습니다.\n\n그래도 이 코어를 배정할까요?')
+        if not messagebox.askyesno(title,text,parent=parent):return None
+        return factory(True)
+
+
 class ManualCoreAllocator(AfterAllocator):
     reassign_excluded=False
-    def __init__(self,app,source):
-        super().__init__(app);self.source=tuple(source);self.load()
+    def __init__(self,app,source,allow_excluded=False):
+        super().__init__(app);self.source=tuple(source);self.allow_excluded=bool(allow_excluded);self.load()
+
+    def route_context(self,service):
+        """Route context; an excluded core the user chose to assign gets a
+        one-off entry here only, so completion counts stay unchanged."""
+        ctx=service.context()
+        if not self.allow_excluded or self.key in ctx['entries']:return ctx
+        report=completion_report(self.store,'after')
+        row=next((dict(r) for r in report['excluded_rows'] if str(r.get('core_id') or '').strip()==self.core_id),None)
+        slots=sorted(ctx['net'].by_id.get(self.core_id,()))
+        entry=dict(slots=slots,active_slots=slots,all_slots=slots,detail='',complete=False,
+                   required=False,excluded_reason='',on=False,temporary=self.core_id.startswith('임시-'),expected=False)
+        entry.update(row or {})
+        entry.update(key=('id',self.core_id),core_id=self.core_id,exception_complete=False,
+                     basis='배정 제외 코어 직접 배정',opted_in=True)
+        entries=dict(ctx['entries']);entries[self.key]=entry
+        return dict(ctx,entries=entries)
 
     def make_route_service(self):return AfterRoutePlanner(self.app)
 
@@ -17,7 +52,13 @@ class ManualCoreAllocator(AfterAllocator):
         self.net=self.ctx['net'];row=self.net.slots.get(self.source)
         if not row or not str(row.get('core_id') or '').strip():raise ValueError('배분할 코어ID가 있는 번호를 선택하세요.')
         self.core_id=str(row['core_id']).strip();self.key=json.dumps(['id',self.core_id],ensure_ascii=False,separators=(',',':'))
-        if self.key not in self.ctx['entries']:raise ValueError('이 코어는 후도면 배정 대상에서 제외된 상태입니다. 신호·상태를 확인하세요.')
+        if self.key not in self.ctx['entries']:
+            if not getattr(self,'allow_excluded',False):
+                error=ExcludedAllocationCore(EXCLUDED_ALLOCATION_TEXT)
+                error.reason=next((str(r.get('excluded_reason') or '') for r in completion_report(self.store,'after')['excluded_rows']
+                                   if str(r.get('core_id') or '').strip()==self.core_id),'')
+                raise error
+            self.ctx=self.route_context(self.route_service)
         self.problem=self.route_service.problem(self.key,self.ctx)
         if self.problem['entry'].get('exception_complete'):raise ValueError('예외 완료 처리된 코어입니다. 상태를 먼저 확인하세요.')
         self.existing={}
@@ -164,7 +205,7 @@ class ManualCoreAllocator(AfterAllocator):
             if pairs!=p['splices']:raise ValueError('접속 검사가 실패하여 배정을 취소했습니다.')
             check=Network(self.store.conn,active_only=True).inspect(self.core_id,{**DEFAULTS,'check_details':False,'reject_temporary':False})
             if not check['complete']:raise ValueError('연결 검사 실패: '+' / '.join(check['notes']))
-            service=AfterRoutePlanner(self.app);current=service.problem(self.key);data=plan_settings(self.store)
+            service=AfterRoutePlanner(self.app);current=service.problem(self.key,self.route_context(service));data=plan_settings(self.store)
             previous=data.setdefault('route_step',{}).setdefault('decisions',{}).get(self.key,{})
             record=dict(previous,state='ok',signature=current['signature'],time=now(),core_id=self.core_id,
                         nodes=p['route']['nodes'],cables=p['route']['cables'],endpoints=p['route']['endpoints'],source='수동 코어분배')
@@ -534,8 +575,8 @@ class ManualAllocationActions:
 class ManualCoreAllocationDialog(ManualAllocationActions,RememberedToplevel):
     CELL_W=220;CELL_H=54;GUTTER=48
 
-    def __init__(self,app,source,editor=None):
-        service=IncrementalCoreAllocator(app,source)
+    def __init__(self,app,source,editor=None,allow_excluded=False):
+        service=IncrementalCoreAllocator(app,source,allow_excluded=allow_excluded)
         super().__init__(app);self.app=app;self.store=app.store;self.service=service;self.editor=editor
         self._closed=False;self._watch=None;self.stale=False;self.scope='전체';self.inspect_cables=set();self.inspected=None
         self.selected=dict(service.existing);self.columns=list(self.selected);self.active_cable=source[0]
@@ -761,8 +802,8 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
     """Keep the main map interactive while one core's explicit draft is open."""
     GRID_H=48
 
-    def __init__(self,app,source,editor):
-        service=RNIncrementalCoreAllocator(app,source)
+    def __init__(self,app,source,editor,allow_excluded=False):
+        service=RNIncrementalCoreAllocator(app,source,allow_excluded=allow_excluded)
         super().__init__(app)
         navigation_prepare(self);self.withdraw();self._monitor_centered=True;self.title("후도면 · 코어배정")
         self._stage_kind="after";self._stage_reference=False;apply_stage_window_chrome(self,"after",False)

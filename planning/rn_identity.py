@@ -160,7 +160,8 @@ class RNIdentityDialog(RememberedToplevel):
             if not selected:raise ValueError('배정할 코어ID가 있는 RN 내부 포트를 선택하세요.')
             panel=getattr(self.app,'_map_allocation_panel',None)
             if panel is not None and panel.winfo_exists() and not panel.close_requested():return
-            return MapCoreAllocationPanel(self.app,('PORT:'+self.node_id,int(selected[0])),self)
+            source=('PORT:'+self.node_id,int(selected[0]))
+            return open_allowing_excluded(self,'RN 코어배정',lambda allow:MapCoreAllocationPanel(self.app,source,self,allow_excluded=allow))
         except (ValueError,sqlite3.Error,OSError) as error:messagebox.showerror('RN 코어배정',str(error),parent=self)
 
     def allocation_return(self):

@@ -129,6 +129,8 @@ jobs:
         run: python tools/check_disconnected_completion.py
       - name: 함체 임시코어 배정필요 제외·실제 ID 재계산·화면 검증
         run: python tools/check_temporary_assignment.py
+      - name: 배정 제외 코어 확인 후 직접 배정·거절 시 변경 없음 검증
+        run: python tools/check_excluded_allocation.py
       - name: 실제 접속 구간·겹침 색상·타이머 깜빡임·함체 안내 검증
         run: python tools/check_connection_highlight.py
       - name: OFF 배정 제외·실제 충돌 유지·화면 갱신 검증

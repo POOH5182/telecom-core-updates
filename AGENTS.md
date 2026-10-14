@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V146 excluded-core allocation: ManualCoreAllocator.load raises
+  ExcludedAllocationCore (a ValueError, .reason = completion excluded_reason)
+  instead of a hard block when the core is not an after target. Callers open
+  windows through open_allowing_excluded(parent,title,factory), which asks
+  askyesno once and retries with allow_excluded=True. route_context() adds a
+  one-off entry for that core only inside the allocator (also used by apply's
+  route decision), so completion counts / AfterRoutePlanner entries are
+  unchanged. Gate: tools/check_excluded_allocation.py.
+
 - V145 close cleanup: App.on_close stops the map highlight, destroys open
   Toplevels before the root (their <Destroy> cleanups still find the canvas),
   then cancel_pending_jobs(root) cancels every after/after_idle job.
