@@ -122,7 +122,7 @@ def windows_ui():
                 texts=[app.canvas.itemcget(i,'text') for i in app.canvas.find_withtag('core_path_number') if app.canvas.type(i)=='text']
                 # V133: cables show only core numbers; IDs move to the route legend.
                 assert texts and all(t.endswith('번') and '·' not in t.replace('번','').strip('0123456789') for t in texts),texts
-                legend=' '.join(w.cget('text') for w in app._route_legend.winfo_children())
+                legend=code['route_legend_text'](app)
                 assert 'OTHER-ID' in legend and 'CORE-A' in legend and '코어ID 다름' in legend,legend
                 case.set(1,1,'CORE-A','GIS 내역','on');app.refresh();app.update()
                 assert not any('코어ID 다름' in t for t in app.highlight_core_labels.values())

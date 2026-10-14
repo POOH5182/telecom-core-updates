@@ -98,7 +98,7 @@ def windows_ui():
                 texts=[app.canvas.itemcget(i,'text') for i in app.canvas.find_withtag('core_path_number') if app.canvas.type(i)=='text']
                 assert texts and set(texts)<={'1번','2번'},texts
                 legend=app._route_legend;assert legend.winfo_ismapped() or legend.winfo_manager()=='place'
-                words=' '.join(w.cget('text') for w in legend.winfo_children())
+                words=code['route_legend_text'](app)
                 assert 'CORE-A' in words and 'OTHER-ID' in words and '코어ID 다름' in words,words
                 colors={c for _,c in app._route_legend_swatches}
                 assert colors=={g['color'] for g in app.highlight_connection_model['groups']}
@@ -108,10 +108,19 @@ def windows_ui():
                 assert ports==['RN-1 · SP1'],ports
                 item=next(i for i in app.canvas.find_withtag('core_path_port') if app.canvas.type(i)=='text');assert app.item_to_node[item]==rn
                 # V143: the legend lists only color · core ID · full core name.
-                words=' '.join(w.cget('text') for w in app._route_legend.winfo_children())
+                words=code['route_legend_text'](app)
                 assert 'RN-1 SP1' not in words and '1번' not in words,words
                 assert LONG_NAME in words,words
-                assert all(int(w.cget('wraplength'))>=320 for w in app._route_legend.winfo_children() if w.cget('text')==LONG_NAME or LONG_NAME in w.cget('text'))
+                # V144: the full name is visible (wrapped) and can be dragged and copied.
+                name=next(w for w in app._route_legend.winfo_children() if isinstance(w,code['tk'].Text) and LONG_NAME in w.get('1.0','end'))
+                app.update_idletasks();assert name.count('1.0','end','displaylines')[0]<=int(name.cget('height')),'core name is cut'
+                name.event_generate('<Button-1>',x=2,y=4);app.update();assert app.focus_get() is name
+                name.focus_force();app.update();name.tag_add('sel','1.0','1.5');name.event_generate('<Control-c>');app.update()
+                assert app.clipboard_get()==LONG_NAME[:5],app.clipboard_get()
+                ident=next(w for w in app._route_legend.winfo_children() if isinstance(w,code['tk'].Entry) and w.get()=='CORE-A')
+                ident.event_generate('<Button-1>',x=2,y=4);app.update();ident.focus_force();app.update();ident.selection_range(0,'end');ident.event_generate('<Control-c>');app.update()
+                assert app.clipboard_get()=='CORE-A',app.clipboard_get()
+                ident.selection_clear();ident.event_generate('<Button-3>',x=2,y=4);app.update();assert app.clipboard_get()=='CORE-A'
                 # Swatches stay steady while the cables keep blinking.
                 seen=set();states=set();done=code['tk'].BooleanVar(master=app,value=False)
                 def sample():

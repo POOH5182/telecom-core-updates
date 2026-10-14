@@ -1,5 +1,10 @@
 # Telecom Core updater project
 
+- V144 route legend core ID (readonly Entry) and core name (disabled Text,
+  char-wrapped with enough height to show it all) are selectable: click focuses,
+  drag selects, Ctrl+C/<<Copy>> copies the selection, right-click copies the
+  selection or whole value. Use route_legend_text(view) to read legend text.
+
 - V143 route legend rows show only a steady color swatch, core ID and the full
   core name (legend name_text, wrapped, never cut) plus a red fault note. No
   cable/segment list and no swatch blinking (cables still blink). Supersedes

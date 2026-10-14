@@ -164,8 +164,7 @@ def canvas_text(view):
 
 
 def legend_text(view):
-    legend=view.__dict__.get('_route_legend')
-    return ' '.join(w.cget('text') for w in legend.winfo_children()) if legend is not None else ''
+    return code['route_legend_text'](view)
 
 
 def assert_route(view,expected):
