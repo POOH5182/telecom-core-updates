@@ -46,7 +46,7 @@ class WindowNavigation:
             self.pages.append(page);page._navigation=self
             page._navigation_destroy=getattr(page,'_navigation_raw_destroy',page.destroy)
             page.destroy=lambda *args,**kwargs:self.close(page,*args,**kwargs)
-            page._navigation_focus=None;page._navigation_grab=False
+            page._navigation_focus=page.focus_lastfor();page._navigation_grab=False
             page.bind('<Destroy>',lambda e,w=page:self.app.after_idle(self.recover) if e.widget is w and not self.closing and not getattr(self.app,'_navigation_closing',False) else None,add='+')
             packed=page.pack_slaves();gridded=page.grid_slaves()
             host=getattr(page,'_stage_banner',None)
@@ -69,6 +69,8 @@ class WindowNavigation:
         return self.history[self.index] if 0<=self.index<len(self.history) else None
 
     def visit(self,page):
+        if not self.history:
+            self.history=[page];self.index=0;self.buttons();return
         if self.active() is page:self.buttons();return
         self.history=self.history[:self.index+1]+[page];self.index=len(self.history)-1
         self.show(page)
