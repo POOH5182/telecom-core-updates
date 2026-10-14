@@ -315,7 +315,7 @@ class ReferenceDetailDialog(RememberedToplevel):
     def show_on_drawing(self):
         if not self._selected_row():return
         rows=[self.row_map[self.active_tree][iid] for iid in self.active_tree.selection() if iid in self.row_map[self.active_tree]]
-        self.view.highlight_reference_slots([row['slot'] for row in rows],owner=self,center=True);self.view.lift()
+        self.view.highlight_reference_slots([row['slot'] for row in rows],owner=self,center=True);navigation_link(None,self.view);self.view.lift()
 
     def open_node_diagram(self):
         token=('diagram',self.key);registry=self.view._reference_details;existing=registry.get(token)

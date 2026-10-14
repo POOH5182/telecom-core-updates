@@ -714,7 +714,7 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
     def __init__(self,app,source,editor):
         service=RNIncrementalCoreAllocator(app,source)
         super().__init__(app)
-        self.withdraw();self._monitor_centered=True;self.title("후도면 · 코어배정")
+        navigation_prepare(self);self.withdraw();self._monitor_centered=True;self.title("후도면 · 코어배정")
         self._stage_kind="after";self._stage_reference=False;apply_stage_window_chrome(self,"after",False)
         self.protocol("WM_DELETE_WINDOW",self.close_requested)
         editor.update_idletasks();self._editor_size=(editor.winfo_width(),editor.winfo_height())

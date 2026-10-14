@@ -288,6 +288,7 @@ def windows_ui():
             key(app,gis.find_entry,'<Control-c>');assert app.clipboard_get()=='copy'
             # Each stage remembers its own position; moving GIS must not move field/after.
             for index,(kind,dialog) in enumerate(viewers.items()):
+                wf.navigation_link(None,dialog);app.update()
                 dialog.geometry(f'960x650+{10+index*12}+{10+index*12}')
             app.update();positions={kind:d.geometry() for kind,d in viewers.items()}
             for kind in viewers:assert wf.open_reference_drawing(app,kind).geometry()==positions[kind]

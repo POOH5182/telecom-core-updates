@@ -1,6 +1,17 @@
 """One visible detail page per navigation history, preserving live editor drafts."""
 
 
+def navigation_prepare(window):
+    # Capture before a constructor binds X/Escape/Close to its destroy method.
+    if hasattr(window,'_navigation_raw_destroy'):return
+    window._navigation_raw_destroy=window.destroy
+    def destroy(*args,**kwargs):
+        group=getattr(window,'_navigation',None)
+        if group and not group.closing:return group.close(window,*args,**kwargs)
+        return window._navigation_raw_destroy(*args,**kwargs)
+    window.destroy=destroy
+
+
 def navigation_top(widget):
     try:
         top=widget.winfo_toplevel()
@@ -32,9 +43,10 @@ class WindowNavigation:
     def add(self,page):
         if page not in self.pages:
             self.pages.append(page);page._navigation=self
-            page._navigation_destroy=page.destroy
+            page._navigation_destroy=getattr(page,'_navigation_raw_destroy',page.destroy)
             page.destroy=lambda *args,**kwargs:self.close(page,*args,**kwargs)
             page._navigation_focus=None;page._navigation_grab=False
+            page.bind('<Destroy>',lambda e,w=page:self.app.after_idle(self.recover) if e.widget is w and not self.closing and not getattr(self.app,'_navigation_closing',False) else None,add='+')
             packed=page.pack_slaves();gridded=page.grid_slaves()
             host=getattr(page,'_stage_banner',None)
             bar=ttk.Frame(host or page,padding=(2,0));page._navigation_bar=bar;page._navigation_host=host
@@ -114,12 +126,22 @@ class WindowNavigation:
                 page._navigation_back.configure(state='normal' if self.index>0 else 'disabled')
                 page._navigation_forward.configure(state='normal' if self.index<len(self.history)-1 else 'disabled')
 
+    def recover(self):
+        current=self.active();before=self.history[:self.index]
+        self.pages=[w for w in self.pages if w.winfo_exists()]
+        self.history=[w for w in self.history if w in self.pages]
+        if current in self.history:self.index=self.history.index(current)
+        else:
+            self.index=max(0,min(sum(w in self.pages for w in before)-1,len(self.history)-1)) if self.history else -1
+            if self.history:self.show(self.active())
+        self.buttons()
+
     def close(self,page,*args,**kwargs):
         if not page.winfo_exists():return
         if self.closing or getattr(self.app,'_navigation_closing',False):return page._navigation_destroy(*args,**kwargs)
         # Destroying a Tk parent also destroys its hidden editor descendants.
         descendants=[w for w in self.pages if w is not page and w.winfo_exists() and str(w).startswith(str(page)+'.')]
-        if descendants and navigation_valid(page):
+        if descendants and navigation_valid(page) and not getattr(page,'_stage_reference',False):
             if not messagebox.askyesno('화면 닫기','이 화면에서 열어둔 다음 화면도 닫힙니다. 저장하지 않은 입력이 있다면 뒤로·앞으로로 돌아가 저장해 주세요. 함께 닫을까요?',parent=page):return
         was_active=self.active() is page
         self.closing=True
