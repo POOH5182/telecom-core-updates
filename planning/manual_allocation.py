@@ -299,6 +299,42 @@ class IncrementalCoreAllocator(ManualCoreAllocator):
         return backup
 
 
+    def unassign_preview(self,slot):
+        """One saved number of this core goes back to an empty number so it can be re-assigned."""
+        self.fresh();slot=(str(slot[0]),int(slot[1]))
+        if slot==self.source:raise ValueError('배정 출발 번호는 여기서 취소할 수 없습니다. 코어 화면에서 옮기거나 지우세요.')
+        if self.existing.get(slot[0])!=slot[1] or slot not in self.rows:raise ValueError('저장된 배정 번호(진한 파랑)만 배정취소할 수 있습니다.')
+        if self.drawing_locked:raise ValueError('전도면 편집 잠금 중에는 배정취소할 수 없습니다.')
+        c=self.net.cables.get(slot[0]);owners={c['n1id'],c['n2id']} if c else {slot[0][5:]}
+        splices=[r for r in self.snapshot['splices'] if (r['cable1_id'],int(r['core1_index']))==slot or (r['cable2_id'],int(r['core2_index']))==slot]
+        locked_nodes=(owners|{r['node_id'] for r in splices})&self.locked_nodes
+        if locked_nodes:raise ValueError('함체·케이블 잠금: '+', '.join(sorted(self.net.nodes.get(n,{}).get('name',n) for n in locked_nodes)))
+        return dict(slot=slot,core_id=self.core_id,token=self.stamp,splices=splices)
+
+    def unassign(self,slot):
+        p=self.unassign_preview(slot);slot=p['slot']
+        backup=self.store.path.parent/'backups'/('before_core_unassign_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.sqlite3')
+        self.store.backup_to(backup)
+        with self.store.action('코어 배정취소'):
+            self.store._write_core(*slot,('',)*len(PLAN_FIELDS))
+            for r in p['splices']:
+                self.store.conn.execute('DELETE FROM splices WHERE node_id=? AND cable1_id=? AND core1_index=? AND cable2_id=? AND core2_index=?',
+                                        (r['node_id'],r['cable1_id'],r['core1_index'],r['cable2_id'],r['core2_index']))
+            actual=plan_snapshot(self.store.conn)
+            cores={(r['cable_id'],int(r['core_index'])):tuple(r[f] for f in PLAN_FIELDS) for r in actual['cores']}
+            expected={k:tuple(r[f] for f in PLAN_FIELDS) for k,r in self.rows.items() if not k[0].startswith('PORT:')}
+            if not slot[0].startswith('PORT:'):expected[slot]=('',)*len(PLAN_FIELDS)
+            if cores!=expected:raise ValueError('코어내역 검사가 실패하여 배정취소를 되돌렸습니다.')
+            removed={json.dumps(r,sort_keys=True,default=str) for r in p['splices']}
+            if sorted(json.dumps(r,sort_keys=True,default=str) for r in actual['splices'])!=sorted(json.dumps(r,sort_keys=True,default=str) for r in self.snapshot['splices'] if json.dumps(r,sort_keys=True,default=str) not in removed):
+                raise ValueError('접속 검사가 실패하여 배정취소를 되돌렸습니다.')
+            ports=[dict(r,**dict(zip(PLAN_FIELDS,('',)*len(PLAN_FIELDS)))) if ('PORT:'+r['node_id'],int(r['port_index']))==slot else r for r in self.snapshot['ports']]
+            if actual['ports']!=sorted(ports,key=lambda r:json.dumps(r,sort_keys=True)):raise ValueError('RN 포트 검사가 실패하여 배정취소를 되돌렸습니다.')
+            for table in ('nodes','cables','core_annotations','survey_rows'):
+                if actual[table]!=self.snapshot[table]:raise ValueError('기존 정보 보존 검사가 실패하여 배정취소를 되돌렸습니다.')
+        return backup
+
+
 class RNIncrementalCoreAllocator(IncrementalCoreAllocator):
     """Main-map incremental allocation accepts saved RN ports as source/target."""
     def load(self):
@@ -405,12 +441,31 @@ class ManualAllocationActions:
             seen.add(slot)
             if slot[0] in self.service.net.cables:self.inspect_cables.add(slot[0])
             stack.extend(other for _,other in self.service.net.links[slot] if other not in seen)
+        if self.offer_unassign(cid,index):return
         allowed,reason=self.service.availability(cid,index)
         if allowed:
             if self.selected.get(cid)==index:self.selected.pop(cid);self.message.set('배정안에서 '+str(index)+'번 선택을 해제했습니다.')
             else:self.selected[cid]=index;self.message.set(self.cable_title(cid)+f' · {index}번 배정안 선택 (적용 전)')
         else:self.message.set(reason+' · 해당 번호의 실제 연결을 표시합니다.')
         self.render()
+
+    def offer_unassign(self,cid,index):
+        """A saved (dark blue) number can be unassigned after one confirmation."""
+        s=self.service
+        if not isinstance(s,IncrementalCoreAllocator) or s.existing.get(cid)!=index or (cid,index)==s.source:return False
+        self.render()
+        label=plan_number_label(s.net,(cid,index))
+        if not messagebox.askyesno('배정취소',label+'\n코어 '+s.core_id+' 배정을 취소할까요?\n\n이 번호는 빈 코어가 되고 양쪽 접속도 풀립니다.\n다시 배정할 수 있고 Ctrl+Z로 되돌릴 수 있습니다.',parent=self.winfo_toplevel()):
+            self.message.set(label+' · 배정을 그대로 유지합니다.');return True
+        drafts={c:n for c,n in self.selected.items() if c not in s.existing};columns=list(self.columns)
+        s.unassign((cid,index));self.app.refresh();self.reload()
+        self.columns=[c for c in columns if s.owner_indices(c)] if hasattr(s,'owner_indices') else [c for c in columns if c in s.net.cables]
+        for c in s.existing:
+            if c not in self.columns:self.columns.append(c)
+        self.selected.update({c:n for c,n in drafts.items() if c in self.columns and s.availability(c,n)[0]})
+        self.active_cable=cid;self.inspected=None;self.inspect_cables=set();self.render()
+        self.message.set(label+' 배정취소 완료 · 이 케이블은 미배정(빨강)입니다. 빈 번호를 눌러 다시 배정하세요. Ctrl+Z로 되돌릴 수 있습니다.')
+        return True
 
     def remove_cable(self,cid):
         if cid in self.service.existing:self.message.set('기존 연결 구간은 유지됩니다.');return
@@ -699,6 +754,7 @@ class AllocationMatrixView:
         sx=ttk.Scrollbar(frame,orient='horizontal',command=self.matrix_scroll);sx.grid(row=3,column=0,sticky='ew')
         self.matrix.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         self.matrix.bind('<Button-1>',self.matrix_click);self.matrix_headers.bind('<Button-1>',self.matrix_header_click)
+        self.matrix.bind('<Button-3>',self.matrix_unassign_click)
         self.matrix.bind('<Motion>',self.matrix_hover)
         self.matrix.bind('<MouseWheel>',lambda e:self.matrix.yview_scroll(-3 if e.delta>0 else 3,'units'))
         self.matrix.bind('<Shift-MouseWheel>',lambda e:self.matrix_scroll('scroll',-2 if e.delta>0 else 2,'units'))
@@ -770,6 +826,7 @@ class AllocationMatrixView:
                 state='기존 유지' if existing else '배정안' if chosen else '선택 가능' if kind=='empty' else row['state']
                 self.matrix.create_text(x+6,y+11,anchor='w',text=label+' · '+state+(' ★' if common else ''),font=('Malgun Gothic',9,'bold'),fill=ink,tags=(tag,))
                 detail=str(row['core_id'] or ('다시 클릭하면 선택 해제' if kind=='draft' else row['reason'])).replace('\n',' ')
+                if existing and (cid,index)!=s.source:detail+=' · 클릭: 배정취소'
                 self.matrix.create_text(x+6,y+31,anchor='w',text=detail[:25]+('…' if len(detail)>25 else ''),font=('Malgun Gothic',8),fill=sub,tags=(tag,))
 
     def matrix_slot(self,event):
@@ -781,6 +838,11 @@ class AllocationMatrixView:
     def matrix_click(self,event):
         slot=self.matrix_slot(event)
         if slot:self.run(lambda:self.choose_slot(*slot))
+        return 'break'
+
+    def matrix_unassign_click(self,event):
+        slot=self.matrix_slot(event)
+        if slot and self.service.existing.get(slot[0])==slot[1]:self.run(lambda:self.offer_unassign(*slot))
         return 'break'
 
     def matrix_hover(self,event):

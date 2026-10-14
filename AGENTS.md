@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V147 unassign: IncrementalCoreAllocator.unassign(slot) clears PLAN_FIELDS of
+  one saved (existing) number of the open core and deletes only splices touching
+  it, inside store.action('코어 배정취소') with a backup and snapshot checks.
+  Refused for the source slot, unsaved numbers, drawing lock and locked
+  owner/splice nodes. UI: ManualAllocationActions.offer_unassign (click on a
+  dark-blue cell in sheet/matrix, or right-click in the matrix) asks askyesno,
+  keeps columns and still-valid drafts after reload. Gate:
+  tools/check_unassign_allocation.py.
+
 - V146 excluded-core allocation: ManualCoreAllocator.load raises
   ExcludedAllocationCore (a ValueError, .reason = completion excluded_reason)
   instead of a hard block when the core is not an after target. Callers open
