@@ -1,5 +1,10 @@
 # Telecom Core updater project
 
+- V143 route legend rows show only a steady color swatch, core ID and the full
+  core name (legend name_text, wrapped, never cut) plus a red fault note. No
+  cable/segment list and no swatch blinking (cables still blink). Supersedes
+  the V133/V134 legend detail text; model cable_text stays for callers.
+
 - V142 (user request): allocation core cells use allocation_cell_kind() +
   ALLOCATION_CELL_COLORS in the matrix, single-cable sheet and ledger tags:
   empty/selectable sky blue #bae6fd, used gray #d1d5db, empty-but-blocked white

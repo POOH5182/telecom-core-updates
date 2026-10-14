@@ -38,12 +38,13 @@ def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLO
                 nid=slot[0][5:];port=str(rows.get(slot,{}).get('label') or slot[1])
                 parts.append(str((nodes.get(nid) or {}).get('name') or 'RN')+' '+port)
                 ports[nid].append(dict(port=port,color=group['color'],number=group['number']))
-        legend.append(dict(kind='segment',number=group['number'],color=group['color'],ids=tuple(ids),
+        names=list(dict.fromkeys(str(rows.get(x,{}).get('detail') or '').strip() for x in group['slots'] if str(rows.get(x,{}).get('detail') or '').strip()))
+        legend.append(dict(kind='segment',number=group['number'],color=group['color'],ids=tuple(ids),name_text=' / '.join(names),
             core_text=' / '.join(ids) or 'ID 없음',cable_text=', '.join(dict.fromkeys(parts)),
             fault=' · '.join(group.get('faults') or ())))
     short={cable:'·'.join(str(n) for n in sorted(set(values)))+'번' for cable,values in numbers.items()}
     shared=sorted(overlaps,key=cable_name)
-    if shared:legend.append(dict(kind='overlap',number=0,color=overlap_color,ids=(),core_text='겹침',
+    if shared:legend.append(dict(kind='overlap',number=0,color=overlap_color,ids=(),core_text='겹침',name_text='같은 케이블에 여러 코어',
         cable_text='같은 케이블에 여러 코어: '+', '.join(cable_name(c) for c in shared),fault=''))
     port_labels={nid:dict(text=str((nodes.get(nid) or {}).get('name') or 'RN')+' · '+' / '.join(dict.fromkeys(i['port'] for i in items)),
                           color=items[0]['color'],ports=tuple(dict.fromkeys(i['port'] for i in items))) for nid,items in ports.items()}

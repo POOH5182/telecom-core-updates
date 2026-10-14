@@ -7,6 +7,9 @@ from check_connection_highlight import HighlightTests
 from check_field_slots import code,wf
 
 
+LONG_NAME='장성 21-2 (1-8:4 RN) IN 방향 끝까지 잘리지 않고 보여야 하는 아주 긴 코어명 확인용 문구'
+
+
 class RouteLegendTests(unittest.TestCase):
     setUp=HighlightTests.setUp
     tearDown=HighlightTests.tearDown
@@ -60,6 +63,11 @@ class RouteLegendTests(unittest.TestCase):
         self.assertEqual(len([r for r in model['legend'] if r['kind']=='segment']),len(model['groups']))
         self.assertEqual(self.snapshot(),before);self.assertEqual(self.s.history_rows(),history)
 
+    def test_legend_rows_carry_full_core_names(self):
+        self.connect_all();self.s.update_core(self.cables[0],1,('CORE-A',LONG_NAME,'normal','','unknown'))
+        model=self.model();row=next(r for r in model['legend'] if r['kind']=='segment' and 'CORE-A' in r['core_text'])
+        self.assertIn(LONG_NAME,row['name_text'])
+
 
 def windows_ui():
     if sys.platform!='win32' and not os.environ.get('TELECOM_CHECK_UI'):return
@@ -70,6 +78,7 @@ def windows_ui():
              patch.object(code['messagebox'],'showinfo'),patch.object(code['messagebox'],'showwarning'):
             case.connect_all();case.set(1,1,'OTHER-ID')
             rn,rn_cable=case.rn_fixture()
+            case.s.update_core(case.cables[0],1,('CORE-A',LONG_NAME,'normal','','unknown'))
             app=code['App']();app.store.close();app.store=case.s;errors=[]
             app.report_callback_exception=lambda *args:errors.append(str(args[1]))
             try:
@@ -98,15 +107,19 @@ def windows_ui():
                 ports=[app.canvas.itemcget(i,'text') for i in app.canvas.find_withtag('core_path_port') if app.canvas.type(i)=='text']
                 assert ports==['RN-1 · SP1'],ports
                 item=next(i for i in app.canvas.find_withtag('core_path_port') if app.canvas.type(i)=='text');assert app.item_to_node[item]==rn
-                assert 'RN-1 SP1' in ' '.join(w.cget('text') for w in app._route_legend.winfo_children())
-                # The legend swatches blink with the actual cable timer.
-                seen=set();done=code['tk'].BooleanVar(master=app,value=False)
+                # V143: the legend lists only color · core ID · full core name.
+                words=' '.join(w.cget('text') for w in app._route_legend.winfo_children())
+                assert 'RN-1 SP1' not in words and '1번' not in words,words
+                assert LONG_NAME in words,words
+                assert all(int(w.cget('wraplength'))>=320 for w in app._route_legend.winfo_children() if w.cget('text')==LONG_NAME or LONG_NAME in w.cget('text'))
+                # Swatches stay steady while the cables keep blinking.
+                seen=set();states=set();done=code['tk'].BooleanVar(master=app,value=False)
                 def sample():
-                    seen.add(app._route_legend_swatches[0][0].cget('bg'))
-                    if len(seen)>=2:done.set(True)
+                    seen.add(app._route_legend_swatches[0][0].cget('bg'));states.add(app.highlight_blink_on)
+                    if len(states)>=2 and len(seen)==1:done.set(True)
                     else:app.after(60,sample)
                 app.after(60,sample);timeout=app.after(2500,lambda:done.set(True));app.wait_variable(done);app.after_cancel(timeout)
-                assert len(seen)>=2,seen
+                assert len(states)>=2 and seen=={app._route_legend_swatches[0][1]},(seen,states)
                 # A list reload must not take the map back from another owner.
                 other=object();app.start_highlight_blink({case.cables[0]:'#ff7a00'},owner=other,core_slots=[case.slot(0)])
                 dialog.reload();app.update();assert app.highlight_owner is other
