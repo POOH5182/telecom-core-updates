@@ -10,6 +10,7 @@ def navigation_prepare(window):
         if group and not group.closing:return group.close(window,*args,**kwargs)
         return window._navigation_raw_destroy(*args,**kwargs)
     window.destroy=destroy
+    window.protocol('WM_DELETE_WINDOW',window.destroy)
 
 
 def navigation_top(widget):
