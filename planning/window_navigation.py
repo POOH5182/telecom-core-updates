@@ -36,17 +36,20 @@ class WindowNavigation:
             page.destroy=lambda *args,**kwargs:self.close(page,*args,**kwargs)
             page._navigation_focus=None;page._navigation_grab=False
             packed=page.pack_slaves();gridded=page.grid_slaves()
-            bar=ttk.Frame(page,padding=(6,3));page._navigation_bar=bar
+            host=getattr(page,'_stage_banner',None)
+            bar=ttk.Frame(host or page,padding=(2,0));page._navigation_bar=bar;page._navigation_host=host
             page._navigation_back=ttk.Button(bar,text='← 뒤로',command=lambda:self.move(-1),width=9);page._navigation_back.pack(side='left')
             page._navigation_forward=ttk.Button(bar,text='앞으로 →',command=lambda:self.move(1),width=9);page._navigation_forward.pack(side='left',padx=4)
             ttk.Label(bar,text='Alt+← / Alt+→',foreground='#64748b').pack(side='left',padx=8)
-            if gridded and not packed:
+            if host:bar.pack(side='right',padx=4)
+            elif gridded and not packed:
                 cols,rows=page.grid_size()
                 for r in range(rows-1,-1,-1):page.grid_rowconfigure(r+1,**page.grid_rowconfigure(r))
                 for child in gridded:child.grid_configure(row=int(child.grid_info()['row'])+1)
                 page.grid_rowconfigure(0,weight=0);bar.grid(row=0,column=0,columnspan=max(1,cols),sticky='ew')
             elif packed:bar.pack(side='top',fill='x',before=packed[0])
             else:bar.pack(side='top',fill='x')
+            if host and len(self.pages)==1:bar.pack_forget()
         self.visit(page)
 
     def active(self):
@@ -107,6 +110,7 @@ class WindowNavigation:
     def buttons(self):
         for page in self.pages:
             if page.winfo_exists():
+                if getattr(page,'_navigation_host',None) and len(self.pages)>1 and not page._navigation_bar.winfo_manager():page._navigation_bar.pack(side='right',padx=4)
                 page._navigation_back.configure(state='normal' if self.index>0 else 'disabled')
                 page._navigation_forward.configure(state='normal' if self.index<len(self.history)-1 else 'disabled')
 
