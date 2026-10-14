@@ -273,6 +273,9 @@ def install_monitor_dialogs(app):
         if command:window.tk.eval(command)
         else:window.destroy()
         return 'break'
+    for key,offset in (('Left',-1),('Right',1)):
+        app.bind_class(close_tag,'<Alt-KeyPress-'+key+'>',lambda event:'break')
+        app.bind_class(close_tag,'<Alt-KeyRelease-'+key+'>',lambda event,d=offset:navigation_key(event,d))
     for key in ('w','W'):
         app.bind_class(close_tag,'<Control-KeyPress-'+key+'>',lambda event:'break')
         app.bind_class(close_tag,'<Control-KeyRelease-'+key+'>',close_focused)
@@ -286,6 +289,9 @@ def install_monitor_dialogs(app):
     def mapped(event):
         window=event.widget
         close_binding(window)
+        if isinstance(window,tk.Toplevel) and not window.overrideredirect() and not getattr(window,'_navigation_scheduled',False):
+            window._navigation_scheduled=True
+            window.after_idle(lambda:navigation_register(window) if window.winfo_exists() else None)
         if not isinstance(window,tk.Toplevel) or isinstance(window,RememberedToplevel):return
         if window.overrideredirect() or getattr(window,'_monitor_centered',False):return
         window._monitor_centered=True

@@ -777,6 +777,7 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
         self.live_stamp=self.read_stamp();self.render();self._watch=self.after(500,self.check_live)
         self._size_binding=self.bind('<Configure>',self.resize_panel,add='+')
         self.update_idletasks();self.deiconify();set_popup_position(self,*self._editor_position);self.lift()
+        navigation_link(editor,self)
         app.status.set('코어배정 중 · '+service.core_id+' · 케이블 또는 RN을 클릭하면 아래에 번호·내부 포트가 표시됩니다.')
 
     def resize_panel(self,event):

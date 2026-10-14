@@ -1,5 +1,17 @@
 # Telecom Core updater project
 
+- V138 detail navigation keeps one visible live editor per history; opening
+  a nested editing/viewing page preserves its parent drafts and geometry.
+  Back/Forward and Alt+Left/Right navigate retained widgets without saving.
+  Destroy removes dead history entries and returns to a retained valid page;
+  closing a parent with hidden descendants requires confirmation. Do not
+  resurrect windows across Store/generation changes or app shutdown. Preserve
+  transaction confirmation/progress dialogs and their existing modal lifecycle.
+  Allocation navigation suspends main-map routing while the source editor is
+  shown and revalidates the draft when returning. Keep independent top-level
+  drawing/reference windows. Run check_window_navigation.py, existing window/
+  draft/allocation gates and the full Windows publication/launcher verification.
+
 - V137 uses a modeless allocation Toplevel at the source editor position/size;
   no panel is packed into the main drawing. Return restores the selected core
   and editor at the moved allocation position. Cable/RN/incomplete-list entry

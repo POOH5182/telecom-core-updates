@@ -97,6 +97,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM CORE LAYOUT MAP\n' + (ROOT / 'planning' / 'core_layout_map.py').read_text(encoding='utf-8')
         if version >= 105:
             baseline += '\n\n# BEGIN TELECOM POPUP MONITOR\n' + (ROOT / 'planning' / 'popup_monitor.py').read_text(encoding='utf-8')
+        if version >= 138:
+            baseline += '\n\n# BEGIN TELECOM WINDOW NAVIGATION\n' + (ROOT / 'planning' / 'window_navigation.py').read_text(encoding='utf-8')
         if version >= 105:
             baseline += '\n\n# BEGIN TELECOM SAVE DIALOG\n' + (ROOT / 'planning' / 'save_dialog.py').read_text(encoding='utf-8')
         if version >= 117:

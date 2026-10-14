@@ -39,6 +39,8 @@ jobs:
         run: python -m unittest discover -s tools -p "test_*.py" -v
       - name: 배포할 프로그램 준비
         run: python tools/materialize_release.py
+      - name: RN 편집 화면 전환·뒤로 앞으로·Alt 방향키·입력 보존·닫기 검증
+        run: python tools/check_window_navigation.py --emit-screenshots
       - name: 다중 케이블 비교·역방향 정렬·독립 배정창·끝점 보존·Ctrl W 검증
         run: python tools/check_allocation_matrix.py --emit-screenshots
       - name: RN 출발·케이블 5번·RN IN 도착 배정·검토·취소·완료·실행취소 검증
