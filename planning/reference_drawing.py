@@ -529,7 +529,7 @@ def open_reference_drawing(app,kind=None):
     if kind not in ('gis','before','after'):raise ValueError('알 수 없는 도면 단계입니다.')
     if not hasattr(app,'_reference_drawings'):app._reference_drawings={}
     dialog=app._reference_drawings.get(kind)
-    if dialog is not None and dialog.winfo_exists():dialog.reload_source();dialog.deiconify();dialog.lift();return dialog
+    if dialog is not None and dialog.winfo_exists():dialog.reload_source();navigation_link(None,dialog);dialog.deiconify();dialog.lift();return dialog
     dialog=ReferenceDrawingDialog(app,kind);app._reference_drawings[kind]=dialog;return dialog
 
 

@@ -152,6 +152,12 @@ def pump(app,milliseconds=850):
 
 
 def key(app,widget,sequence):
+    # V138 returns to the retained page before sending a real shortcut.
+    page=widget.winfo_toplevel();nav=getattr(page,'_navigation',None)
+    if nav and nav.active() is not page:
+        if page in nav.history:nav.move(nav.history.index(page)-nav.index)
+        else:nav.visit(page)
+        app.update()
     widget.focus_force();app.update();widget.event_generate(sequence);app.update()
 
 

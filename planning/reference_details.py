@@ -319,7 +319,7 @@ class ReferenceDetailDialog(RememberedToplevel):
 
     def open_node_diagram(self):
         token=('diagram',self.key);registry=self.view._reference_details;existing=registry.get(token)
-        if existing is not None and existing.winfo_exists():existing.deiconify();existing.lift();return existing
+        if existing is not None and existing.winfo_exists():navigation_link(None,existing);existing.deiconify();existing.lift();return existing
         diagram=NodeConnectionDiagramDialog(self,self.store,self.key)
         # The established connection diagram is read-only. Its parent must be
         # a pinned detail/viewer, never the live App, for validity checks.
@@ -351,6 +351,6 @@ def open_reference_detail(view,kind,key,parent=None):
     registry=getattr(view,'_reference_details',None)
     if registry is None:registry=view._reference_details={}
     existing=registry.get((kind,key))
-    if existing is not None and existing.winfo_exists():existing.deiconify();existing.lift();return existing
+    if existing is not None and existing.winfo_exists():navigation_link(None,existing);existing.deiconify();existing.lift();return existing
     dialog=ReferenceDetailDialog(view,kind,key,parent=parent);registry[(kind,key)]=dialog
     return dialog
