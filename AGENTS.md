@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V139 extends V138 navigation to pages whose parent is the main App: they
+  join one app-level history (app._navigation_main) so only one detail page is
+  visible, at the previous page position (size = max of previous and own size)
+  and transient to the App. Nested pages still join their parent's history,
+  which is now that same shared history. Excluded: _stage_independent windows
+  (reference drawings keep their own history), transactional confirmation/
+  progress dialogs and simpledialog prompts (they stay over the asking page).
+  A hidden page re-shown by deiconify() becomes the current history page.
+  Run check_main_navigation.py, check_window_navigation.py and the full gates.
+
 - V138 detail navigation keeps one visible live editor per history; opening
   a nested editing/viewing page preserves its parent drafts and geometry.
   Back/Forward and Alt+Left/Right navigate retained widgets without saving.

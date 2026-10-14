@@ -180,6 +180,8 @@ def windows_ui():
             printed=next((Path(temp)/'print').glob('*.html')).read_text(encoding='utf-8');assert '<td>코어절체</td>' in printed
             progress=code['WorkRequiredDialog'](app,s);progress.filter.set('전체');progress.show_rows();app.update()
             assert progress.visible[0]['method']=='코어절체' and progress.visible[0]['result']=='완료'
+            # V139: the progress page replaced this page in the shared window; return to it.
+            dialog.deiconify();app.update();app.update()
             dialog.geometry('950x650');app.update();assert dialog.work_basis.get() and dialog.tree.winfo_ismapped()
             assert app.scenario_path('before').read_bytes()==baseline
             assert not errors and not error.called,(errors,error.call_args)

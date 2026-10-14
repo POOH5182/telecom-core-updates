@@ -47,6 +47,8 @@ class WindowNavigation:
             page._navigation_destroy=getattr(page,'_navigation_raw_destroy',page.destroy)
             page.destroy=lambda *args,**kwargs:self.close(page,*args,**kwargs)
             page._navigation_focus=page.focus_lastfor();page._navigation_grab=False
+            page._navigation_size=(page.winfo_width(),page.winfo_height())
+            page.bind('<Map>',lambda e,w=page:self.mapped(w) if e.widget is w else None,add='+')
             page.bind('<Destroy>',lambda e,w=page:self.app.after_idle(self.recover) if e.widget is w and not self.closing and not getattr(self.app,'_navigation_closing',False) else None,add='+')
             packed=page.pack_slaves();gridded=page.grid_slaves()
             host=getattr(page,'_stage_banner',None)
@@ -94,9 +96,13 @@ class WindowNavigation:
             visible=next((w for w in self.pages if w is not page and w.winfo_exists() and w.state()!='withdrawn'),None)
             position=popup_outer_geometry(visible)[:2] if visible else None
             size=(visible.winfo_width(),visible.winfo_height()) if visible else None
+            if size and getattr(page,'_navigation_main',False):
+                # Main-window pages share one place; a larger page is not squeezed.
+                own=getattr(page,'_navigation_size',(1,1));size=(max(size[0],own[0]),max(size[1],own[1]))
             for w in self.pages:
                 if w is not page and w.winfo_exists():self.pause(w)
-            page.transient('')
+            # Main-window pages stay above the drawing as before; nested ones float.
+            page.transient(self.app if getattr(page,'_navigation_main',False) and self.app else '')
             if size:page.geometry(str(size[0])+'x'+str(size[1]))
             page.deiconify();page.update_idletasks()
             if position:set_popup_position(page,*position)
@@ -113,6 +119,13 @@ class WindowNavigation:
                     if hasattr(page,method):getattr(page,method)();break
             self.buttons()
         finally:self.changing=False
+
+    def mapped(self,page):
+        # Code that reuses a hidden page by deiconify() makes it the current page.
+        if self.changing or self.closing or self.active() is page or page not in self.pages:return
+        def current():
+            if page.winfo_exists() and page.state()!='withdrawn' and self.active() is not page and navigation_valid(page):self.visit(page)
+        page.after_idle(current)
 
     def move(self,offset):
         if self.changing or self.closing:return 'break'
@@ -169,6 +182,8 @@ def navigation_register(page,parent=None):
     if not page.winfo_exists() or getattr(page,'_navigation_skip',False):return
     # Transactional confirmation/progress prompts keep their existing modal lifecycle.
     if navigation_transaction(page):return
+    # Small number/text prompts stay over the window that asked for them.
+    if isinstance(page,simpledialog.Dialog):return
     # A constructor may open a modal review before its pending Map event runs.
     # Do not withdraw the review's owner or steal its initial button focus.
     grab=page.grab_current()
@@ -178,6 +193,15 @@ def navigation_register(page,parent=None):
     if parent is page:parent=None
     group=getattr(parent,'_navigation',None) if parent else None
     if parent and group is None and navigation_valid(parent):group=WindowNavigation(parent)
+    app=navigation_app(page)
+    if parent is None and app is not None and not getattr(page,'_stage_independent',False):
+        # Pages opened from the main drawing share one window history too.
+        group=getattr(app,'_navigation_main',None)
+        if group is not None and not any(w.winfo_exists() for w in group.pages):group=None
+        page._navigation_main=True
+        if group is None:
+            if not hasattr(page,'_navigation'):app._navigation_main=WindowNavigation(page)
+            return
     if group:
         old=getattr(page,'_navigation',None)
         if old and old is not group:return

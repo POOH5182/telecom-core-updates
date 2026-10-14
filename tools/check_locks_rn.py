@@ -138,7 +138,8 @@ def windows_ui():
                 assert '자동 잠금' in cd.lock_notice.cget('text')
                 assert any('🔒' in p['text'] for entry in app.current_label_layout for p in entry['parts'])
                 def copied(entry,value):
-                    entry.winfo_toplevel().lift();entry.focus_force();app.update()
+                    # V139: main-window pages share one window; show this page first.
+                    entry.winfo_toplevel().deiconify();app.update();app.update();entry.winfo_toplevel().lift();entry.focus_force();app.update()
                     entry.event_generate('<Control-a>');entry.event_generate('<Control-c>');app.update()
                     assert app.clipboard_get()==value,(app.clipboard_get(),value)
                     entry.event_generate('<BackSpace>');entry.insert(0,'DENIED');app.update()
