@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V140 (user request) colors each 「여러 케이블 비교」 column header by
+  allocation state via allocation_column_state(): saved (blue band, 「배정 N번」),
+  draft (orange, 「배정안 N번 (저장 전)」), unassigned (red, 「미배정」); RN port
+  columns use the port label. A summary line (matrix_summary, 「배정 x / 미배정 y」
+  plus unassigned column numbers) sits above the headers (HEADER_H 126). Map
+  labels use the same text and unassigned compared cables blink red
+  (ALLOCATION_STATE_COLORS). Order start is a thick blue outline, not a fill.
+  Display only; no allocation or write rules changed. Run check_allocation_matrix.py.
+
 - V139 extends V138 navigation to pages whose parent is the main App: they
   join one app-level history (app._navigation_main) so only one detail page is
   visible, at the previous page position (size = max of previous and own size)

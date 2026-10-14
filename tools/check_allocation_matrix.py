@@ -39,6 +39,18 @@ class MatrixTests(unittest.TestCase):
                 self.assertEqual(wf.plan_snapshot(s.conn),snapshot);self.assertEqual(s.history_rows(),history)
             finally:s.close()
 
+    def test_assigned_and_unassigned_column_states(self):
+        existing={'A':1};selected={'A':1,'B':8}
+        self.assertEqual(wf.allocation_column_state(existing,selected,'A'),('saved','배정 1번'))
+        self.assertEqual(wf.allocation_column_state(existing,selected,'B')[0],'draft')
+        self.assertIn('8번',wf.allocation_column_state(existing,selected,'B')[1])
+        self.assertEqual(wf.allocation_column_state(existing,selected,'C'),('unassigned','미배정'))
+        text,counts=wf.allocation_summary(existing,selected,['A','B','C','D'])
+        self.assertEqual(counts,dict(saved=1,draft=1,unassigned=2))
+        self.assertTrue(text.startswith('배정 2 / 미배정 2'))
+        colors={kind:value[0] for kind,value in wf.ALLOCATION_STATE_COLORS.items()}
+        self.assertEqual(len(set(colors.values())),3)
+
     def test_saved_ends_preserved_and_completed_only_after_actual_join(self):
         with tempfile.TemporaryDirectory() as temp:
             app=LocalApp(temp);s=app.store
@@ -98,9 +110,16 @@ def windows_ui():
             assert len(panel.columns)==len(set(panel.columns))
             assert [c for c in panel.columns if c in (A,B,C)]==[A,B,C]
             assert 2 in panel.common_numbers and 4 not in panel.common_numbers
+            def column_state(cid):
+                return next(tag[6:] for tag in panel.matrix_headers.gettags(panel.matrix_headers.find_withtag('state:'+cid)[0]) if tag in ('state:saved','state:draft','state:unassigned'))
+            assert column_state(A)=='saved' and column_state(B)=='unassigned' and column_state(C)=='unassigned',[column_state(c) for c in (A,B,C)]
+            assert '미배정' in panel.matrix_summary.cget('text') and panel.matrix_state['unassigned']>=2
+            assert '미배정' in app.highlight_core_labels[B] and '배정 1번' in app.highlight_core_labels[A]
             cell(B,4);assert B not in panel.selected # Used is inspection only.
             cell(C,4);assert C not in panel.selected # Reserved is inspection only.
             cell(B,2);cell(C,3);chosen=dict(panel.selected)
+            assert column_state(B)=='draft' and column_state(C)=='draft' and '배정안 2번' in app.highlight_core_labels[B]
+            assert panel.matrix_state['unassigned']==0,panel.matrix_state
             header('start',C);assert [c for c in panel.columns if c in (A,B,C)]==[C,B,A] and panel.selected==chosen
             assert app.highlight_core_labels[C].startswith('[1]')
             map_click(D);assert '미연결' in panel.order_groups[D];cell(D,6);header('remove',D);assert D not in panel.columns and D not in panel.selected

@@ -604,19 +604,44 @@ def allocation_display_order(net,owners,start):
     return result,labels
 
 
+# Column assignment state: (band color, header tint, text color). Saved and draft
+# numbers count as assigned; a compared cable without a number is unassigned.
+ALLOCATION_STATE_COLORS={'saved':('#1d4ed8','#dbeafe','#1e3a8a'),'draft':('#ea580c','#ffedd5','#9a3412'),
+                         'unassigned':('#dc2626','#fee2e2','#991b1b')}
+
+
+def allocation_column_state(existing,selected,cid,labels=None):
+    """Return (kind, short label) for one compared cable/RN column."""
+    def number(n):return str((labels or {}).get(n) or str(n)+'번')
+    if cid in existing:return 'saved','배정 '+number(existing[cid])
+    if cid in selected:return 'draft','배정안 '+number(selected[cid])+' (저장 전)'
+    return 'unassigned','미배정'
+
+
+def allocation_summary(existing,selected,columns):
+    kinds=[allocation_column_state(existing,selected,c)[0] for c in columns]
+    saved=kinds.count('saved');draft=kinds.count('draft');free=kinds.count('unassigned')
+    text='배정 '+str(saved+draft)+' / 미배정 '+str(free)
+    if draft:text+='  (저장 전 배정안 '+str(draft)+')'
+    return text,dict(saved=saved,draft=draft,unassigned=free)
+
+
 class AllocationMatrixView:
     MATRIX_W=220
     MATRIX_H=44
+    HEADER_H=126
 
     def build_matrix(self):
         frame=ttk.Frame(self.capacity_tabs);self.matrix_frame=frame
         self.capacity_tabs.add(frame,text='여러 케이블 비교');self.capacity_tabs.select(frame)
-        self.matrix_headers=tk.Canvas(frame,height=100,bg='#e7edf5',highlightthickness=0)
-        self.matrix_headers.grid(row=0,column=0,sticky='ew')
+        self.matrix_summary=tk.Label(frame,anchor='w',justify='left',font=('Malgun Gothic',9,'bold'),bg='#f8fafc',padx=6,pady=3)
+        self.matrix_summary.grid(row=0,column=0,columnspan=2,sticky='ew')
+        self.matrix_headers=tk.Canvas(frame,height=self.HEADER_H,bg='#e7edf5',highlightthickness=0)
+        self.matrix_headers.grid(row=1,column=0,sticky='ew')
         self.matrix=tk.Canvas(frame,bg='white',height=150,highlightthickness=0)
-        self.matrix.grid(row=1,column=0,sticky='nsew');frame.rowconfigure(1,weight=1);frame.columnconfigure(0,weight=1)
-        sy=ttk.Scrollbar(frame,orient='vertical',command=self.matrix.yview);sy.grid(row=1,column=1,sticky='ns')
-        sx=ttk.Scrollbar(frame,orient='horizontal',command=self.matrix_scroll);sx.grid(row=2,column=0,sticky='ew')
+        self.matrix.grid(row=2,column=0,sticky='nsew');frame.rowconfigure(2,weight=1);frame.columnconfigure(0,weight=1)
+        sy=ttk.Scrollbar(frame,orient='vertical',command=self.matrix.yview);sy.grid(row=2,column=1,sticky='ns')
+        sx=ttk.Scrollbar(frame,orient='horizontal',command=self.matrix_scroll);sx.grid(row=3,column=0,sticky='ew')
         self.matrix.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
         self.matrix.bind('<Button-1>',self.matrix_click);self.matrix_headers.bind('<Button-1>',self.matrix_header_click)
         self.matrix.bind('<Motion>',self.matrix_hover)
@@ -658,16 +683,26 @@ class AllocationMatrixView:
         eligible=[c for c in self.columns if c in s.net.cables and c not in s.existing]
         self.common_numbers={i for i in all_numbers if len(eligible)>1 and all(rows[c].get(i,{}).get('available') for c in eligible)}
         self.matrix.configure(scrollregion=(0,0,width,len(self.matrix_numbers)*self.MATRIX_H))
-        self.matrix_headers.configure(scrollregion=(0,0,width,100))
+        self.matrix_headers.configure(scrollregion=(0,0,width,self.HEADER_H))
+        summary,counts=allocation_summary(s.existing,self.selected,self.columns)
+        missing=[f'[{n}]' for n,c in enumerate(self.columns,1) if allocation_column_state(s.existing,self.selected,c)[0]=='unassigned']
+        if missing:summary+=' · 미배정 열: '+' '.join(missing)
+        self.matrix_summary.configure(text=summary+'   ■파랑 배정(저장됨) ■주황 배정안 ■빨강 미배정',
+                                      fg=ALLOCATION_STATE_COLORS['unassigned' if missing else 'saved'][2])
+        self.matrix_state=counts
         for col,cid in enumerate(self.columns):
             x=col*self.MATRIX_W;rs=rows[cid];empty=sum(r['empty'] for r in rs.values());free=sum(r['available'] for r in rs.values())
-            self.matrix_headers.create_rectangle(x,0,x+self.MATRIX_W,100,fill='#dbeafe' if cid==self.order_start else '#e7edf5',outline='#94a3b8')
-            self.matrix_headers.create_text(x+7,5,anchor='nw',width=self.MATRIX_W-30,text=f'[{col+1}] '+self.cable_title(cid),font=('Malgun Gothic',9,'bold'))
-            self.matrix_headers.create_text(x+7,44,anchor='nw',width=self.MATRIX_W-10,text=f'빈 {empty} / 사용 {len(rs)-empty} / 배정가능 {free}',font=('Malgun Gothic',8))
-            self.matrix_headers.create_text(x+7,61,anchor='nw',text=self.order_groups[cid],font=('Malgun Gothic',8),fill='#9a3412')
-            self.matrix_headers.create_rectangle(x+6,79,x+150,98,fill='white',outline='#94a3b8',tags=('start:'+cid,))
-            self.matrix_headers.create_text(x+78,88,text='정렬 시작점' if cid==self.order_start else '여기부터 정렬',fill='#1d4ed8',tags=('start:'+cid,))
-            if cid!=s.source[0]:self.matrix_headers.create_text(x+self.MATRIX_W-13,14,text='×',font=('Malgun Gothic',14,'bold'),fill='#9a3412',tags=('remove:'+cid,))
+            kind,state_text=allocation_column_state(s.existing,self.selected,cid,{i:r.get('label') for i,r in rs.items()});band,tint,ink=ALLOCATION_STATE_COLORS[kind]
+            start=cid==self.order_start
+            self.matrix_headers.create_rectangle(x,0,x+self.MATRIX_W,self.HEADER_H,fill=tint,outline='#1d4ed8' if start else '#94a3b8',width=3 if start else 1,tags=('state:'+cid,'state:'+kind))
+            self.matrix_headers.create_rectangle(x+1,1,x+self.MATRIX_W-1,23,fill=band,outline=band)
+            self.matrix_headers.create_text(x+7,12,anchor='w',text=f'[{col+1}] '+state_text,fill='white',font=('Malgun Gothic',10,'bold'),tags=('badge:'+cid,))
+            self.matrix_headers.create_text(x+7,28,anchor='nw',width=self.MATRIX_W-12,text=self.cable_title(cid),font=('Malgun Gothic',9,'bold'),fill=ink)
+            self.matrix_headers.create_text(x+7,74,anchor='nw',width=self.MATRIX_W-10,text=f'빈 {empty} / 사용 {len(rs)-empty} / 배정가능 {free}',font=('Malgun Gothic',8))
+            self.matrix_headers.create_text(x+7,89,anchor='nw',text=self.order_groups[cid],font=('Malgun Gothic',8),fill='#9a3412')
+            self.matrix_headers.create_rectangle(x+6,104,x+150,123,fill='white',outline='#94a3b8',tags=('start:'+cid,))
+            self.matrix_headers.create_text(x+78,113,text='정렬 시작점' if start else '여기부터 정렬',fill='#1d4ed8',tags=('start:'+cid,))
+            if cid!=s.source[0]:self.matrix_headers.create_text(x+self.MATRIX_W-13,12,text='×',font=('Malgun Gothic',14,'bold'),fill='white',tags=('remove:'+cid,))
             for pos,index in enumerate(self.matrix_numbers):
                 row=rs.get(index);y=pos*self.MATRIX_H
                 if not row:continue
@@ -766,7 +801,7 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
         for tag,color in (('empty','#dcfce7'),('blocked','#e2e8f0'),('used','#f1f5f9'),('existing','#dbeafe'),('draft','#ffedd5')):self.capacity_table.tag_configure(tag,background=color)
         self.capacity_table.bind('<ButtonRelease-1>',self.table_click)
         self.capacity_table.bind('<Return>',self.table_click)
-        self.hover=tk.StringVar(value='초록 배정 가능 · 파랑 기존 유지 · 주황 배정안 · 회색 사용·잠금·예약 · ★ 비교 중인 미배정 케이블의 공통 빈 번호')
+        self.hover=tk.StringVar(value='케이블 머리: 파랑 배정 · 주황 배정안 · 빨강 미배정 / 번호칸: 초록 배정 가능 · 파랑 기존 유지 · 주황 배정안 · 회색 사용·잠금·예약 · ★ 미배정 케이블 공통 빈 번호')
         ttk.Label(left,textvariable=self.hover,wraplength=650).grid(row=2,column=0,columnspan=2,sticky='ew')
         ttk.Label(right,text='기존 구간 · 배정안 · 양쪽 접속',padding=2).pack(fill='x')
         self.details=field_readonly_text(right,6)
@@ -862,10 +897,12 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
         if self.stale:return
         colors={c:'#be185d' for c in self.inspect_cables};colors.update(self.component_colors())
         colors.update({c:ROUTE_ORANGE for c in self.selected if c not in self.service.existing})
-        colors.setdefault(self.active_cable,'#0891b2')
-        labels={c:str(n)+'번'+(' 기존' if c in self.service.existing else ' 배정안') for c,n in self.selected.items()}
+        colors.setdefault(self.active_cable,'#0891b2');labels={}
         for number,c in enumerate(self.columns,1):
-            colors.setdefault(c,'#64748b');labels[c]='['+str(number)+'] '+labels.get(c,'번호 미선택')
+            kind,text=allocation_column_state(self.service.existing,self.selected,c)
+            if kind=='unassigned':colors[c]=ALLOCATION_STATE_COLORS['unassigned'][0]
+            labels[c]='['+str(number)+'] '+text
+        for c,n in self.selected.items():labels.setdefault(c,allocation_column_state(self.service.existing,self.selected,c)[1])
         if self.inspected:
             labels[self.inspected[0]]=labels.get(self.inspected[0],'')+' · 확인 '+str(self.inspected[1])+'번'
         colors={c:color for c,color in colors.items() if c in self.service.net.cables}
@@ -874,8 +911,9 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
         ports={}
         for number,c in enumerate(self.columns,1):
             if c.startswith('PORT:'):
-                label=plan_number_label(self.service.net,(c,self.selected[c])) if c in self.selected else self.cable_title(c)
-                ports[c[5:]]=dict(text='['+str(number)+'] '+label,color='#2563eb',ports=[])
+                kind,text=allocation_column_state(self.service.existing,self.selected,c)
+                label=plan_number_label(self.service.net,(c,self.selected[c])) if c in self.selected else self.cable_title(c)+' · '+text
+                ports[c[5:]]=dict(text='['+str(number)+'] '+label,color=ALLOCATION_STATE_COLORS[kind][0],ports=[])
         self.app.highlight_connection_model['port_labels']=ports;self.app.render_highlight_core_labels()
 
     def apply(self):
