@@ -44,12 +44,17 @@ def plan_content_hash(snapshot):
     return digest({k: sorted(v, key=lambda r: json.dumps(r, sort_keys=True)) for k, v in snapshot.items()})
 
 
+def cable_display_id(cable):
+    """User-entered cable ID only; internal drawing keys (C + hex) are never shown."""
+    return str((cable or {}).get('cable_id') or '').strip() or '케이블ID 없음'
+
+
 def plan_number_label(net, slot):
     row = net.slots.get(slot, {})
     if slot[0].startswith('PORT:'):
         return net.nodes.get(slot[0][5:], {}).get('name', slot[0]) + '/' + str(row.get('label') or slot[1])
     cable = net.cables.get(slot[0], {})
-    return f"{cable.get('cable_id') or slot[0]} / {cable.get('spec', '')} / {slot[1]}번"
+    return f"{cable_display_id(cable)} / {cable.get('spec', '')} / {slot[1]}번"
 
 
 class AfterPlanner:
@@ -845,7 +850,7 @@ class PlanRouteDialog(RememberedToplevel):
                 for cid in sorted(cable_ids):
                     cable=n.cables[cid];a=pos[cable['n1id']];b=pos[cable['n2id']];c.create_line(*a,*b,fill=col,width=4)
                     numbers=', '.join(str(s[1]) for s in r['slots'] if s[0]==cid)
-                    c.create_text((a[0]+b[0])/2,(a[1]+b[1])/2-13,text=f"{cable.get('cable_id') or cid} / {cable['spec']} / {numbers}번",fill=col,font=('Malgun Gothic',9,'bold'))
+                    c.create_text((a[0]+b[0])/2,(a[1]+b[1])/2-13,text=f"{cable_display_id(cable)} / {cable['spec']} / {numbers}번",fill=col,font=('Malgun Gothic',9,'bold'))
                 for nid,(x,y) in pos.items():
                     c.create_oval(x-7,y-7,x+7,y+7,fill='white',outline=col,width=3);c.create_text(x,y+20,text=n.nodes[nid]['name'],fill='#172033')
             canvas.bind('<Configure>',draw);self.after_idle(draw)

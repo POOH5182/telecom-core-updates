@@ -353,7 +353,7 @@ class ManualAllocationActions:
     def cable_title(self,cid):
         if cid.startswith('PORT:'):return self.service.net.nodes.get(cid[5:],{}).get('name',cid)+' · RN 내부'
         c=self.service.net.cables.get(cid,{})
-        return (c.get('cable_id') or cid)+' / '+c.get('spec','')+' · '+' ↔ '.join(self.service.net.nodes.get(c.get(k),{}).get('name','?') for k in ('n1id','n2id'))
+        return cable_display_id(c)+' / '+c.get('spec','')+' · '+' ↔ '.join(self.service.net.nodes.get(c.get(k),{}).get('name','?') for k in ('n1id','n2id'))
 
     def choose_slot(self,cid,index):
         self.service.fresh();self.active_cable=cid;self.inspected=(cid,index)
@@ -472,7 +472,7 @@ class ManualAllocationActions:
                 tag='manual_cable:'+cid;c=cables[cid]
                 if cid in self.inspect_cables:self.map.create_line(ax,ay,mx,my,bx,by,smooth=True,fill='#be185d',width=9,dash=(4,3),tags=(tag,))
                 self.map.create_line(ax,ay,mx,my,bx,by,smooth=True,fill=color,width=5 if cid in self.selected else 3,dash=() if cid in net.cables else (5,4),tags=(tag,))
-                label=(c['cable_id'] or cid)+' / '+c['spec']
+                label=cable_display_id(c)+' / '+c['spec']
                 if cid in self.selected:label+='\n'+str(self.selected[cid])+'번'+(' 기존' if cid in s.existing else ' 배정안')
                 elif cid in self.columns:label+='\n번호 미선택'
                 self.map.create_text(mx,my-14,text=label,fill=color,font=('Malgun Gothic',9),tags=(tag,))

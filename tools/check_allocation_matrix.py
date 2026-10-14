@@ -48,6 +48,15 @@ class MatrixTests(unittest.TestCase):
         text,counts=wf.allocation_summary(existing,selected,['A','B','C','D'])
         self.assertEqual(counts,dict(saved=1,draft=1,unassigned=2))
         self.assertTrue(text.startswith('배정 2 / 미배정 2'))
+        self.assertEqual(wf.cable_display_id({'cable_id':''}),'케이블ID 없음')
+        self.assertEqual(wf.cable_display_id({'cable_id':' NEW4 '}),'NEW4')
+        with tempfile.TemporaryDirectory() as temp:
+            app=LocalApp(temp);s=app.store
+            try:
+                a,b,(A,B,C),D=fixture(s);s.conn.execute("UPDATE cables SET cable_id='' WHERE id=?",(B,));s.conn.commit()
+                net=wf.Network(s.conn);label=wf.plan_number_label(net,(B,2))
+                self.assertTrue(label.startswith('케이블ID 없음 / 12C'),label);self.assertNotIn(B,label)
+            finally:s.close()
         colors={kind:value[0] for kind,value in wf.ALLOCATION_STATE_COLORS.items()}
         self.assertEqual(len(set(colors.values())),3)
 

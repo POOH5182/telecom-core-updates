@@ -471,7 +471,7 @@ class AfterRoutePanel(ttk.Frame):
         for i,cid in enumerate(cables):
             cable=net.cables.get(cid,{})
             if i+1>=len(nodes):break
-            lines.append(f"{i+1}. {net.nodes.get(nodes[i],{}).get('name','삭제 시설')} → {cable.get('cable_id') or cid} / {cable.get('spec','삭제 케이블')} → {net.nodes.get(nodes[i+1],{}).get('name','삭제 시설')} · "+('기존 구간' if cid in self.problem['existing'] else '추가 경유'))
+            lines.append(f"{i+1}. {net.nodes.get(nodes[i],{}).get('name','삭제 시설')} → {cable_display_id(cable)} / {cable.get('spec','삭제 케이블')} → {net.nodes.get(nodes[i+1],{}).get('name','삭제 시설')} · "+('기존 구간' if cid in self.problem['existing'] else '추가 경유'))
         field_set_text(self.path_text,'\n'.join(lines) or '선택한 케이블 경로가 없습니다.')
         self.options.delete(*self.options.get_children());self.option_map={}
         try:
@@ -484,7 +484,7 @@ class AfterRoutePanel(ttk.Frame):
             except ValueError:choices=[]
             self.position.set('현재 위치: '+net.nodes.get(nodes[-1],{}).get('name','삭제 시설')+' · 다음 구간을 추가하세요.' if not valid else '도착 시설까지 경로를 지정했습니다. OK를 눌러 확정하세요.')
             for i,edge in enumerate(choices):
-                label=' → '.join((net.cables[c].get('cable_id') or c)+' / '+net.cables[c]['spec'] for c in edge['cables'])
+                label=' → '.join(cable_display_id(net.cables[c])+' / '+net.cables[c]['spec'] for c in edge['cables'])
                 if not edge['cost']:label='[기존 연결 유지] '+label
                 iid=str(i);self.option_map[iid]=edge;self.options.insert('','end',iid=iid,values=(label,net.nodes[edge['nodes'][-1]]['name'],edge['cost']))
         else:self.position.set('직접 경로를 고르려면 NOK를 누르세요.' if self.mode=='추천' else '확정한 경로입니다. NOK 또는 직접 경로 처음부터 버튼으로 변경할 수 있습니다.')
@@ -548,7 +548,7 @@ class AfterRoutePanel(ttk.Frame):
                 active=cid in net.cables;color=ROUTE_GREEN if cid in selected and self.problem['saved_ok'] and self.mode=='확정' else colors.get(cid,ROUTE_ORANGE if cid in selected else '#aab4c3')
                 tag='route_cable:'+cid;self.map.create_line(ax,ay,mx,my,bx,by,smooth=True,fill=color,width=5 if cid in selected|existing else 2,dash=() if active else (5,4),tags=(tag,))
                 if cid in selected|existing or len(shown)<=35:
-                    self.map.create_text(mx,my-11,text=(' / '.join(labels[cid])+'\n' if labels[cid] else '')+(cable['cable_id'] or cid)+' / '+cable['spec'],fill=color,font=('Malgun Gothic',9),tags=(tag,))
+                    self.map.create_text(mx,my-11,text=(' / '.join(labels[cid])+'\n' if labels[cid] else '')+cable_display_id(cable)+' / '+cable['spec'],fill=color,font=('Malgun Gothic',9),tags=(tag,))
                 self.map.tag_bind(tag,'<Button-1>',lambda e,c=cid:self.map_click(c))
         for nid,(x,y) in pos.items():
             self.map.create_oval(x-5,y-5,x+5,y+5,fill='white',outline='#334155',width=2)
@@ -561,5 +561,5 @@ class AfterRoutePanel(ttk.Frame):
             record=row['problem']['record'];net=row['problem']['context']['net']
             rows.append((row['status'],row['core_id'],row['detail'],record.get('source',''),
                          ' → '.join(net.nodes.get(n,{}).get('name',n) for n in record.get('nodes',[])),
-                         ' → '.join(net.cables.get(c,{}).get('cable_id') or c for c in record.get('cables',[]))))
+                         ' → '.join(cable_display_id(net.cables.get(c)) for c in record.get('cables',[]))))
         return rows

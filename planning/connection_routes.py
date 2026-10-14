@@ -93,7 +93,7 @@ def connection_route_report(store,node_id,left,right,context=None):
     issues=[]
     if shared_slots:issues.append('양쪽이 다른 곳에서 이미 이어져 있습니다. 여기서 연결하면 순환 경로가 생길 수 있습니다. 겹친 코어: '+' / '.join(slot_name(s) for s in sorted(shared_slots)))
     different_cables=shared_cables-{s[0] for s in shared_slots}
-    if different_cables:issues.append('같은 케이블의 서로 다른 코어를 양쪽에서 지납니다: '+' / '.join(str(cables[c].get('cable_id') or c) for c in sorted(different_cables)))
+    if different_cables:issues.append('같은 케이블의 서로 다른 코어를 양쪽에서 지납니다: '+' / '.join(str(cables[c].get('cable_id') or cables[c].get('spec') or '케이블ID 없음') for c in sorted(different_cables)))
     for i,side in enumerate(sides,1):issues.extend(f'{i}번방향 · '+issue for issue in side['issues'])
     groups=[];colors={}
     for i,side in enumerate(sides):

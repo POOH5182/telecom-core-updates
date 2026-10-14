@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V141 (user request): never show internal cable keys ("C"+hex) as a cable
+  name. cable_display_id(cable) (after_plan.py) returns the entered cable_id or
+  「케이블ID 없음」; used by plan_number_label, the allocation cable_title/map
+  labels, after-plan map labels and after_routes lists/maps. after_plan
+  cable_label keeps its explicit [id] suffix. Run check_allocation_matrix.py.
+
 - V140 (user request) colors each 「여러 케이블 비교」 column header by
   allocation state via allocation_column_state(): saved (blue band, 「배정 N번」),
   draft (orange, 「배정안 N번 (저장 전)」), unassigned (red, 「미배정」); RN port
