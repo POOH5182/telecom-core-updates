@@ -1,5 +1,12 @@
 # Telecom Core updater project
 
+- V136 IncompleteCoresDialog (ConnectionListDialog incomplete mode) has a
+  「도면에서 코어배정」 button that opens MapCoreAllocationPanel with the list as
+  the editor (withdraw on open, reload/reselect on return). Source order: chosen
+  「이동할 위치」 member, entry slot, other member slots; first one the allocator
+  accepts. After-drawing only; reuse an open panel for the same source and ask
+  before replacing another draft. Test with check_incomplete_allocation.py.
+
 - V135 drops the 「배정」 prefix from the RN port route label: show only
   "RN이름 · 포트" (user request). Keep everything else from V134.
 
