@@ -65,13 +65,13 @@ def windows_ui():
             a,b,(A,B,C),D=fixture(s);wf.AfterPlanner(app).set_fixed(slots=[(C,4)],reason='예비')
             app.geometry('1100x800+0+0');app.update_title();app.refresh();app.update();app.fit_view();app.update()
             original=wf.plan_snapshot(s.conn);editor=code['open_detail_dialog'](app,s,'cable',A);editor.focus_core(1);app.update()
-            editor.geometry('1100x720+20+30');app.update();position=wf.popup_outer_geometry(editor);canvas_size=(app.canvas.winfo_width(),app.canvas.winfo_height())
+            editor.geometry('1100x720+20+30');app.update();position=wf.popup_outer_geometry(editor);editor_size=(editor.winfo_width(),editor.winfo_height());canvas_size=(app.canvas.winfo_width(),app.canvas.winfo_height())
             editor.map_allocation_button.invoke();app.update();panel=app._map_allocation_panel
             assert editor.state()=='withdrawn' and panel.winfo_manager()=='wm'
             assert panel.grab_current() is None
             assert (app.canvas.winfo_width(),app.canvas.winfo_height())==canvas_size
             actual=wf.popup_outer_geometry(panel);assert abs(actual[0]-position[0])<5 and abs(actual[1]-position[1])<5,(position,actual)
-            assert abs(panel.winfo_width()-1100)<5 and abs(panel.winfo_height()-720)<5
+            assert abs(panel.winfo_width()-editor_size[0])<5 and abs(panel.winfo_height()-editor_size[1])<5,(editor_size,panel.winfo_geometry())
             assert panel.capacity_tabs.select()==str(panel.matrix_frame)
             def map_click(cid):
                 for item,key in list(app.item_to_cable.items()):
