@@ -161,10 +161,19 @@ class WindowNavigation:
         self.buttons()
 
 
+def navigation_transaction(page):
+    return any(word in cls.__name__ for cls in type(page).__mro__ for word in ('Review','Summary','Confirm','SaveDialog','SaveStatus','Progress','Login','Startup','SubscriberKind'))
+
+
 def navigation_register(page,parent=None):
     if not page.winfo_exists() or getattr(page,'_navigation_skip',False):return
     # Transactional confirmation/progress prompts keep their existing modal lifecycle.
-    if any(word in cls.__name__ for cls in type(page).__mro__ for word in ('Review','Summary','Confirm','SaveDialog','SaveStatus','Progress','Login','Startup','SubscriberKind')):return
+    if navigation_transaction(page):return
+    # A constructor may open a modal review before its pending Map event runs.
+    # Do not withdraw the review's owner or steal its initial button focus.
+    grab=page.grab_current()
+    if grab is not None and grab.winfo_toplevel() is not page and navigation_transaction(grab.winfo_toplevel()):
+        page.after(80,lambda:navigation_register(page,parent) if page.winfo_exists() else None);return
     parent=navigation_top(parent or getattr(page,'_navigation_parent',None) or getattr(page,'editor',None) or page.master)
     if parent is page:parent=None
     group=getattr(parent,'_navigation',None) if parent else None
