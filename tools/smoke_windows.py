@@ -183,18 +183,8 @@ def check_single_cable_window(code, app):
         app.update()
         return only_cable()
 
-    import traceback
-    stops = []; original_stop = app.stop_highlight_blink; original_start = app.start_highlight_blink
-    def stop(*args, **kwargs):
-        stops.append(('stop', getattr(app, 'highlight_owner', None), ''.join(traceback.format_stack(limit=6)[:-1])[-900:]))
-        return original_stop(*args, **kwargs)
-    def start(*args, **kwargs):
-        stops.append(('start', kwargs.get('owner'), ''))
-        return original_start(*args, **kwargs)
-    app.stop_highlight_blink = stop; app.start_highlight_blink = start
     first = open_cable(left); first.focus_core(1); app.update()
-    app.stop_highlight_blink = original_stop; app.start_highlight_blink = original_start
-    assert app.highlight_owner is first, (app.highlight_owner, node.state(), first.state(), stops)
+    assert app.highlight_owner is first, (app.highlight_owner, node.state(), first.state())
     assert open_cable(left) is first and first.tree.selection() == ('1',)
     before = wf.plan_snapshot(store.conn); revision = store.data_revision(); history = store.history_rows()
     from check_popup_monitor import native_rect

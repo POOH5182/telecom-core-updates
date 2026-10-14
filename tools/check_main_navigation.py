@@ -54,6 +54,16 @@ def windows_ui():
             # Independent drawing windows keep their own window.
             free=tk.Toplevel(app);free._stage_independent=True;free.geometry('300x200');app.update();app.update()
             assert free._navigation is not nav and rn.state()=='normal';free.destroy();app.update()
+            # Windows opened in one event cycle keep the newest one current even
+            # when their Map events arrive in reverse order.
+            older=code['CoreCheckDialog'](app,s);newer=code['AllCoreDialog'](app,s)
+            older._navigation_scheduled=newer._navigation_scheduled=True;app.update()
+            nav.visit(rn);newer_seq=newer._navigation_seq;wf.navigation_register(newer);wf.navigation_register(older);app.update();app.update()
+            assert nav.active() is newer and older.state()=='withdrawn' and newer.state()=='normal',(nav.history,nav.index)
+            assert nav.history.index(older)==nav.history.index(newer)-1 and newer._navigation_seq==newer_seq
+            newer.tk.eval(newer.protocol('WM_DELETE_WINDOW'));app.update();assert nav.active() is older
+            older.tk.eval(older.protocol('WM_DELETE_WINDOW'));app.update();app.update()
+            nav.visit(rn);app.update()
             # Closing the current page returns to the previous retained page.
             check_page=code['AllCoreDialog'](app,s);app.update();app.update();assert nav.active() is check_page and rn.state()=='withdrawn'
             check_page.tk.eval(check_page.protocol('WM_DELETE_WINDOW'));app.update()

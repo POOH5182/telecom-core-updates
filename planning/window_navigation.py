@@ -1,7 +1,18 @@
 """One visible detail page per navigation history, preserving live editor drafts."""
 
 
+NAVIGATION_ORDER=[0]
+
+
+def navigation_order(window):
+    # Creation order; Map events of windows opened together may arrive reversed.
+    if not hasattr(window,'_navigation_seq'):
+        NAVIGATION_ORDER[0]+=1;window._navigation_seq=NAVIGATION_ORDER[0]
+    return window._navigation_seq
+
+
 def navigation_prepare(window):
+    navigation_order(window)
     # Capture before a constructor binds X/Escape/Close to its destroy method.
     if hasattr(window,'_navigation_raw_destroy'):return
     window._navigation_raw_destroy=window.destroy
@@ -65,6 +76,10 @@ class WindowNavigation:
             elif packed:bar.pack(side='top',fill='x',before=packed[0])
             else:bar.pack(side='top',fill='x')
             if host and len(self.pages)==1:bar.pack_forget()
+            active=self.active()
+            if active is not None and active is not page and navigation_order(page)<navigation_order(active) and page not in self.history:
+                # An older page registered late goes behind the newer current page.
+                self.history.insert(self.index,page);self.index+=1;self.pause(page);self.buttons();return
         self.visit(page)
 
     def active(self):

@@ -8,6 +8,8 @@
   (reference drawings keep their own history), transactional confirmation/
   progress dialogs and simpledialog prompts (they stay over the asking page).
   A hidden page re-shown by deiconify() becomes the current history page.
+  Windows opened in one event cycle keep creation order (newest current);
+  closing the current page shows the previous one at its clamped position.
   Run check_main_navigation.py, check_window_navigation.py and the full gates.
 
 - V138 detail navigation keeps one visible live editor per history; opening
