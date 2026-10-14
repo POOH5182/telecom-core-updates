@@ -81,7 +81,8 @@ class WindowNavigation:
         page._navigation_grab=page.grab_current() is page
         if page._navigation_grab:page.grab_release()
         if hasattr(page,'_core_trace_enabled'):
-            page._navigation_trace=page._core_trace_enabled;page._core_trace_enabled=False
+            page._navigation_trace=getattr(page,'_navigation_allocation_trace',page._core_trace_enabled);page._core_trace_enabled=False
+            if hasattr(page,'_navigation_allocation_trace'):del page._navigation_allocation_trace
         if getattr(self.app,'highlight_owner',None) is page:self.app.stop_highlight_blink(clear=True)
         if getattr(self.app,'_map_allocation_panel',None) is page:self.app._map_allocation_panel=None
         page.withdraw()

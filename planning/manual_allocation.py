@@ -571,6 +571,7 @@ class ManualCoreAllocationDialog(ManualAllocationActions,RememberedToplevel):
         sheetbox=ttk.Frame(panes);panes.add(sheetbox,weight=1)
         self.build_sheet(sheetbox)
         if editor:
+            editor._navigation_allocation_trace=editor._core_trace_enabled
             editor.clear_core_trace();editor._core_trace_enabled=False
         self.live_stamp=self.read_stamp();self.render();self._watch=self.after(500,self.check_live)
 
@@ -770,6 +771,7 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
         ttk.Label(right,text='기존 구간 · 배정안 · 양쪽 접속',padding=2).pack(fill='x')
         self.details=field_readonly_text(right,6)
         self.details.configure(width=34)
+        editor._navigation_trace=editor._core_trace_enabled
         editor.clear_core_trace();editor._core_trace_enabled=False
         self.editor_grab=editor.grab_current() is editor
         if self.editor_grab:editor.grab_release()
