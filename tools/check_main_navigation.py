@@ -65,4 +65,8 @@ def windows_ui():
         finally:app.on_close();faulthandler.cancel_dump_traceback_later()
 
 
-if __name__=='__main__':windows_ui()
+if __name__=='__main__':
+    try:windows_ui()
+    except BaseException:
+        import traceback
+        print('::error::'+traceback.format_exc().strip()[-3000:].replace('\n','%0A'),flush=True);raise

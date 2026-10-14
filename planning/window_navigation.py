@@ -38,7 +38,7 @@ def navigation_valid(window):
 
 class WindowNavigation:
     def __init__(self,root):
-        self.app=navigation_app(root);self.pages=[];self.history=[];self.index=-1;self.changing=False;self.closing=False
+        self.app=navigation_app(root);self.pages=[];self.history=[];self.index=-1;self.changing=False;self.closing=False;self.place=None
         self.add(root)
 
     def add(self,page):
@@ -96,6 +96,8 @@ class WindowNavigation:
             visible=next((w for w in self.pages if w is not page and w.winfo_exists() and w.state()!='withdrawn'),None)
             position=popup_outer_geometry(visible)[:2] if visible else None
             size=(visible.winfo_width(),visible.winfo_height()) if visible else None
+            if visible is None and self.place:position,size=self.place
+            self.place=None
             if size and getattr(page,'_navigation_main',False):
                 # Main-window pages share one place; a larger page is not squeezed.
                 own=getattr(page,'_navigation_size',(1,1));size=(max(size[0],own[0]),max(size[1],own[1]))
@@ -161,6 +163,9 @@ class WindowNavigation:
         if descendants and navigation_valid(page) and not getattr(page,'_stage_reference',False):
             if not messagebox.askyesno('화면 닫기','이 화면에서 열어둔 다음 화면도 닫힙니다. 저장하지 않은 입력이 있다면 뒤로·앞으로로 돌아가 저장해 주세요. 함께 닫을까요?',parent=page):return
         was_active=self.active() is page
+        if was_active and page.state()!='withdrawn':
+            # The previous page reappears where the closed page was.
+            self.place=(popup_outer_geometry(page)[:2],(page.winfo_width(),page.winfo_height()))
         self.closing=True
         try:page._navigation_destroy(*args,**kwargs)
         finally:self.closing=False
@@ -171,6 +176,7 @@ class WindowNavigation:
         if was_active and self.history:
             # Closing a page returns to the preceding retained page, unlike Back.
             self.index=max(0,min(sum(w in self.pages for w in before)-1,len(self.history)-1));self.show(self.active())
+        self.place=None
         self.buttons()
 
 

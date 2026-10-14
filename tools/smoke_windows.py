@@ -118,6 +118,8 @@ def check_single_enclosure_window(code, app):
     cable_window = code['open_detail_dialog'](app, store, 'cable', cable)
     app.update(); before = wf.plan_snapshot(store.conn)
     from check_popup_monitor import native_rect
+    # V139: the cable editor took the shared window; return to the enclosure page first.
+    first.deiconify(); app.update(); app.update(); assert first._navigation.active() is first
     first.geometry('+40+40'); app.update(); position = native_rect(first)[:2]
     with patch.object(code['messagebox'], 'askyesnocancel', side_effect=AssertionError('Clean switch prompted')):
         second = open_node(b)
@@ -594,4 +596,10 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except BaseException:
+        import traceback
+        # Job logs may be unreadable; annotations show the failing line.
+        print('::error::' + traceback.format_exc().strip()[-3000:].replace('\n', '%0A'), flush=True)
+        raise
