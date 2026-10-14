@@ -164,7 +164,7 @@ class WindowNavigation:
 def navigation_register(page,parent=None):
     if not page.winfo_exists() or getattr(page,'_navigation_skip',False):return
     # Transactional confirmation/progress prompts keep their existing modal lifecycle.
-    if any(word in type(page).__name__ for word in ('Review','Summary','SaveDialog','SaveStatus','Progress','Login','Startup','SubscriberKind')):return
+    if any(word in cls.__name__ for cls in type(page).__mro__ for word in ('Review','Summary','Confirm','SaveDialog','SaveStatus','Progress','Login','Startup','SubscriberKind')):return
     parent=navigation_top(parent or getattr(page,'_navigation_parent',None) or getattr(page,'editor',None) or page.master)
     if parent is page:parent=None
     group=getattr(parent,'_navigation',None) if parent else None
