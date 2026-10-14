@@ -53,20 +53,28 @@ def windows_ui():
             second=wf.RememberedToplevel(app);second.geometry('460x230');app.update()
             actual=native_rect(second)[:2];assert all(abs(a-b)<=2 for a,b in zip(actual,remembered)),(actual,remembered)
             assert wf.stage_popup_position_key(second).startswith(app.scenario_kind()+':editing:')
-            child=wf.TableDialog(second,'합성 중첩 확인',('항목',),[('내용',)]);app.update();assert_centered(child,second)
-            child.destroy()
-            print('PASS Windows owner-centered new/nested dialogs and stage-scoped reopened position',flush=True)
+            parent_rect=native_rect(second)
+            child=wf.TableDialog(second,'합성 중첩 확인',('항목',),[('내용',)]);app.update()
+            assert second.state()=='withdrawn'
+            actual=native_rect(child)
+            assert all(abs(a-b)<=2 for a,b in zip(actual,parent_rect)),(actual,parent_rect)
+            child.destroy();app.update()
+            assert second.state()=='normal'
+            print('PASS Windows centered root, same-position nested navigation and stage-scoped reopened position',flush=True)
             # Exercise actual SetWindowPos with simulated three-monitor work
             # areas; the hosted Windows runner itself has only one display.
             for bounds in ((-1920,0,1920,1040),(0,0,2560,1400),(2560,-240,1920,1040),(0,-1440,2560,1400)):
                 owners=[]
                 def monitor(parent):owners.append(parent);return bounds
                 with patch.object(wf,'popup_monitor_bounds',side_effect=monitor):
-                    child=wf.RememberedToplevel(second);child.geometry('460x230');app.update()
+                    child=wf.RememberedToplevel(second);child._navigation_skip=True
+                    child.geometry('460x230');app.update()
                     assert owners and all(p is second for p in owners),owners
                     assert_centered(child,second,bounds);child.destroy()
             print('PASS Windows synthetic three-display work areas',flush=True)
-            plain=code['tk'].Toplevel(second);plain.geometry('360x160');app.update();assert_centered(plain,second);plain.destroy()
+            # Explicit standalone popups retain owner-monitor centering.
+            plain=code['tk'].Toplevel(second);plain._navigation_skip=True
+            plain.geometry('360x160');app.update();assert_centered(plain,second);plain.destroy()
             print('PASS Windows plain Tk dialog center; checking native notice',flush=True)
             # Native notice keeps native OK semantics while its activation hook
             # centers it. Post the OK command so the gate needs no human input.
