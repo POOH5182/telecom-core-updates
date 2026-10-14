@@ -262,8 +262,30 @@ def centered_native_message(parent,show):
 
 def install_monitor_dialogs(app):
     """Cover plain Tk and simpledialog windows as well as native notices."""
+    # Run before Entry/Text class bindings; Ctrl+W must never edit input text.
+    close_tag='TelecomCloseWindow'
+    def close_focused(event):
+        window=event.widget.winfo_toplevel()
+        if not isinstance(window,tk.Toplevel):return 'break'
+        grab=window.grab_current()
+        if grab is not None and grab.winfo_toplevel() is not window:return 'break'
+        command=window.protocol('WM_DELETE_WINDOW')
+        if command:window.tk.eval(command)
+        else:window.destroy()
+        return 'break'
+    for key in ('w','W'):
+        app.bind_class(close_tag,'<Control-KeyPress-'+key+'>',lambda event:'break')
+        app.bind_class(close_tag,'<Control-KeyRelease-'+key+'>',close_focused)
+    def close_binding(widget):
+        tags=widget.bindtags()
+        if close_tag not in tags:widget.bindtags((close_tag,)+tags)
+    def existing(widget):
+        close_binding(widget)
+        for child in widget.winfo_children():existing(child)
+    existing(app)
     def mapped(event):
         window=event.widget
+        close_binding(window)
         if not isinstance(window,tk.Toplevel) or isinstance(window,RememberedToplevel):return
         if window.overrideredirect() or getattr(window,'_monitor_centered',False):return
         window._monitor_centered=True

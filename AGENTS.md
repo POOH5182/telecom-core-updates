@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V137 uses a modeless allocation Toplevel at the source editor position/size;
+  no panel is packed into the main drawing. Return restores the selected core
+  and editor at the moved allocation position. Cable/RN/incomplete-list entry
+  points retain drafts, grabs and source-change cleanup. Multiple cable/RN
+  columns show vertical physical capacity, fixed headers, filters, used/locked
+  and common-free indications. Order is display-only facility adjacency from
+  a chosen start, with fork/disconnected groups and matching map ordinals.
+  Removal/reset cannot delete saved ends; only removed unsaved choices vanish.
+  Preserve reviewed incremental writes, actual completion and grouped undo.
+  Ctrl+W closes only the focused popup via its WM_DELETE_WINDOW protocol,
+  on key release before Entry/Text bindings; honor modal grabs and cancellation.
+  Run check_allocation_matrix.py and the full Windows publication/launcher gates.
+
 - V136 IncompleteCoresDialog (ConnectionListDialog incomplete mode) has a
   「도면에서 코어배정」 button that opens MapCoreAllocationPanel with the list as
   the editor (withdraw on open, reload/reselect on return). Source order: chosen

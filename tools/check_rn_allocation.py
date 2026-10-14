@@ -73,6 +73,7 @@ def windows_ui():
             editor.detail.set('미저장');editor.allocation_button.invoke();app.update()
             assert not getattr(app,'_map_allocation_panel',None) and editor.detail.get()=='미저장';error.reset_mock()
             editor.detail.set(editor.original[source[1]][1]);editor.allocation_button.invoke();app.update();panel=app._map_allocation_panel
+            panel.capacity_tabs.select(0);app.update()
             assert editor.state()=='withdrawn' and panel.service.source==source
             assert panel.capacity_table.item(str(source[1]),'values')[0]=='SP5'
             app.fit_view();app.update()

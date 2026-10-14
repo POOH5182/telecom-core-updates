@@ -575,13 +575,153 @@ class ManualCoreAllocationDialog(ManualAllocationActions,RememberedToplevel):
         self.live_stamp=self.read_stamp();self.render();self._watch=self.after(500,self.check_live)
 
 
-class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
+def allocation_display_order(net,owners,start):
+    """Read-only facility adjacency, never a promise of a connected core route."""
+    owners=set(owners)
+    if not owners:return [],{}
+    def key(owner):
+        row=net.nodes.get(owner[5:],{}) if owner.startswith('PORT:') else net.cables.get(owner,{})
+        return (str(row.get('name') or row.get('cable_id') or owner),owner)
+    endpoints={owner:{owner[5:]} if owner.startswith('PORT:') else {net.cables[owner]['n1id'],net.cables[owner]['n2id']} for owner in owners}
+    at=defaultdict(set)
+    for owner,nodes in endpoints.items():
+        for node in nodes:at[node].add(owner)
+    adj={owner:set().union(*(at[n] for n in nodes))-{owner} for owner,nodes in endpoints.items()}
+    start=start if start in owners else min(owners,key=key)
+    result=[];labels={};remaining=set(owners);component=0
+    while remaining:
+        root=start if start in remaining else min(remaining,key=key)
+        component+=1;queue=[(root,'시작 구간' if component==1 else '경로 미연결 '+str(component-1))];remaining.remove(root)
+        # Each fork receives its own display group. No branch is silently chosen.
+        while queue:
+            owner,label=queue.pop(0);result.append(owner);labels[owner]=label
+            children=sorted(adj[owner]&remaining,key=key)
+            for number,child in enumerate(children,1):
+                remaining.remove(child)
+                group=label+' / 후보 '+str(number) if len(children)>1 else label
+                queue.insert(number-1,(child,group))
+    return result,labels
+
+
+class AllocationMatrixView:
+    MATRIX_W=220
+    MATRIX_H=44
+
+    def build_matrix(self):
+        frame=ttk.Frame(self.capacity_tabs);self.matrix_frame=frame
+        self.capacity_tabs.add(frame,text='여러 케이블 비교');self.capacity_tabs.select(frame)
+        self.matrix_headers=tk.Canvas(frame,height=100,bg='#e7edf5',highlightthickness=0)
+        self.matrix_headers.grid(row=0,column=0,sticky='ew')
+        self.matrix=tk.Canvas(frame,bg='white',height=150,highlightthickness=0)
+        self.matrix.grid(row=1,column=0,sticky='nsew');frame.rowconfigure(1,weight=1);frame.columnconfigure(0,weight=1)
+        sy=ttk.Scrollbar(frame,orient='vertical',command=self.matrix.yview);sy.grid(row=1,column=1,sticky='ns')
+        sx=ttk.Scrollbar(frame,orient='horizontal',command=self.matrix_scroll);sx.grid(row=2,column=0,sticky='ew')
+        self.matrix.configure(yscrollcommand=sy.set,xscrollcommand=sx.set)
+        self.matrix.bind('<Button-1>',self.matrix_click);self.matrix_headers.bind('<Button-1>',self.matrix_header_click)
+        self.matrix.bind('<Motion>',self.matrix_hover)
+        self.matrix.bind('<MouseWheel>',lambda e:self.matrix.yview_scroll(-3 if e.delta>0 else 3,'units'))
+        self.matrix.bind('<Shift-MouseWheel>',lambda e:self.matrix_scroll('scroll',-2 if e.delta>0 else 2,'units'))
+        self.order_start=self.service.source[0];self.order_groups={}
+
+    def matrix_scroll(self,*args):self.matrix.xview(*args);self.matrix_headers.xview(*args)
+
+    def set_order_start(self,owner):
+        if owner not in self.columns:return
+        self.order_start=owner;self.render();self.matrix_scroll('moveto',0)
+        self.message.set('정렬 시작점: '+self.cable_title(owner)+' · 기존 끝점과 선택 선번은 유지됩니다.')
+
+    def remove_cable(self,cid):
+        if cid==self.service.source[0]:self.message.set('배정 출발 코어 열은 유지됩니다. 정렬 시작점은 다른 열로 지정할 수 있습니다.');return
+        if cid not in self.columns:return
+        self.columns.remove(cid)
+        if cid not in self.service.existing:self.selected.pop(cid,None)
+        if self.active_cable==cid:self.active_cable=self.service.source[0]
+        if self.order_start==cid:self.order_start=self.service.source[0]
+        self.inspected=None;self.inspect_cables=set();self.render()
+        self.message.set('현황판에서 제외했습니다. 저장된 케이블·끝점·배정은 그대로 유지됩니다.')
+
+    def render(self):
+        if self.order_start not in self.columns:self.order_start=self.service.source[0]
+        if self.active_cable not in self.columns:self.active_cable=self.service.source[0]
+        self.columns,self.order_groups=allocation_display_order(self.service.net,self.columns,self.order_start)
+        super().render();self.render_matrix()
+
+    def render_matrix(self):
+        if self._closed:return
+        self.matrix.delete('all');self.matrix_headers.delete('all');s=self.service
+        width=max(1,len(self.columns))*self.MATRIX_W
+        rows={c:{i:s.capacity_row(c,i) for i in s.owner_indices(c)} for c in self.columns}
+        mode=self.capacity_filter.get()
+        all_numbers=sorted({i for rs in rows.values() for i in rs})
+        self.matrix_numbers=[i for i in all_numbers if mode=='전체 번호' or any(r.get('empty' if mode=='빈 코어만' else 'available') for rs in rows.values() if (r:=rs.get(i)))]
+        eligible=[c for c in self.columns if c in s.net.cables and c not in s.existing]
+        self.common_numbers={i for i in all_numbers if len(eligible)>1 and all(rows[c].get(i,{}).get('available') for c in eligible)}
+        self.matrix.configure(scrollregion=(0,0,width,len(self.matrix_numbers)*self.MATRIX_H))
+        self.matrix_headers.configure(scrollregion=(0,0,width,100))
+        for col,cid in enumerate(self.columns):
+            x=col*self.MATRIX_W;rs=rows[cid];empty=sum(r['empty'] for r in rs.values());free=sum(r['available'] for r in rs.values())
+            self.matrix_headers.create_rectangle(x,0,x+self.MATRIX_W,100,fill='#dbeafe' if cid==self.order_start else '#e7edf5',outline='#94a3b8')
+            self.matrix_headers.create_text(x+7,5,anchor='nw',width=self.MATRIX_W-30,text=f'[{col+1}] '+self.cable_title(cid),font=('Malgun Gothic',9,'bold'))
+            self.matrix_headers.create_text(x+7,44,anchor='nw',width=self.MATRIX_W-10,text=f'빈 {empty} / 사용 {len(rs)-empty} / 배정가능 {free}',font=('Malgun Gothic',8))
+            self.matrix_headers.create_text(x+7,61,anchor='nw',text=self.order_groups[cid],font=('Malgun Gothic',8),fill='#9a3412')
+            self.matrix_headers.create_rectangle(x+6,79,x+150,98,fill='white',outline='#94a3b8',tags=('start:'+cid,))
+            self.matrix_headers.create_text(x+78,88,text='정렬 시작점' if cid==self.order_start else '여기부터 정렬',fill='#1d4ed8',tags=('start:'+cid,))
+            if cid!=s.source[0]:self.matrix_headers.create_text(x+self.MATRIX_W-13,14,text='×',font=('Malgun Gothic',14,'bold'),fill='#9a3412',tags=('remove:'+cid,))
+            for pos,index in enumerate(self.matrix_numbers):
+                row=rs.get(index);y=pos*self.MATRIX_H
+                if not row:continue
+                chosen=self.selected.get(cid)==index;existing=s.existing.get(cid)==index
+                fill='#dbeafe' if existing else '#ffedd5' if chosen else '#dcfce7' if row['available'] else '#f1f5f9'
+                common=index in self.common_numbers and cid in eligible
+                tag='matrix:'+cid+':'+str(index)
+                self.matrix.create_rectangle(x+1,y+1,x+self.MATRIX_W-1,y+self.MATRIX_H-1,fill=fill,outline='#f97316' if chosen and not existing else '#16a34a' if common else '#cbd5e1',width=2 if chosen or common else 1,tags=(tag,))
+                label=row.get('label') or str(index)+'번'
+                state='기존 유지' if existing else '배정안' if chosen else row['state']
+                self.matrix.create_text(x+6,y+11,anchor='w',text=label+' · '+state+(' ★' if common else ''),font=('Malgun Gothic',9,'bold'),tags=(tag,))
+                detail=str(row['core_id'] or row['reason']).replace('\n',' ')
+                self.matrix.create_text(x+6,y+31,anchor='w',text=detail[:25]+('…' if len(detail)>25 else ''),font=('Malgun Gothic',8),fill='#475569',tags=(tag,))
+
+    def matrix_slot(self,event):
+        col=int(self.matrix.canvasx(event.x)//self.MATRIX_W);pos=int(self.matrix.canvasy(event.y)//self.MATRIX_H)
+        if 0<=col<len(self.columns) and 0<=pos<len(self.matrix_numbers):
+            slot=(self.columns[col],self.matrix_numbers[pos])
+            if slot in self.service.rows:return slot
+
+    def matrix_click(self,event):
+        slot=self.matrix_slot(event)
+        if slot:self.run(lambda:self.choose_slot(*slot))
+        return 'break'
+
+    def matrix_hover(self,event):
+        slot=self.matrix_slot(event)
+        if slot:
+            row=self.service.rows[slot]
+            self.hover.set(plan_number_label(self.service.net,slot)+' · '+str(row['core_id'] or '(ID 없음)')+' · '+str(row['detail'] or '(내역 없음)')+' · '+self.service.availability(*slot)[1])
+
+    def matrix_header_click(self,event):
+        x=self.matrix_headers.canvasx(event.x);y=self.matrix_headers.canvasy(event.y)
+        for item in reversed(self.matrix_headers.find_overlapping(x,y,x,y)):
+            for tag in self.matrix_headers.gettags(item):
+                if tag.startswith('start:'):self.set_order_start(tag[6:]);return 'break'
+                if tag.startswith('remove:'):self.remove_cable(tag[7:]);return 'break'
+        return 'break'
+
+
+class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Toplevel):
     """Keep the main map interactive while one core's explicit draft is open."""
     GRID_H=48
 
     def __init__(self,app,source,editor):
         service=RNIncrementalCoreAllocator(app,source)
-        super().__init__(app,padding=(10,4))
+        super().__init__(app)
+        self.withdraw();self._monitor_centered=True;self.title("후도면 · 코어배정")
+        self._stage_kind="after";self._stage_reference=False;apply_stage_window_chrome(self,"after",False)
+        self.protocol("WM_DELETE_WINDOW",self.close_requested)
+        editor.update_idletasks();self._editor_size=(editor.winfo_width(),editor.winfo_height())
+        self._editor_position=popup_outer_geometry(editor)[:2]
+        self.geometry(str(self._editor_size[0])+"x"+str(self._editor_size[1]))
+        for sequence in ("<Control-z>","<Control-Z>"):self.bind(sequence,lambda e:self.history(False))
+        for sequence in ("<Control-y>","<Control-Y>"):self.bind(sequence,lambda e:self.history(True))
         self.app=app;self.store=app.store;self.service=service;self.editor=editor
         self._closed=False;self._watch=None;self.stale=False;self.scope='전체';self.inspect_cables=set();self.inspected=None
         self.selected=dict(service.existing);self.columns=list(self.selected);self.active_cable=source[0]
@@ -589,16 +729,13 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         self.dashboard_visible=bool(app.dashboard_frame.place_info())
         app.cancel_left_pan();app.drag_anchor=None;app.pending_drag=None;app.selected.clear()
         app.mode='select';app.cable_start=None
-        self.configure(height=self.panel_height());self.pack_propagate(False)
-        self.pack(side='bottom',fill='x',before=app.canvas_frame)
-        app.dashboard_frame.place_forget()
         toolbar=FlowToolbar(self);toolbar.pack(fill='x')
         toolbar.add(ttk.Label(toolbar,text='코어배정 중 · '+service.core_id,font=('Malgun Gothic',10,'bold')))
         self.apply_button=toolbar.add(ttk.Button(toolbar,text='선택 번호 배정·저장',command=lambda:self.run(self.apply),style='Primary.TButton'))
         toolbar.add(ttk.Button(toolbar,text='전체도면 맞춤',command=app.fit_view))
         toolbar.add(ttk.Button(toolbar,text='배정안 초기화',command=lambda:self.run(self.reload)))
         toolbar.add(ttk.Button(toolbar,text='코어 선택으로 돌아가기',command=self.close_requested))
-        self.message=tk.StringVar(value='케이블·RN 클릭 → 빈 번호·포트 선택 → 배정·저장. 전체 연결 전에도 케이블 하나씩 저장할 수 있습니다.')
+        self.message=tk.StringVar(value='케이블·RN을 차례로 클릭해 비교 → 여기부터 정렬 → 빈 번호 선택 → 배정·저장. ×는 현황판에서만 제외합니다.')
         self.message_label=ttk.Label(self,textvariable=self.message,foreground='#1769aa',padding=(2,2))
         self.message_label.pack(fill='x')
         body=ttk.Panedwindow(self,orient='horizontal');body.pack(fill='both',expand=True)
@@ -610,7 +747,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         self.capacity_tabs=ttk.Notebook(left);self.capacity_tabs.grid(row=1,column=0,columnspan=2,sticky='nsew')
         left.rowconfigure(1,weight=1);left.columnconfigure(0,weight=1)
         grid=ttk.Frame(self.capacity_tabs);ledger=ttk.Frame(self.capacity_tabs)
-        self.capacity_tabs.add(grid,text='번호로 선택');self.capacity_tabs.add(ledger,text='코어ID·내역 목록')
+        self.capacity_tabs.add(grid,text='한 케이블 번호');self.capacity_tabs.add(ledger,text='코어ID·내역 목록');self.build_matrix()
         self.sheet=tk.Canvas(grid,bg='white',highlightthickness=0,width=600,height=190)
         self.sheet.grid(row=0,column=0,sticky='nsew');grid.rowconfigure(0,weight=1);grid.columnconfigure(0,weight=1)
         self.sy=ttk.Scrollbar(grid,orient='vertical',command=self.sheet.yview);self.sy.grid(row=0,column=1,sticky='ns')
@@ -628,7 +765,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         for tag,color in (('empty','#dcfce7'),('blocked','#e2e8f0'),('used','#f1f5f9'),('existing','#dbeafe'),('draft','#ffedd5')):self.capacity_table.tag_configure(tag,background=color)
         self.capacity_table.bind('<ButtonRelease-1>',self.table_click)
         self.capacity_table.bind('<Return>',self.table_click)
-        self.hover=tk.StringVar(value='초록 배정 가능한 빈 코어 · 파랑 기존 연결 · 주황 배정안 · 회색 사용 중·잠금·예약. 빈 칸을 누르면 배정안을 선택합니다.')
+        self.hover=tk.StringVar(value='초록 배정 가능 · 파랑 기존 유지 · 주황 배정안 · 회색 사용·잠금·예약 · ★ 비교 중인 미배정 케이블의 공통 빈 번호')
         ttk.Label(left,textvariable=self.hover,wraplength=650).grid(row=2,column=0,columnspan=2,sticky='ew')
         ttk.Label(right,text='기존 구간 · 배정안 · 양쪽 접속',padding=2).pack(fill='x')
         self.details=field_readonly_text(right,6)
@@ -638,22 +775,13 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         if self.editor_grab:editor.grab_release()
         editor.withdraw();app._map_allocation_panel=self
         self.live_stamp=self.read_stamp();self.render();self._watch=self.after(500,self.check_live)
-        self._size_binding=app.bind('<Configure>',self.resize_panel,add='+')
-        app.update_idletasks();app.lift();app.canvas.focus_set()
+        self._size_binding=self.bind('<Configure>',self.resize_panel,add='+')
+        self.update_idletasks();self.deiconify();set_popup_position(self,*self._editor_position);self.lift()
         app.status.set('코어배정 중 · '+service.core_id+' · 케이블 또는 RN을 클릭하면 아래에 번호·내부 포트가 표시됩니다.')
 
-    def panel_height(self):
-        available=self.app.canvas_frame.winfo_height()+(self.winfo_height() if self.winfo_ismapped() else 0)
-        return max(210,min(460,available-180,int(available*.62)))
-
     def resize_panel(self,event):
-        if event.widget is self.app and not self._closed:
-            self.message_label.configure(wraplength=max(650,event.width-35))
-            if self._resize_job is None:self._resize_job=self.after_idle(self.resize_fit)
-
-    def resize_fit(self):
-        self._resize_job=None
-        if not self._closed:self.configure(height=self.panel_height())
+        if event.widget is self and not self._closed:
+            self.message_label.configure(wraplength=max(300,event.width-30))
 
     def draw_map(self):pass # The real App canvas retains its viewport, zoom and panning.
 
@@ -665,6 +793,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         self.capacity_filter.set('전체 번호')
         self.message.set(self.cable_title(cid)+' · 빈 번호 클릭: 배정안 선택 / 사용 번호 클릭: 실제 접속 확인')
         self.sheet.yview_moveto(0);self.render()
+        self.matrix_scroll('moveto',self.columns.index(cid)/max(1,len(self.columns)));self.lift()
 
     def render_sheet(self):
         if self._closed:return
@@ -702,7 +831,7 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         self.cable_status.set(self.cable_title(cid)+f'\n전체 {count} / 빈 {empty} / 사용 {count-empty} / 배정 가능 {allowed_count}')
 
     def filter_capacity(self,event=None):
-        self.sheet.yview_moveto(0);self.capacity_table.yview_moveto(0);self.render_sheet()
+        self.sheet.yview_moveto(0);self.capacity_table.yview_moveto(0);self.matrix.yview_moveto(0);self.render_sheet();self.render_matrix()
 
     def table_click(self,event):
         item=self.capacity_table.identify_row(event.y) if getattr(event,'keysym',None)!='Return' else next(iter(self.capacity_table.selection()),'')
@@ -732,11 +861,19 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         colors.update({c:ROUTE_ORANGE for c in self.selected if c not in self.service.existing})
         colors.setdefault(self.active_cable,'#0891b2')
         labels={c:str(n)+'번'+(' 기존' if c in self.service.existing else ' 배정안') for c,n in self.selected.items()}
+        for number,c in enumerate(self.columns,1):
+            colors.setdefault(c,'#64748b');labels[c]='['+str(number)+'] '+labels.get(c,'번호 미선택')
         if self.inspected:
             labels[self.inspected[0]]=labels.get(self.inspected[0],'')+' · 확인 '+str(self.inspected[1])+'번'
         colors={c:color for c,color in colors.items() if c in self.service.net.cables}
         labels={c:value for c,value in labels.items() if c in self.service.net.cables}
         self.app.start_highlight_blink(colors,owner=self,core_labels=labels)
+        ports={}
+        for number,c in enumerate(self.columns,1):
+            if c.startswith('PORT:'):
+                label=plan_number_label(self.service.net,(c,self.selected[c])) if c in self.selected else self.cable_title(c)
+                ports[c[5:]]=dict(text='['+str(number)+'] '+label,color='#2563eb',ports=[])
+        self.app.highlight_connection_model['port_labels']=ports;self.app.render_highlight_core_labels()
 
     def apply(self):
         # Visiting a cable only inspects capacity; only selected numbers enter the route.
@@ -756,12 +893,12 @@ class MapCoreAllocationPanel(ManualAllocationActions,ttk.Frame):
         if self._closed:return
         valid=self.app.store is self.store and getattr(self.store,'_view_generation',0)==self.service.generation
         if self._resize_job is not None:self.after_cancel(self._resize_job);self._resize_job=None
-        if self._size_binding is not None:self.app.unbind('<Configure>',self._size_binding);self._size_binding=None
+        if self._size_binding is not None:self.unbind('<Configure>',self._size_binding);self._size_binding=None
         if getattr(self.app,'_map_allocation_panel',None) is self:self.app._map_allocation_panel=None
-        if self.dashboard_visible:self.app.dashboard_frame.place(x=18,y=18,anchor='nw')
         editor=self.editor
+        position=popup_outer_geometry(self)[:2];size=(self.winfo_width(),self.winfo_height())
         super().destroy()
         if restore_editor and valid and editor is not None and editor.winfo_exists():
             if hasattr(editor,'allocation_return'):editor.allocation_return()
-            editor.deiconify();editor.lift();editor.focus_core(self.service.source[1]);editor.queue_core_trace()
+            editor.geometry(str(size[0])+'x'+str(size[1]));editor.deiconify();set_popup_position(editor,*position);editor.lift();editor.focus_core(self.service.source[1]);editor.queue_core_trace()
             if self.editor_grab:editor.grab_set()

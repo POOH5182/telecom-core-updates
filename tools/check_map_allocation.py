@@ -41,12 +41,14 @@ def windows_ui():
             assert not getattr(app,'_map_allocation_panel',None) and editor.lot_var.get()=='Unapplied note'
             editor.lot_var.set('');editor.map_allocation_button.invoke();app.update()
             panel=app._map_allocation_panel
+            panel.capacity_tabs.select(0);app.update()
             assert isinstance(panel,wf.MapCoreAllocationPanel) and editor.state()=='withdrawn'
             assert app.view_scale==scale and app.highlight_owner is panel
             assert len(panel.service.problem['components'])==2
             print('MAP LAYOUT:',app.winfo_geometry(),panel.winfo_ismapped(),app.canvas.winfo_height(),panel.winfo_height(),panel.sheet.winfo_height(),flush=True)
             assert panel.winfo_ismapped() and app.canvas.winfo_height()>150
-            assert not app.dashboard_frame.winfo_ismapped()
+            assert app.dashboard_frame.winfo_ismapped()
+            assert isinstance(panel,code['tk'].Toplevel) and panel.winfo_manager()=='wm'
             app.fit_view();app.update()
 
             def click_cable(cid):
@@ -144,16 +146,17 @@ def windows_ui():
             app.undo();app.undo();app.update();panel.reload();app.update();click_cable(i['direct'])
             assert wf.plan_snapshot(s.conn)==original
             # Compact windows retain the map, capacity grid and all actions.
-            app.geometry('1000x700');app.update();panel.apply_button.master.reflow();app.update()
+            app.geometry('1000x700');panel.geometry('1000x700');app.update();panel.apply_button.master.reflow();app.update()
             assert app.canvas.winfo_height()>150 and panel.sheet.winfo_height()>65
             assert panel.apply_button.winfo_viewable()
-            assert panel.apply_button.winfo_rootx()+panel.apply_button.winfo_width()<=app.winfo_rootx()+app.winfo_width()
+            assert panel.apply_button.winfo_rootx()+panel.apply_button.winfo_width()<=panel.winfo_rootx()+panel.winfo_width()
             panel.close_requested();app.update()
             assert app._map_allocation_panel is None and editor.state()=='normal' and editor._core_trace_enabled
             assert app.dashboard_frame.winfo_ismapped()
             assert wf.plan_snapshot(s.conn)==original
             # Source changes close the panel without reopening an obsolete editor.
             editor.map_allocation_button.invoke();app.update();panel=app._map_allocation_panel
+            panel.capacity_tabs.select(0);app.update()
             app.replace_current_from(app.scenario_path('before'));app.update()
             assert app._map_allocation_panel is None and not panel.winfo_exists()
             assert not errors,errors;assert not error.called,error.call_args_list;assert not warning.called,warning.call_args_list
