@@ -107,7 +107,10 @@ class WindowNavigation:
             page.transient(self.app if getattr(page,'_navigation_main',False) and self.app else '')
             if size:page.geometry(str(size[0])+'x'+str(size[1]))
             page.deiconify();page.update_idletasks()
-            if position:set_popup_position(page,*position)
+            if position:
+                # Keep a grown page on the monitor the previous page was on.
+                width,height=popup_outer_geometry(page)[2:]
+                set_popup_position(page,*clamp_popup_position(position[0],position[1],width,height,popup_monitor_bounds(visible or page)))
             if hasattr(page,'_core_trace_enabled'):page._core_trace_enabled=getattr(page,'_navigation_trace',True)
             if isinstance(page,MapCoreAllocationPanel):
                 self.app._map_allocation_panel=page;page.editor._core_trace_enabled=False;page.check_live()
