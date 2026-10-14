@@ -116,7 +116,11 @@ def windows_ui():
                 for child in w.winfo_children():yield child;yield from widgets(child)
             window=c.dialog;tree=next(w for w in widgets(window) if isinstance(w,cloud.ttk.Treeview))
             buttons={w.cget('text'):w for w in widgets(window) if isinstance(w,cloud.ttk.Button)}
+            navigation_buttons={getattr(window,'_navigation_back',None),getattr(window,'_navigation_forward',None)}
             for button in buttons.values():
+                if button in navigation_buttons:
+                    assert str(button['state'])=='disabled' and not button.winfo_ismapped()
+                    continue
                 assert button.winfo_ismapped()
                 assert button.winfo_rootx()+button.winfo_width()<=window.winfo_rootx()+window.winfo_width()
                 assert button.winfo_rooty()+button.winfo_height()<=window.winfo_rooty()+window.winfo_height()
