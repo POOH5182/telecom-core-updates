@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V145 close cleanup: App.on_close stops the map highlight, destroys open
+  Toplevels before the root (their <Destroy> cleanups still find the canvas),
+  then cancel_pending_jobs(root) cancels every after/after_idle job.
+  report_callback_exception logs but does not pop up stale_widget_error()
+  (any TclError while _app_closing, or "invalid command name" for a widget
+  that no longer exists / an after-script). Real errors still show a box.
+  Gate: tools/check_close_cleanup.py.
+
 - V144 route legend core ID (readonly Entry) and core name (disabled Text,
   char-wrapped with enough height to show it all) are selectable: click focuses,
   drag selects, Ctrl+C/<<Copy>> copies the selection, right-click copies the
