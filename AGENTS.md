@@ -1,5 +1,17 @@
 # Telecom Core updater project
 
+- V148 (user request): the window-manager X and Ctrl+W (WM_DELETE_WINDOW)
+  of any navigation page call WindowNavigation.close_window: every page in
+  that history closes (Tk children before parents), Back/Alt+Left stays the
+  only way to the previous page. add() saves each page's own protocol in
+  _navigation_window_close and runs it per page (hidden pages are shown first).
+  navigation_unsaved() probes pending_edits/header_changed/RN drafts/allocation
+  drafts; if any, one askyesno('창 닫기') default No; No keeps all pages, Yes
+  answers the pages' own discard questions (askyesno True, askyesnocancel
+  False, scoped to this history). A page that cancels stops the close.
+  page.destroy()/in-page close buttons still return to the previous page.
+  Run check_window_close.py plus navigation/allocation gates.
+
 - V147 unassign: IncrementalCoreAllocator.unassign(slot) clears PLAN_FIELDS of
   one saved (existing) number of the open core and deletes only splices touching
   it, inside store.action('코어 배정취소') with a backup and snapshot checks.

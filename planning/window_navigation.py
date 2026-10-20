@@ -49,7 +49,7 @@ def navigation_valid(window):
 
 class WindowNavigation:
     def __init__(self,root):
-        self.app=navigation_app(root);self.pages=[];self.history=[];self.index=-1;self.changing=False;self.closing=False;self.place=None
+        self.app=navigation_app(root);self.pages=[];self.history=[];self.index=-1;self.changing=False;self.closing=False;self.place=None;self.closing_window=False
         self.add(root)
 
     def add(self,page):
@@ -57,6 +57,9 @@ class WindowNavigation:
             self.pages.append(page);page._navigation=self
             page._navigation_destroy=getattr(page,'_navigation_raw_destroy',page.destroy)
             page.destroy=lambda *args,**kwargs:self.close(page,*args,**kwargs)
+            # The title-bar X (and Ctrl+W) closes the whole window, every stacked page.
+            page._navigation_window_close=str(page.protocol('WM_DELETE_WINDOW') or '')
+            page.protocol('WM_DELETE_WINDOW',lambda w=page:self.close_window(w))
             page._navigation_focus=page.focus_lastfor();page._navigation_grab=False
             page._navigation_size=(page.winfo_width(),page.winfo_height())
             page.bind('<Map>',lambda e,w=page:self.mapped(w) if e.widget is w else None,add='+')
@@ -191,11 +194,81 @@ class WindowNavigation:
         before=self.history[:self.index]
         self.history=[w for w in self.history if w in self.pages]
         self.index=min(sum(w in self.pages for w in before),len(self.history)-1)
-        if was_active and self.history:
+        if was_active and self.history and not self.closing_window:
             # Closing a page returns to the preceding retained page, unlike Back.
             self.index=max(0,min(sum(w in self.pages for w in before)-1,len(self.history)-1));self.show(self.active())
         self.place=None
         self.buttons()
+
+
+    def close_window(self,page=None):
+        if self.changing or self.closing or self.closing_window:return
+        live=[w for w in self.pages if w.winfo_exists()]
+        unsaved=[(w,labels) for w in live if navigation_valid(w) for labels in (navigation_unsaved(w),) if labels]
+        discard=False
+        if unsaved:
+            lines='\n'.join('· '+str(w.title()).split(' · ')[0]+': '+', '.join(labels) for w,labels in unsaved)
+            owner=self.active() if self.active() in live else unsaved[0][0]
+            if not messagebox.askyesno('창 닫기','이 창에 저장하지 않은 입력이 있습니다.\n'+lines+'\n\n입력을 버리고 창을 모두 닫을까요?\n예: 버리고 닫기 / 아니오: 창 유지 (저장 후 닫기)',parent=owner,default='no'):return False
+            discard=True
+        current=self.active()
+        if current is None or not current.winfo_exists():current=page
+        spot=None
+        if current is not None and current.winfo_exists() and current.state()!='withdrawn':
+            spot=(popup_outer_geometry(current)[:2],(current.winfo_width(),current.winfo_height()))
+        order=[current]+[w for w in reversed(self.history) if w is not current]+[w for w in self.pages if w not in self.history]
+        order=list(dict.fromkeys(w for w in order if w is not None))
+        # A page opened as a Tk child closes before its parent, so the child
+        # still runs its own unsaved-input question.
+        order.sort(key=lambda w:-str(w).count('.'))
+        self.closing_window=True
+        asks=(messagebox.askyesno,messagebox.askyesnocancel)
+        if discard:
+            # The user already chose to discard; pages' own close questions agree.
+            def scoped(original,answer):
+                def ask(*args,**kwargs):
+                    parent=navigation_top(kwargs.get('parent'))
+                    return answer if parent in self.pages else original(*args,**kwargs)
+                return ask
+            messagebox.askyesno=scoped(asks[0],True);messagebox.askyesnocancel=scoped(asks[1],False)
+        try:
+            for w in order:
+                if not w.winfo_exists() or w not in self.pages:continue
+                if w.state()=='withdrawn':
+                    # Show the page whose own close handler may ask about unsaved input.
+                    if w in self.history:self.index=self.history.index(w)
+                    else:self.history=self.history[:self.index+1]+[w];self.index=len(self.history)-1
+                    self.place=spot;self.show(w)
+                    if w.winfo_exists() and w.state()!='withdrawn':spot=(popup_outer_geometry(w)[:2],(w.winfo_width(),w.winfo_height()))
+                command=getattr(w,'_navigation_window_close','')
+                if command:w.tk.eval(command)
+                else:w.destroy()
+                if w.winfo_exists() and w.state()!='withdrawn':
+                    # Cancelled: keep this page and everything not yet closed.
+                    self.pages=[x for x in self.pages if x.winfo_exists()]
+                    self.history=[x for x in self.history if x in self.pages]
+                    if w in self.history:self.index=self.history.index(w)
+                    self.buttons();return False
+        finally:
+            messagebox.askyesno,messagebox.askyesnocancel=asks
+            self.closing_window=False;self.place=None
+        self.pages=[x for x in self.pages if x.winfo_exists()];self.history=[x for x in self.history if x in self.pages]
+        # Pages that hide instead of closing stay hidden; nothing is re-shown.
+        self.index=len(self.history)-1
+        self.buttons();return True
+
+
+def navigation_unsaved(page):
+    # Known editor drafts, asked about once before the whole window closes.
+    labels=[]
+    try:
+        if hasattr(page,'pending_edits'):labels.extend(page.pending_edits() or ())
+        if hasattr(page,'header_changed') and page.header_changed():labels.append('이름·규격·ID')
+        if isinstance(getattr(page,'drafts',None),dict) and hasattr(page,'original') and page.drafts!=page.original:labels.append('RN 내부 ID·이름')
+        service=getattr(page,'service',None)
+        if isinstance(page,MapCoreAllocationPanel) and page.selected!=service.existing:labels.append('적용하지 않은 코어배정안')
+    except (AttributeError,tk.TclError,TypeError,ValueError):pass
+    return labels
 
 
 def navigation_transaction(page):

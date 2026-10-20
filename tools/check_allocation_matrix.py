@@ -164,7 +164,8 @@ def windows_ui():
             app.after(30,lambda:answer(True));panel.apply_button.invoke();app.update()
             assert wf.completion_report(s)['by_id']['ROUTE-1']['complete']
             assert wf.plan_snapshot(s.conn)['ports']==original['ports']
-            ctrl_w(panel.matrix);assert not panel.winfo_exists() and editor.state()=='normal'
+            # V148: Ctrl+W closes the whole window; the panel's own return keeps the editor.
+            panel.close_requested();app.update();assert not panel.winfo_exists() and editor.state()=='normal'
             assert editor.tree.selection()==('1',)
             # Entry input must not be changed by Tk Ctrl+W class bindings on cancel.
             popup=code['tk'].Toplevel(app);entry=code['ttk'].Entry(popup);entry.pack();entry.insert(0,'preserve draft');app.update()

@@ -28,8 +28,8 @@ def windows_ui():
             key(diagram.canvas,'Left');assert nav.active() is root and root.state()=='normal' and diagram.state()=='withdrawn'
             assert root.name_var.get()=='저장 전 RN 이름'
             key(root.name_entry,'Right');assert nav.active() is diagram and root.name_var.get()=='저장 전 RN 이름'
-            # X/Ctrl+W must return to the retained predecessor, not strand it hidden.
-            diagram.tk.eval(diagram.protocol('WM_DELETE_WINDOW'));app.update();assert root.state()=='normal' and not diagram.winfo_exists()
+            # A page's own close (not the window X) returns to the retained predecessor.
+            diagram.destroy();app.update();assert root.state()=='normal' and not diagram.winfo_exists()
             root.rn_identity_button.invoke();app.update();identity=root._rn_identity_dialog
             assert nav.active() is identity and root.state()=='withdrawn'
             identity.focus_core(1);identity.detail.set('작성 중 내역');app.update()

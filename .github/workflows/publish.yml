@@ -47,6 +47,8 @@ jobs:
         run: python tools/check_window_navigation.py --emit-screenshots
       - name: 주 도면 창 한 창 이동·뒤로 앞으로·입력창 유지·참고 도면 분리 검증
         run: python tools/check_main_navigation.py
+      - name: 창 X·Ctrl W 전체 닫기·저장 전 입력 확인·뒤로 유지 검증
+        run: python tools/check_window_close.py
       - name: 다중 케이블 비교·역방향 정렬·독립 배정창·끝점 보존·Ctrl W 검증
         run: python tools/check_allocation_matrix.py --emit-screenshots
       - name: RN 출발·케이블 5번·RN IN 도착 배정·검토·취소·완료·실행취소 검증

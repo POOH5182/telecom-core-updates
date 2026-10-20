@@ -61,12 +61,12 @@ def windows_ui():
             nav.visit(rn);newer_seq=newer._navigation_seq;wf.navigation_register(newer);wf.navigation_register(older);app.update();app.update()
             assert nav.active() is newer and older.state()=='withdrawn' and newer.state()=='normal',(nav.history,nav.index)
             assert nav.history.index(older)==nav.history.index(newer)-1 and newer._navigation_seq==newer_seq
-            newer.tk.eval(newer.protocol('WM_DELETE_WINDOW'));app.update();assert nav.active() is older
-            older.tk.eval(older.protocol('WM_DELETE_WINDOW'));app.update();app.update()
+            newer.destroy();app.update();assert nav.active() is older
+            older.destroy();app.update();app.update()
             nav.visit(rn);app.update()
             # Closing the current page returns to the previous retained page.
             check_page=code['AllCoreDialog'](app,s);app.update();app.update();assert nav.active() is check_page and rn.state()=='withdrawn'
-            check_page.tk.eval(check_page.protocol('WM_DELETE_WINDOW'));app.update()
+            check_page.destroy();app.update()
             assert not check_page.winfo_exists() and nav.active() is rn and rn.state()=='normal'
             assert all(w.winfo_exists() for w in nav.history)
             assert wf.plan_snapshot(s.conn)==before and s.history_rows()==history
