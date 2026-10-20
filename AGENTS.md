@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V149 (user report: closing looked like two windows): close_window never
+  re-shows hidden pages; askyesno/askyesnocancel are scoped during the close
+  and reveal a hidden page in place only when it asks its own question.
+  navigation_link withdraws a not-yet-mapped new page (_navigation_held) so
+  it appears only when show() puts it in the current page's place; the
+  navigation_register wrapper deiconifies held pages that do not join a
+  history (skip/transaction/prompt). Deferred registration returns 'deferred'.
+  check_window_close.py asserts no simultaneous editor+diagram map and no
+  editor flash on X.
+
 - V148 (user request): the window-manager X and Ctrl+W (WM_DELETE_WINDOW)
   of any navigation page call WindowNavigation.close_window: every page in
   that history closes (Tk children before parents), Back/Alt+Left stays the

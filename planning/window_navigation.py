@@ -223,23 +223,26 @@ class WindowNavigation:
         order.sort(key=lambda w:-str(w).count('.'))
         self.closing_window=True
         asks=(messagebox.askyesno,messagebox.askyesnocancel)
-        if discard:
-            # The user already chose to discard; pages' own close questions agree.
-            def scoped(original,answer):
-                def ask(*args,**kwargs):
-                    parent=navigation_top(kwargs.get('parent'))
-                    return answer if parent in self.pages else original(*args,**kwargs)
-                return ask
-            messagebox.askyesno=scoped(asks[0],True);messagebox.askyesnocancel=scoped(asks[1],False)
+        def reveal(w):
+            # Only a hidden page that asks its own question is shown, in place.
+            if w.state()!='withdrawn':return
+            if w in self.history:self.index=self.history.index(w)
+            else:self.history=self.history[:self.index+1]+[w];self.index=len(self.history)-1
+            self.closing_window=False
+            try:self.place=spot;self.show(w)
+            finally:self.closing_window=True
+        def scoped(original,answer):
+            def ask(*args,**kwargs):
+                parent=navigation_top(kwargs.get('parent'))
+                if parent not in self.pages:return original(*args,**kwargs)
+                # The user already chose to discard; pages' own close questions agree.
+                if discard:return answer
+                reveal(parent);return original(*args,**kwargs)
+            return ask
+        messagebox.askyesno=scoped(asks[0],True);messagebox.askyesnocancel=scoped(asks[1],False)
         try:
             for w in order:
                 if not w.winfo_exists() or w not in self.pages:continue
-                if w.state()=='withdrawn':
-                    # Show the page whose own close handler may ask about unsaved input.
-                    if w in self.history:self.index=self.history.index(w)
-                    else:self.history=self.history[:self.index+1]+[w];self.index=len(self.history)-1
-                    self.place=spot;self.show(w)
-                    if w.winfo_exists() and w.state()!='withdrawn':spot=(popup_outer_geometry(w)[:2],(w.winfo_width(),w.winfo_height()))
                 command=getattr(w,'_navigation_window_close','')
                 if command:w.tk.eval(command)
                 else:w.destroy()
@@ -276,6 +279,16 @@ def navigation_transaction(page):
 
 
 def navigation_register(page,parent=None):
+    result=navigation_register_page(page,parent)
+    if result!='deferred' and getattr(page,'_navigation_held',False) and page.winfo_exists():
+        page._navigation_held=False
+        group=getattr(page,'_navigation',None)
+        # Pages that do not join a history appear as before.
+        if page.state()=='withdrawn' and (group is None or group.active() is page):page.deiconify()
+    return result
+
+
+def navigation_register_page(page,parent=None):
     if not page.winfo_exists() or getattr(page,'_navigation_skip',False):return
     # Transactional confirmation/progress prompts keep their existing modal lifecycle.
     if navigation_transaction(page):return
@@ -285,7 +298,7 @@ def navigation_register(page,parent=None):
     # Do not withdraw the review's owner or steal its initial button focus.
     grab=page.grab_current()
     if grab is not None and grab.winfo_toplevel() is not page and navigation_transaction(grab.winfo_toplevel()):
-        page.after(80,lambda:navigation_register(page,parent) if page.winfo_exists() else None);return
+        page.after(80,lambda:navigation_register(page,parent) if page.winfo_exists() else None);return 'deferred'
     parent=navigation_top(parent or getattr(page,'_navigation_parent',None) or getattr(page,'editor',None) or page.master)
     if parent is page:parent=None
     group=getattr(parent,'_navigation',None) if parent else None
@@ -310,6 +323,12 @@ def navigation_link(parent,page):
     origin=navigation_top(parent)
     if origin and origin is not page:
         page._navigation_parent=origin
+        # A new page stays hidden until it takes the current page's place;
+        # otherwise it shows as a second window on top for a moment.
+        try:
+            if not page.winfo_ismapped() and page.state()=='normal' and not getattr(page,'_navigation',None):
+                page.withdraw();page._navigation_held=True;page._navigation_scheduled=True
+        except tk.TclError:pass
         page.after_idle(lambda:navigation_register(page,origin) if page.winfo_exists() else None)
     elif getattr(page,'_navigation',None):
         page._navigation.visit(page)
