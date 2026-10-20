@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V150 (user: switching must feel like a browser link): show() copies the
+  visible page's exact wm geometry (no V139 max-size growth), runs pause()
+  state work first, deiconifies + paints the new page (page.update()) and only
+  then withdraws the old page. close() shows the preceding page in place
+  before destroying the active one. navigation_quiet() sets DWM
+  DWMWA_TRANSITIONS_FORCEDISABLED on mapped pages (Windows only). Pages are
+  transient to the App (never to a page of the history; '' for independent
+  reference groups or a withdrawn App). check_window_close.py asserts the new
+  page maps with the old page's geometry and Back keeps it.
+
 - V149 (user report: closing looked like two windows): close_window never
   re-shows hidden pages; askyesno/askyesnocancel are scoped during the close
   and reveal a hidden page in place only when it asks its own question.

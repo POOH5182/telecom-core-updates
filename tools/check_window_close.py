@@ -24,11 +24,13 @@ def windows_ui():
                 # V149: the diagram replaces the editor; both are never shown at once.
                 maps=[]
                 def mapped(event):
-                    if isinstance(event.widget,wf.NodeConnectionDiagramDialog):maps.append(root.state())
+                    if isinstance(event.widget,wf.NodeConnectionDiagramDialog):maps.append((event.widget.geometry(),root.geometry()))
                 old=app.bind_class('Toplevel','<Map>');app.bind_class('Toplevel','<Map>',mapped,add='+')
                 root.connection_diagram_button.invoke();app.update();app.update()
                 app.bind_class('Toplevel','<Map>',old)
-                assert maps and all(state=='withdrawn' for state in maps),maps
+                # V150: like a browser link, the diagram appears exactly over the
+                # editor (same place and size) and only then is the editor hidden.
+                assert maps and all(new==old for new,old in maps),maps
                 diagram=next(w for w in app.winfo_children() if isinstance(w,wf.NodeConnectionDiagramDialog) and w.winfo_exists())
                 assert diagram._navigation is root._navigation and root._navigation.active() is diagram and root.state()=='withdrawn'
                 return root,diagram
@@ -48,7 +50,9 @@ def windows_ui():
             assert diagram.winfo_exists() and root.winfo_exists() and root.name_var.get()=='저장 전 이름'
             assert root._navigation.active() is diagram and diagram.state()=='normal'
             # Back/Alt+Left still goes to the previous page.
+            place=diagram.geometry()
             diagram._navigation_back.invoke();app.update();assert root.state()=='normal' and diagram.state()=='withdrawn'
+            assert root.geometry()==place,(root.geometry(),place)
             diagram._navigation.move(1);app.update()
             # Yes discards and closes the whole window; nothing is written.
             with patch.object(messagebox,'askyesno',return_value=True) as ask,patch.object(messagebox,'askyesnocancel') as ask3:x(diagram)

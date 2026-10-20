@@ -95,7 +95,7 @@ class WindowNavigation:
         self.history=self.history[:self.index+1]+[page];self.index=len(self.history)-1
         self.show(page)
 
-    def pause(self,page):
+    def pause(self,page,hide=True):
         if not page.winfo_exists() or page.state()=='withdrawn':return
         page._navigation_focus=page.focus_lastfor()
         page._navigation_grab=page.grab_current() is page
@@ -105,42 +105,47 @@ class WindowNavigation:
             if hasattr(page,'_navigation_allocation_trace'):del page._navigation_allocation_trace
         if getattr(self.app,'highlight_owner',None) is page:self.app.stop_highlight_blink(clear=True)
         if getattr(self.app,'_map_allocation_panel',None) is page:self.app._map_allocation_panel=None
-        page.withdraw()
+        if hide:navigation_quiet(page);page.withdraw()
+
+    def owner(self,page):
+        root=self.pages[0] if self.pages else None
+        # Never a page of this history: it is withdrawn while another page shows.
+        if root is not None and getattr(root,'_stage_independent',False):return ''
+        app=self.app
+        # A withdrawn owner would also hide the page (Tk mirrors owner state).
+        return app if app is not None and app.winfo_exists() and app.state()!='withdrawn' else ''
 
     def show(self,page):
         if self.changing or not navigation_valid(page):return
         self.changing=True
         try:
-            visible=next((w for w in self.pages if w is not page and w.winfo_exists() and w.state()!='withdrawn'),None)
-            position=popup_outer_geometry(visible)[:2] if visible else None
-            size=(visible.winfo_width(),visible.winfo_height()) if visible else None
-            if visible is None and self.place:position,size=self.place
+            visible=[w for w in self.pages if w is not page and w.winfo_exists() and w.state()!='withdrawn']
+            # Like a browser tab: the new page takes exactly the same place and size.
+            geometry=visible[0].geometry() if visible else self.place
             self.place=None
-            if size and getattr(page,'_navigation_main',False):
-                # Main-window pages share one place; a larger page is not squeezed.
-                own=getattr(page,'_navigation_size',(1,1));size=(max(size[0],own[0]),max(size[1],own[1]))
-            for w in self.pages:
-                if w is not page and w.winfo_exists():self.pause(w)
-            # Main-window pages stay above the drawing as before; nested ones float.
-            page.transient(self.app if getattr(page,'_navigation_main',False) and self.app else '')
-            if size:page.geometry(str(size[0])+'x'+str(size[1]))
-            page.deiconify();page.update_idletasks()
-            if position:
-                # Keep a grown page on the monitor the previous page was on.
-                width,height=popup_outer_geometry(page)[2:]
-                set_popup_position(page,*clamp_popup_position(position[0],position[1],width,height,popup_monitor_bounds(visible or page)))
+            for w in visible:self.pause(w,hide=False)
+            if not getattr(page,'_stage_independent',False):page.transient(self.owner(page))
+            if geometry:page.geometry(geometry)
+            navigation_quiet(page)
+            page.deiconify();page.lift()
             if hasattr(page,'_core_trace_enabled'):page._core_trace_enabled=getattr(page,'_navigation_trace',True)
             if isinstance(page,MapCoreAllocationPanel):
                 self.app._map_allocation_panel=page;page.editor._core_trace_enabled=False;page.check_live()
                 if not page.stale:page.highlight()
             if page._navigation_grab:page.grab_set()
-            page.lift();focus=page._navigation_focus
+            focus=page._navigation_focus
             if focus is not None and focus.winfo_exists():focus.focus_set()
             else:page.focus_set()
             if not isinstance(page,MapCoreAllocationPanel):
                 for method in ('queue_core_trace','queue_path'):
                     if hasattr(page,method):getattr(page,method)();break
             self.buttons()
+            # Paint the new page over the old one before the old one is hidden,
+            # so the window never looks closed and reopened.
+            navigation_paint(page)
+            for w in visible:
+                if w.winfo_exists() and w.state()!='withdrawn':navigation_quiet(w);w.withdraw()
+            if page.winfo_exists():navigation_quiet(page)
         finally:self.changing=False
 
     def mapped(self,page):
@@ -184,19 +189,23 @@ class WindowNavigation:
         if descendants and navigation_valid(page) and not getattr(page,'_stage_reference',False):
             if not messagebox.askyesno('화면 닫기','이 화면에서 열어둔 다음 화면도 닫힙니다. 저장하지 않은 입력이 있다면 뒤로·앞으로로 돌아가 저장해 주세요. 함께 닫을까요?',parent=page):return
         was_active=self.active() is page
-        if was_active and page.state()!='withdrawn':
-            # The previous page reappears where the closed page was.
-            self.place=(popup_outer_geometry(page)[:2],(page.winfo_width(),page.winfo_height()))
+        gone=lambda w:w is page or str(w).startswith(str(page)+'.')
+        before=[w for w in self.history[:self.index] if not gone(w)]
+        if was_active and page.state()!='withdrawn' and not self.closing_window:
+            # The preceding retained page takes the closed page's place first,
+            # so the window does not vanish and reappear.
+            target=next((w for w in reversed(before) if w.winfo_exists() and navigation_valid(w)),None)
+            if target is not None:
+                self.place=page.geometry();self.index=self.history.index(target);self.show(target)
         self.closing=True
         try:page._navigation_destroy(*args,**kwargs)
         finally:self.closing=False
         self.pages=[w for w in self.pages if w.winfo_exists()]
-        before=self.history[:self.index]
+        current=self.active()
         self.history=[w for w in self.history if w in self.pages]
-        self.index=min(sum(w in self.pages for w in before),len(self.history)-1)
-        if was_active and self.history and not self.closing_window:
-            # Closing a page returns to the preceding retained page, unlike Back.
-            self.index=max(0,min(sum(w in self.pages for w in before)-1,len(self.history)-1));self.show(self.active())
+        if current in self.history:self.index=self.history.index(current)
+        else:self.index=max(0,min(sum(w in self.pages for w in before)-1,len(self.history)-1)) if self.history else -1
+        if was_active and self.history and not self.closing_window and self.active().state()=='withdrawn':self.show(self.active())
         self.place=None
         self.buttons()
 
@@ -215,7 +224,7 @@ class WindowNavigation:
         if current is None or not current.winfo_exists():current=page
         spot=None
         if current is not None and current.winfo_exists() and current.state()!='withdrawn':
-            spot=(popup_outer_geometry(current)[:2],(current.winfo_width(),current.winfo_height()))
+            spot=current.geometry()
         order=[current]+[w for w in reversed(self.history) if w is not current]+[w for w in self.pages if w not in self.history]
         order=list(dict.fromkeys(w for w in order if w is not None))
         # A page opened as a Tk child closes before its parent, so the child
@@ -259,6 +268,30 @@ class WindowNavigation:
         # Pages that hide instead of closing stay hidden; nothing is re-shown.
         self.index=len(self.history)-1
         self.buttons();return True
+
+
+def navigation_paint(page):
+    # Draw only window/redraw events (never timers or other callbacks), so a
+    # caller's pending jobs cannot run in the middle of the switch.
+    try:
+        page.update_idletasks()
+        for _ in range(8):
+            if not page.tk.dooneevent(6):break  # TCL_WINDOW_EVENTS|TCL_DONT_WAIT
+        if page.winfo_exists():page.update_idletasks()
+    except tk.TclError:pass
+
+
+def navigation_quiet(window):
+    # Windows' open/close animation makes a page switch look like a window
+    # closing and another opening; switch it off for navigation pages.
+    if os.name!='nt' or getattr(window,'_navigation_quiet',False):return
+    try:
+        if not window.winfo_ismapped():return
+        import ctypes
+        value=ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(ctypes.c_void_p(popup_window_handle(window)),3,ctypes.byref(value),ctypes.sizeof(value))
+        window._navigation_quiet=True
+    except (AttributeError,OSError,tk.TclError):pass
 
 
 def navigation_unsaved(page):
