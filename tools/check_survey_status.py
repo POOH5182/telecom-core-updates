@@ -55,8 +55,8 @@ def windows_ui():
         app=code['App']();errors=[];app.report_callback_exception=lambda *a:errors.append(a)
         try:
             s=app.store;s.conn.execute("INSERT OR REPLACE INTO meta VALUES('active_scenario','before')");s.conn.commit()
-            a=s.add_node('합성 조사 함체',230,240);r=s.add_node('합성 조사 RN',650,240,node_type='rn')
-            app.refresh();app.update()
+            a=s.add_node('합성 조사 함체',420,240);r=s.add_node('합성 조사 RN',750,240,node_type='rn')
+            app.update_workflow_stage();app.refresh();app.update()
             def texts():return [app.canvas.itemcget(i,'text') for i in app.canvas.find_all() if app.canvas.type(i)=='text']
             assert texts().count('미조사')==2,texts()
             for n in (a,r):

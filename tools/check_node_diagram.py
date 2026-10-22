@@ -124,7 +124,7 @@ def windows_ui():
                 assert texts and all(t.endswith('번') and '·' not in t.replace('번','').strip('0123456789') for t in texts),texts
                 legend=code['route_legend_text'](app)
                 assert 'OTHER-ID' in legend and 'CORE-A' in legend and '코어ID 다름' in legend,legend
-                case.set(1,1,'CORE-A','임시도면 내역','on');app.refresh();app.update()
+                case.set(1,1,'CORE-A','GIS 내역','on');app.refresh();app.update()
                 assert not any('코어ID 다름' in t for t in app.highlight_core_labels.values())
                 # A changed drawing must close this read-only view, not leak it
                 # into the next scenario or retain previous connection evidence.

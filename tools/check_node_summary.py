@@ -22,10 +22,10 @@ class SummaryTests(unittest.TestCase):
     def containing(self,slot):return next(r for r in self.rows() if slot in r['slots'])
 
     def test_equal_id_is_one_numeric_row_without_connecting_or_completing(self):
-        self.set(1,1,'','','unknown');self.set(1,2,'CORE-A','임시도면 내역','on')
+        self.set(1,1,'','','unknown');self.set(1,2,'CORE-A','GIS 내역','on')
         before=self.snapshot();revision=self.s.data_revision();history=self.s.conn.execute('SELECT COUNT(*) FROM history_groups').fetchone()[0]
         row=self.containing(self.slot(0))
-        self.assertEqual(row['values'][:5],('CORE-A','임시도면 내역','1','2','배정필요'))
+        self.assertEqual(row['values'][:5],('CORE-A','GIS 내역','1','2','배정필요'))
         self.assertEqual(set(row['slots']),{self.slot(0),self.slot(1,2)})
         self.assertEqual(len([r for r in self.rows() if r['values'][0]=='CORE-A']),1)
         self.assertNotIn('↔',row['connection']);self.assertNotIn('번',row['connection'])
@@ -76,7 +76,7 @@ def windows_ui():
     case=SummaryTests();case.setUp()
     try:
         (case.home/'ui').mkdir()
-        case.set(1,1,'','','unknown');case.set(1,2,'CORE-A','임시도면 내역','on')
+        case.set(1,1,'','','unknown');case.set(1,2,'CORE-A','GIS 내역','on')
         with patch.dict(os.environ,{'TELECOM_APP_HOME':str(case.home/'ui')}),patch.object(code['messagebox'],'showerror') as error,patch.object(code['messagebox'],'showinfo'):
             app=code['App']();app.store.close();app.store=case.s;errors=[]
             app.report_callback_exception=lambda *args:errors.append(str(args[1]))

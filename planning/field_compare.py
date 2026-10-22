@@ -283,7 +283,7 @@ def field_review_pending(store,node_id,pending_id,action,reason):
     if action=='재배정 확인':
         actual=store.all_core_rows(entry['core_id']);report=completion_report(store)
         if not actual or not report['by_id'].get(entry['core_id'],{}).get('complete'):raise ValueError('이 코어ID를 실제 경로에 배정하고 연결을 완료한 뒤 확인하세요.')
-    elif action!='임시도면 오기록 확인':raise ValueError('올바른 처리 구분을 선택하세요.')
+    elif action not in ('GIS 오기록 확인','임시도면 오기록 확인'):raise ValueError('올바른 처리 구분을 선택하세요.')
     entry.update(state=action,review=reason.strip(),reviewed_at=now());engine.persist('현장 보존내역 '+action)
 
 

@@ -38,7 +38,7 @@ class SlotFieldTests(unittest.TestCase):
         gis.conn.execute("INSERT INTO meta VALUES('active_scenario','gis')");gis.conn.commit()
         self.nodes=[gis.add_node(name,i*240,0) for i,name in enumerate(('끝 A','함체 1','함체 2','끝 B'))]
         self.cables=[gis.add_cable(self.nodes[i],self.nodes[i+1],name,'6C','기설') for i,name in enumerate(('A','B','C'))]
-        gis.update_core(self.cables[0],1,('CORE-A','임시도면 내역','normal','','on'))
+        gis.update_core(self.cables[0],1,('CORE-A','GIS 내역','normal','','on'))
         for i in (1,2):gis.connect(self.nodes[i],(self.cables[i-1],1),(self.cables[i],1))
         gis.conn.execute("UPDATE cores SET signal='on' WHERE core_index=1");gis.conn.commit()
         self.original=wf.field_capture_reference(gis.conn)['snapshot'];self.gis=self.home/'gis.sqlite3';gis.backup_to(self.gis);gis.close()
@@ -125,7 +125,7 @@ class SlotFieldTests(unittest.TestCase):
         self.assertEqual(self.s.core(*self.slot(0))['core_id'],'CORE-A')
         self.assertEqual(self.s.core(*self.slot(1))['core_id'],'OTHER')
         self.s.apply_core_identity_changes(self.cables[1],[(1,'CORE-A','새 이름')])
-        self.assertEqual(self.s.core(*self.slot(0))['detail'],'임시도면 내역')
+        self.assertEqual(self.s.core(*self.slot(0))['detail'],'GIS 내역')
         self.assertEqual(self.s.core(*self.slot(1))['detail'],'새 이름')
         self.assertEqual(self.s.core(*self.slot(1))['signal'],'off')
         self.s.apply_core_identity_changes(self.cables[1],[(1,'','')])
@@ -169,7 +169,7 @@ class SlotFieldTests(unittest.TestCase):
         self.assertEqual(self.s.core(*self.slot(1))['signal'],'on')
 
     def test_final_confirmation_clears_only_same_id_unconnected_waiting_and_keeps_signals(self):
-        self.set(1,3,'CORE-A','임시도면 남은 내역','off')
+        self.set(1,3,'CORE-A','GIS 남은 내역','off')
         self.set(1,4,'DIFFERENT','확정 내역','off')
         self.set(1,5,'CORE-A','ON은 유지','on');self.connect_all();splices=self.splices()
         before=self.snapshot();preview=wf.field_slot_confirm_preview(self.s,self.slot(0),'CORE-A','최종 이름')
@@ -269,12 +269,12 @@ def windows_ui():
             try:
                 s=app.store;a=s.add_node('끝 A',0,0);h=s.add_node('현장 함체',240,0);b=s.add_node('끝 B',480,0)
                 left=s.add_cable(a,h,'L','6C','기설');right=s.add_cable(h,b,'R','6C','기설')
-                s.update_core(left,1,('ID-A','임시도면 이름','normal','','on'));s.connect(h,(left,1),(right,1))
+                s.update_core(left,1,('ID-A','GIS 이름','normal','','on'));s.connect(h,(left,1),(right,1))
                 assert app.load_scenario('before');s=app.store
                 assert wf.field_slot_mode(s) and s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]==1
                 gis=app.scenario_path('gis').read_bytes()
                 s.update_core(right,1,('ID-B','잘못 놓인 내역','normal','','on'))
-                s.update_core(right,2,('ID-A','임시도면 이름','normal','','unknown'))
+                s.update_core(right,2,('ID-A','GIS 이름','normal','','unknown'))
                 s.update_core(right,3,('ID-A','미연결 배치대기','normal','','off'))
                 app.deiconify();app.update()
                 node=code['NodeDialog'](app,s,h);node.field_survey_open();app.update()
@@ -332,7 +332,7 @@ def windows_recopy_ui():
             try:
                 s=app.store;a=s.add_node('끝 A',0,0);h=s.add_node('조사 함체',240,0);b=s.add_node('끝 B',480,0)
                 left=s.add_cable(a,h,'L','6C','기설');right=s.add_cable(h,b,'R','6C','기설')
-                s.update_core(left,1,('GIS-ID','임시도면 이름','normal','','on'));s.connect(h,(left,1),(right,1))
+                s.update_core(left,1,('GIS-ID','GIS 이름','normal','','on'));s.connect(h,(left,1),(right,1))
                 existing_field(app);assert app.load_scenario('before');assert not wf.field_slot_mode(s)
                 s.update_core(left,1,('GIS-ID','새로 복사 직전 수정','normal','','off'))
                 wf.FieldSurvey(s,h).save('L\tR\n1\t1')
