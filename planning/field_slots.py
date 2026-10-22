@@ -24,7 +24,7 @@ def field_slot_copy(source,target):
     starts empty; later survey application changes only its selected local pairs.
     """
     source,target=Path(source),Path(target)
-    if source.resolve()==target.resolve():raise ValueError('GIS 원본과 현장반영 파일은 달라야 합니다.')
+    if source.resolve()==target.resolve():raise ValueError('임시도면 원본과 현장반영 파일은 달라야 합니다.')
     staging=target.with_name(target.name+'.'+uuid.uuid4().hex+'.new')
     src=sqlite3.connect(source.resolve().as_uri()+'?mode=ro',uri=True)
     dst=sqlite3.connect(staging)
@@ -156,7 +156,7 @@ def field_slot_overlay(store,node_id,raw,revision,generation,reference=None,keys
         if displaced:store.set_auto_splice_exclusions(node_id,displaced,True)
         for pair in sorted(pairs):
             field_slot_connect(store,node_id,*pair)
-            changes.append(('현장 선번 적용' if pair in added else '현장 선번 유지',engine.label(pair),'GIS 내역 자동 통일 없음 · 전체 경로의 ID·신호 검사'))
+            changes.append(('현장 선번 적용' if pair in added else '현장 선번 유지',engine.label(pair),'임시도면 내역 자동 통일 없음 · 전체 경로의 ID·신호 검사'))
         current=FieldSurvey(store,node_id)
         current.record.update(text=merged,time=now(),overlay_mode=True,overlay_policy=FIELD_SLOT_POLICY)
         current.record['gis_pairs']=[list(p) for p in FieldReference(reference,node_id).pairs];current.record['gis_known']=True
@@ -466,7 +466,7 @@ def field_slot_check_rows(store):
 
 
 def field_slot_transfer(store,source,target,with_signal=False,reason='내역 이동·교환'):
-    if not field_slot_mode(store):raise ValueError('GIS에서 새로 생성한 현장반영 도면에서 사용하세요.')
+    if not field_slot_mode(store):raise ValueError('임시도면에서 새로 생성한 현장반영 도면에서 사용하세요.')
     if with_signal:raise ValueError('현장 신호·상태는 케이블 번호에 귀속됩니다. 코어ID·코어명만 이동하세요.')
     source,target=tuple(source),tuple(target)
     if source==target:raise ValueError('출발과 도착 번호가 같습니다.')
@@ -708,7 +708,7 @@ class FieldSlotEditorDialog(RememberedToplevel):
         ttk.Label(self,textvariable=self.summary,padding=8,foreground='#1769aa').pack(fill='x')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
         self.tree=SortableTreeview(frame,columns=('position','id','name','signal','gisid','gisname','state','reason'),show='headings',height=18)
-        for key,title,width in (('position','케이블·코어번호',310),('id','현재 코어ID',155),('name','현재 코어명',200),('signal','신호',75),('gisid','GIS 코어ID',155),('gisname','GIS 코어명',200),('state','구분',100),('reason','확인할 내용',470)):
+        for key,title,width in (('position','케이블·코어번호',310),('id','현재 코어ID',155),('name','현재 코어명',200),('signal','신호',75),('gisid','임시도면 코어ID',155),('gisname','임시도면 코어명',200),('state','구분',100),('reason','확인할 내용',470)):
             self.tree.heading(key,text=title);self.tree.column(key,width=width)
         self.tree.tag_configure('bad',foreground='#c62828');self.tree.tag_configure('ok',foreground='#15803d')
         self.tree.grid(row=0,column=0,sticky='nsew');frame.rowconfigure(0,weight=1);frame.columnconfigure(0,weight=1)
@@ -764,7 +764,7 @@ class FieldSlotEditorDialog(RememberedToplevel):
             iid=str(len(self.positions));self.positions[iid]=position
             self.tree.insert('','end',iid=iid,values=(self.store._slot_title(*position),r.get('core_id',''),r.get('detail',''),{'on':'ON','off':'OFF','error':'오류','exception':'예외'}.get(r.get('signal'),'확인필요'),before.get('core_id',''),before.get('detail',''),status,comp['reason'] if comp else ''),tags=('ok' if okay else 'bad' if comp and comp['error'] else '',))
         report=field_slot_completion(self.store)
-        self.summary.set('필수 코어 '+completion_rate_text(report)+' · 표시 '+str(len(self.positions))+'개 · GIS 내역과 현재 케이블별 배치를 비교하세요.')
+        self.summary.set('필수 코어 '+completion_rate_text(report)+' · 표시 '+str(len(self.positions))+'개 · 임시도면 내역과 현재 케이블별 배치를 비교하세요.')
 
     def selected_slot(self):
         selected=self.tree.selection()

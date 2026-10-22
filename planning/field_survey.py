@@ -7,7 +7,7 @@ import csv
 import io
 from collections import Counter
 
-SCENARIO_LABELS={'gis':'전도면(GIS)','before':'전도면(현장반영)','after':'후도면'}
+SCENARIO_LABELS={'gis':'임시도면','before':'전도면(현장반영)','after':'후도면'}
 FIELD_COLORS={'확인완료':'#15803d','불일치':'#c62828','이상':'#c62828','미확인':'#a16207'}
 FIELD_INFO_HEADERS=('코어ID','코어명','회선번호','회선명','가입자명','중요여부')
 
@@ -355,7 +355,7 @@ def field_save_sheet(store,node_id,raw,gis_pairs,expected_revision,expected_gene
         store.backup_to(backup)
     added=[];errors={}
     with store.action('현장 조사표 저장·신규 연결 추가'):
-        field_keep_reference(store,reference or field_reference(store) or field_capture_reference(store.conn,'조사 시작 도면 (GIS 기준본 없음)'))
+        field_keep_reference(store,reference or field_reference(store) or field_capture_reference(store.conn,'조사 시작 도면 (임시도면 기준본 없음)'))
         engine.save(raw,gis_pairs)
         for item in candidates:
             try:
@@ -418,7 +418,7 @@ def field_check_rows(store):
         if not completion_policy(item.get('rows',[]),completion_kind(store))['required']:continue
         node=store.node(item['node_id']);slot=(item.get('rows') or [{}])[0].get('slot',('',0))
         result.append({'level':'오류','category':'현장 내역 배정대기','location':node['name'] if node else '삭제된 시설','target':'','core_id':item['core_id'],
-                       'message':'기존 내역 보존: '+item.get('detail','')+' · 새 경로 배정 또는 GIS 오기록 여부 확인 필요',
+                       'message':'기존 내역 보존: '+item.get('detail','')+' · 새 경로 배정 또는 임시도면 오기록 여부 확인 필요',
                        'node_id':item['node_id'],'cable_id':slot[0],'core_index':slot[1]})
     return result
 
@@ -590,24 +590,24 @@ class FieldSurveySheet(ttk.Frame):
 
 
 class FieldSurveyDialog(RememberedToplevel):
-    FILTERS=('전체','OK','NOT OK','현장 선번 미반영','확인완료','미확인','불일치','이상','GIS와 다른 항목','수정 대기','수정·확인 완료')
+    FILTERS=('전체','OK','NOT OK','현장 선번 미반영','확인완료','미확인','불일치','이상','임시도면과 다른 항목','수정 대기','수정·확인 완료')
     def __init__(self,parent,store,node_id):
         super().__init__(parent);self.app=top_app(parent);self.store=store;self.node_id=node_id
         self.generation=getattr(store,'_view_generation',0);self.rows=[];self.visible=[];self.token=None
         self.reference=field_reference_for_app(self.app)
-        self.title('현장 선번조사 · GIS 비교 · '+store.node(node_id)['name']);self.geometry('1450x930');self.minsize(1100,760)
+        self.title('현장 선번조사 · 임시도면 비교 · '+store.node(node_id)['name']);self.geometry('1450x930');self.minsize(1100,760)
         ttk.Label(self,text='Excel표 일괄연결과 같은 셀 입력: 제목을 포함해 A1에 Ctrl+V · 기존 조사 항목 유지 + 추가 · 원본표 앞 6열 정보도 사용 가능',padding=(10,8),foreground='#1769aa').pack(fill='x')
         record=field_records(store).get(node_id,{})
         headers=[str(c['cable_id'] or store.opposite_name(c,node_id)) for c in store.node_cables(node_id) if c['spec']!='드랍']
         if store.node(node_id)['type']=='rn':headers.append('RN내부')
         raw=record.get('text') or field_table_text([headers])
         self.sheet=FieldSurveySheet(self,FieldSurvey(store,node_id,reference=self.reference),raw);self.sheet.pack(fill='both',expand=True,padx=8)
-        guide='① 현장 선번·신호 입력 → ② 케이블별 코어내역 정리 → ③ ID·신호 일치 시 자동 OK → ④ 미완료 목록에서 끝-끝 연결 확인. 전체 신호가 확인필요여도 중립으로 처리합니다. 신호는 케이블 번호에 유지되며, 내역 확정·배치대기 정리는 선택 사항입니다.' if field_slot_mode(store) else '① GIS 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. GIS에 없던 양쪽 빈 신규 선번은 임시코어로 배정하고 자동 OK로 처리합니다.'
+        guide='① 현장 선번·신호 입력 → ② 케이블별 코어내역 정리 → ③ ID·신호 일치 시 자동 OK → ④ 미완료 목록에서 끝-끝 연결 확인. 전체 신호가 확인필요여도 중립으로 처리합니다. 신호는 케이블 번호에 유지되며, 내역 확정·배치대기 정리는 선택 사항입니다.' if field_slot_mode(store) else '① 임시도면 선번 입력 → ② 현장 조사 저장·비교 → ③ 다른 점 확인 후 직접 수정 → 선택 OK. 다른 선번은 기존 연결을 유지하고 「현장 선번 미반영」으로 표시합니다. 임시도면에 없던 양쪽 빈 신규 선번은 임시코어로 배정하고 자동 OK로 처리합니다.'
         ttk.Label(self,text=guide,padding=(10,6),wraplength=1380).pack(fill='x')
         self.gis_control=FieldGISControl(self,store,node_id);self.gis_control.pack(fill='x',padx=10,pady=3)
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
         ttk.Button(bar,text='비교만 저장',command=lambda:self.inspect(add_new=False)).pack(side='left',padx=3)
-        self.overlay_button=ttk.Button(bar,text='현장 선번 적용' if field_slot_mode(store) else '조사 저장·GIS 비교',command=self.overlay);self.overlay_button.pack(side='left',padx=3)
+        self.overlay_button=ttk.Button(bar,text='현장 선번 적용' if field_slot_mode(store) else '조사 저장·임시도면 비교',command=self.overlay);self.overlay_button.pack(side='left',padx=3)
         ttk.Button(bar,text='선택 OK',command=lambda:self.mark('OK')).pack(side='left',padx=3)
         ttk.Button(bar,text='선택 NOT OK',command=lambda:self.mark('NOT OK')).pack(side='left',padx=3)
         ttk.Button(bar,text='NOT OK 사유',command=lambda:self.mark('NOT OK 메모')).pack(side='left',padx=3)
@@ -626,7 +626,7 @@ class FieldSurveyDialog(RememberedToplevel):
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
         columns=('status','treatment','gis','row','id','baseline','observed','current','reason')
         self.tree=SortableTreeview(frame,columns=columns,show='headings',selectmode='extended',height=7)
-        for col,label,width in zip(columns,('함체별 OK','처리상태','GIS 기준과 비교','조사행','현재 코어ID','GIS 기준 연결','현장 조사 연결','현재 도면 연결','다른 번호·확인내용'),(90,115,120,55,145,245,245,245,420)):
+        for col,label,width in zip(columns,('함체별 OK','처리상태','임시도면 기준과 비교','조사행','현재 코어ID','임시도면 기준 연결','현장 조사 연결','현재 도면 연결','다른 번호·확인내용'),(90,115,120,55,145,245,245,245,420)):
             self.tree.heading(col,text=label);self.tree.column(col,width=width,minwidth=60)
         for status,ink in dict(FIELD_COLORS,OK='#15803d',**{'NOT OK':'#c62828'}).items():self.tree.tag_configure(status,foreground=ink)
         self.tree.grid(row=0,column=0,sticky='nsew');frame.rowconfigure(0,weight=1);frame.columnconfigure(0,weight=1)
@@ -637,7 +637,7 @@ class FieldSurveyDialog(RememberedToplevel):
         self.detail=tk.StringVar(value='행을 클릭하면 코어 경로와 조사 차이를 표시합니다.')
         ttk.Label(self,textvariable=self.detail,wraplength=1220,padding=8,foreground='#415a77').pack(fill='x')
         self.detail_book=ttk.Notebook(self);self.detail_book.pack(fill='both',expand=True,padx=8,pady=(0,8))
-        self.comparison_panel=FieldComparisonPanel(self.detail_book,self);self.detail_book.add(self.comparison_panel,text='GIS / 현장 / 현재 · 비교와 메모')
+        self.comparison_panel=FieldComparisonPanel(self.detail_book,self);self.detail_book.add(self.comparison_panel,text='임시도면 / 현장 / 현재 · 비교와 메모')
         diagram_frame=ttk.Frame(self.detail_book);self.detail_book.add(diagram_frame,text='현재 양방향 경로')
         self.diagram=tk.Canvas(diagram_frame,bg='white',height=120,highlightthickness=0)
         self.diagram.grid(row=0,column=0,sticky='nsew');diagram_frame.rowconfigure(0,weight=1);diagram_frame.columnconfigure(0,weight=1)
@@ -690,7 +690,7 @@ class FieldSurveyDialog(RememberedToplevel):
     def draft_changed(self):
         try:self.rows=FieldSurvey(self.store,self.node_id,reference=self.reference).report(self.sheet.get_text())
         except ValueError as error:self.summary.set(str(error));return
-        self.summary.set('입력 수정 중 · 현장 선번 적용을 누르세요. 케이블별 기존 내역은 유지됩니다.' if field_slot_mode(self.store) else '입력 수정 중 · 조사 저장·GIS 비교를 누르세요. 다른 선번은 기존 연결을 유지한 채 미반영으로 보관하며, 비교 후 직접 수정하고 OK로 확인합니다.')
+        self.summary.set('입력 수정 중 · 현장 선번 적용을 누르세요. 케이블별 기존 내역은 유지됩니다.' if field_slot_mode(self.store) else '입력 수정 중 · 조사 저장·임시도면 비교를 누르세요. 다른 선번은 기존 연결을 유지한 채 미반영으로 보관하며, 비교 후 직접 수정하고 OK로 확인합니다.')
         self.show_rows();self.sheet.color_rows(self.rows)
 
     def close_dialog(self):
@@ -716,7 +716,7 @@ class FieldSurveyDialog(RememberedToplevel):
         self.tree.delete(*self.tree.get_children());self.visible=[];self.clear_trace()
         for row in self.rows:
             choice=self.filter.get()
-            if choice=='GIS와 다른 항목':
+            if choice=='임시도면과 다른 항목':
                 if row['baseline_relation'] in ('같음','미조사','기준 없음'):continue
             elif choice=='현장 선번 미반영':
                 if not row.get('local_pending'):continue

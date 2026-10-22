@@ -4,9 +4,9 @@
 def trace_basis(store):
     kind=completion_kind(store)
     if field_slot_mode(store):return '전도면(현장반영) · 현장 실제 접속 기준'
-    if kind=='before':return '전도면(현장반영·기존 방식) · GIS에서 이어받은 저장 접속 포함'
+    if kind=='before':return '전도면(현장반영·기존 방식) · 임시도면에서 이어받은 저장 접속 포함'
     if kind=='after':return '후도면 · 이전 단계에서 이어받은 저장 접속 포함'
-    return '전도면(GIS) · 저장 접속 기준'
+    return '임시도면 · 저장 접속 기준'
 
 
 def core_conflict_markers(store,slots):

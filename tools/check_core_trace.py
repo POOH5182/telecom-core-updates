@@ -75,7 +75,7 @@ class CoreTraceTests(unittest.TestCase):
         gis=code['Store'](self.home/'ten-gis.sqlite3')
         nodes=[gis.add_node(f'함체 {i+1}',i*240,0) for i in range(10)]
         cables=[gis.add_cable(nodes[i],nodes[i+1],f'C{i+1}','12C','기설') for i in range(9)]
-        gis.update_core(cables[0],1,('TEN-ID','GIS 저장내역','normal','','on'))
+        gis.update_core(cables[0],1,('TEN-ID','임시도면 저장내역','normal','','on'))
         for i in range(1,9):gis.connect(nodes[i],(cables[i-1],1),(cables[i],1))
         gis.conn.execute("UPDATE cores SET signal='on' WHERE core_index=1");gis.conn.commit();gis.close()
         original=(self.home/'ten-gis.sqlite3').read_bytes()
@@ -139,7 +139,7 @@ class CoreTraceTests(unittest.TestCase):
         self.assertIn('signal',self.audit()['causes'])
 
     def test_all_unknown_completes_existing_route_without_changing_saved_values(self):
-        for i,signal in enumerate(('unknown','','확인필요')):self.set(i,1,'CORE-A','GIS 내역',signal)
+        for i,signal in enumerate(('unknown','','확인필요')):self.set(i,1,'CORE-A','임시도면 내역',signal)
         self.connect_all();before=self.snapshot();revision=self.s.data_revision()
         history=self.s.history_rows();gis=self.gis.read_bytes()
         self.assertEqual(wf.completion_report(self.s)['rate'],100)
@@ -155,7 +155,7 @@ class CoreTraceTests(unittest.TestCase):
         self.assertEqual(self.snapshot(),before)
 
     def test_all_unknown_still_requires_real_connections_and_preserves_undo(self):
-        for i in range(3):self.set(i,1,'CORE-A','GIS 내역','unknown')
+        for i in range(3):self.set(i,1,'CORE-A','임시도면 내역','unknown')
         self.apply(1,'A\tB\n1\t1')
         self.assertTrue(self.audit()['auto_ok']);self.assertFalse(self.audit()['complete'])
         self.assertEqual(wf.completion_report(self.s)['done'],0)
@@ -166,12 +166,12 @@ class CoreTraceTests(unittest.TestCase):
         self.s.undo();self.assertEqual(self.snapshot(),before)
         self.assertEqual(wf.completion_report(self.s)['done'],0)
         self.s.redo();self.assertEqual(wf.completion_report(self.s)['rate'],100)
-        self.set(1,1,'OTHER','GIS 내역','unknown')
+        self.set(1,1,'OTHER','임시도면 내역','unknown')
         self.assertFalse(self.audit()['auto_ok']);self.assertIn('identity',self.audit()['causes'])
         self.assertEqual(wf.completion_report(self.s)['done'],0)
 
     def test_all_unknown_keeps_manual_review_holds_and_rn_endpoints(self):
-        for i in range(3):self.set(i,1,'CORE-A','GIS 내역','unknown')
+        for i in range(3):self.set(i,1,'CORE-A','임시도면 내역','unknown')
         self.connect_all();nid=self.nodes[1]
         keys={r['key'] for r in wf.FieldSurvey(self.s,nid).report()}
         wf.field_local_mark(self.s,nid,keys,'NOT OK',self.s.data_revision(),getattr(self.s,'_view_generation',0),'직접 확인 필요')
@@ -261,7 +261,7 @@ def windows_ui():
                 assert len(pending.entries)==2 and all(r['state']=='OK · 미완료' for r in pending.entries)
                 choice=next(str(i) for i,e in enumerate(pending.entries) if any(m['slot']==case.slot(0) for m in e['members']))
                 pending.tree.selection_set(choice);app.update();assert len(pending.segment_tree.get_children())==2
-                pending.segment_tree.selection_set(pending.segment_tree.get_children()[0]);app.update();assert 'GIS 내역' in pending.details_text.get('1.0','end')
+                pending.segment_tree.selection_set(pending.segment_tree.get_children()[0]);app.update();assert '임시도면 내역' in pending.details_text.get('1.0','end')
                 pending.cause_filter.set('OK·미완료');pending.reload();app.update();assert len(pending.entries)==2
                 pending.destroy()
                 wf.field_overlay_commit(s,wf.field_overlay_preview(s,case.nodes[2],'B\tC\n1\t1'))

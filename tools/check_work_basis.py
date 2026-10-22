@@ -15,11 +15,11 @@ def legacy_gis_capture(app):
     path=app.scenario_path('gis');app.store.backup_to(path);gis=code['Store'](path)
     try:
         phase(gis,'gis')
-        with gis.action('합성 GIS 임의 입력'):
-            gis.conn.execute("UPDATE nodes SET status='철거',name='GIS 전용 시설'")
+        with gis.action('합성 임시도면 임의 입력'):
+            gis.conn.execute("UPDATE nodes SET status='철거',name='임시도면 전용 시설'")
             gis.conn.execute("UPDATE cables SET status='절단'")
             cable=gis.conn.execute('SELECT id FROM cables LIMIT 1').fetchone()[0]
-            gis.conn.execute("UPDATE cores SET core_id='GIS-ONLY',detail='GIS 전용 내역',signal='on' WHERE cable_id=? AND core_index=6",(cable,))
+            gis.conn.execute("UPDATE cores SET core_id='임시도면-ONLY',detail='임시도면 전용 내역',signal='on' WHERE cable_id=? AND core_index=6",(cable,))
         captured=wf.capture(gis,gis.conn)
         for row in captured['items'].values():row['method']='시설철거절체'
         return captured
@@ -28,7 +28,7 @@ def legacy_gis_capture(app):
 
 def install_legacy_capture(app,captured):
     value=wf.state(app.store);value['accepted']=copy.deepcopy(captured)
-    value['decisions']['SYNTH-WORK']=dict(kind='이번 작업 제외',reason='GIS 과거 판단',signature=captured['items']['SYNTH-WORK']['signature'])
+    value['decisions']['SYNTH-WORK']=dict(kind='이번 작업 제외',reason='임시도면 과거 판단',signature=captured['items']['SYNTH-WORK']['signature'])
     wf.write_state(app.store,value,'합성 이전 버전 작업기록')
 
 
@@ -54,9 +54,9 @@ class WorkBasisTests(unittest.TestCase):
     def test_gis_edits_and_legacy_capture_changes_do_not_change_work_or_review(self):
         self.field('기설','철거','기설');first=self.report()
         with self.app.scenario_path('gis').open('ab') as f:f.write(b'ignored GIS reference bytes')
-        value=wf.state(self.s);value['accepted']['items']['GIS-ONLY']['detail']='또 바꾼 GIS'
+        value=wf.state(self.s);value['accepted']['items']['GIS-ONLY']['detail']='또 바꾼 임시도면'
         value['accepted']['items']['SYNTH-WORK']['method']='절단절체'
-        wf.write_state(self.s,value,'합성 GIS 과거기록 변경')
+        wf.write_state(self.s,value,'합성 임시도면 과거기록 변경')
         self.assertEqual(self.report(),first)
         row=first['rows'][0];self.assertEqual(row['method'],'코어절체');self.assertFalse(row['excluded'])
         self.assertNotIn('GIS',row['note']);self.assertNotIn('GIS',str(row['source_routes']))
@@ -120,7 +120,7 @@ def windows_ui():
                 phase(s,kind);app.refresh();dialog=code['CoreCheckDialog'](app,s);progress=code['WorkRequiredDialog'](app,s)
                 progress.filter.set('전체');progress.show_rows();app.update()
                 assert dialog.rows==[] and progress.visible==[] and app.work_progress()['total']==0
-                assert 'GIS' in dialog.work_basis.get()
+                assert '임시도면' in dialog.work_basis.get()
                 progress.destroy();dialog.destroy()
             phase(s,'after');wf.after_auto_activate(s)
             s.commit_core_move(s.preview_core_move(cables[1],2,4));app.refresh()

@@ -19,7 +19,7 @@ class OffFieldTests(unittest.TestCase):
 
     def all_off(self):
         with self.s.action('전체 신호 OFF'):
-            for i in range(3):self.set(i,1,'CORE-A','GIS 내역','off')
+            for i in range(3):self.set(i,1,'CORE-A','임시도면 내역','off')
 
     def test_off_unused_real_named_and_blank_slots_no_assignment_or_errors(self):
         self.all_off();self.set(0,2,'','이름만 있음','off');self.set(1,3,'','','off')
@@ -40,12 +40,12 @@ class OffFieldTests(unittest.TestCase):
         self.assertEqual(self.gis.read_bytes(),self.gis_bytes)
 
     def test_off_to_on_unknown_undo_redo_reopen_restores_obligation(self):
-        self.all_off();self.set(1,1,'CORE-A','GIS 내역','on')
+        self.all_off();self.set(1,1,'CORE-A','임시도면 내역','on')
         self.assertEqual(self.s.node_assignment_needs(self.nodes[1]),{self.cables[1]:{1}})
         self.assertEqual(wf.completion_report(self.s)['total'],1)
         self.s.undo();self.assertEqual(wf.completion_report(self.s)['total'],0)
         self.s.redo();self.assertEqual(wf.completion_report(self.s)['total'],1)
-        self.set(1,1,'CORE-A','GIS 내역','unknown');self.assertEqual(wf.completion_report(self.s)['total'],1)
+        self.set(1,1,'CORE-A','임시도면 내역','unknown');self.assertEqual(wf.completion_report(self.s)['total'],1)
         self.all_off();self.s.close();self.s=code['Store'](self.path)
         self.assertEqual(wf.completion_report(self.s)['total'],0);self.assertEqual(self.s.node_assignment_needs(self.nodes[1]),{})
 
@@ -58,7 +58,7 @@ class OffFieldTests(unittest.TestCase):
         self.assertIn(3,self.s.node_assignment_needs(self.nodes[1])[self.cables[1]])
 
     def test_off_free_end_of_required_component_has_no_enclosure_assignment_badge(self):
-        self.all_off();self.set(0,1,'CORE-A','GIS 내역','unknown');self.apply(1,'A\tB\n1\t1')
+        self.all_off();self.set(0,1,'CORE-A','임시도면 내역','unknown');self.apply(1,'A\tB\n1\t1')
         self.assertEqual(self.s.node_assignment_needs(self.nodes[2]),{})
         self.assertEqual(self.s.node_warning_summary().get(self.nodes[2],{}).get('count',0),0)
         self.assertEqual(self.s.cable_core_warning_summary()[self.cables[1]]['unassigned'],0)
@@ -72,11 +72,11 @@ class OffFieldTests(unittest.TestCase):
         self.assertTrue(all(w['error'] for w in self.s.cable_core_warning_summary().values()))
         self.assertIn('코어ID 다름',wf.core_completion_brief(self.s,self.slot(1))[1])
         self.assertTrue(wf.core_conflict_markers(self.s,{self.slot(0)}))
-        self.set(1,1,'CORE-A','GIS 내역','on')
+        self.set(1,1,'CORE-A','임시도면 내역','on')
         audit=wf.field_slot_audit(self.s)['by_slot'][self.slot(0)]
         self.assertIn('signal',audit['causes']);self.assertEqual(wf.completion_report(self.s)['done'],0)
         self.assertTrue(all(w['unassigned']==0 for w in self.s.cable_core_warning_summary().values()))
-        self.set(1,1,'CORE-A','GIS 내역','off')
+        self.set(1,1,'CORE-A','임시도면 내역','off')
         row=wf.FieldSurvey(self.s,self.nodes[1]).report()[0]
         wf.field_local_mark(self.s,self.nodes[1],{row['key']},'NOT OK',self.s.data_revision(),self.s._view_generation,'검토 보류')
         self.assertIn('함체 NOT OK',wf.core_completion_brief(self.s,self.slot(0))[1])

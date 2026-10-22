@@ -67,6 +67,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM AFTER ROUTES\n' + (ROOT / 'planning' / 'after_routes.py').read_text(encoding='utf-8')
         if version >= 72:
             baseline += '\n\n# BEGIN TELECOM FIELD SLOTS\n' + (ROOT / 'planning' / 'field_slots.py').read_text(encoding='utf-8')
+        if version >= 151:
+            baseline += '\n\n# BEGIN TELECOM SURVEY STATUS\n' + (ROOT / 'planning' / 'survey_status.py').read_text(encoding='utf-8')
         if version >= 129:
             baseline += '\n\n# BEGIN TELECOM RN IDENTITY\n' + (ROOT / 'planning' / 'rn_identity.py').read_text(encoding='utf-8')
         if version >= 75:

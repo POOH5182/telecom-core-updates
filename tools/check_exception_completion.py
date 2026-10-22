@@ -43,7 +43,7 @@ class ExceptionTests(unittest.TestCase):
         self.mark();self.assert_accepted()
         self.s.conn.execute("UPDATE meta SET value='after' WHERE key='active_scenario'");self.s.conn.commit();self.assert_accepted()
         self.mark(labels=[])
-        for i in range(3):self.set(i,1,'CORE-A','GIS 내역','exception')
+        for i in range(3):self.set(i,1,'CORE-A','임시도면 내역','exception')
         self.assertEqual(wf.completion_report(self.s)['done'],0)
         self.assertFalse(wf.core_exception_complete(self.s,self.slot(0)))
 

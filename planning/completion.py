@@ -182,7 +182,7 @@ def completion_report(store,kind=None):
     for cid,items in pending.items():
         if cid in by_id:continue
         saved=[row for item in items for row in item.get('rows',[])];policy=completion_policy(saved or [{'core_id':cid}],kind)
-        reason='기존 내역 배정대기: 함체의 보존내역에서 새 경로 또는 GIS 오기록 여부를 확인하세요.' if policy['required'] else policy['excluded_reason']
+        reason='기존 내역 배정대기: 함체의 보존내역에서 새 경로 또는 임시도면 오기록 여부를 확인하세요.' if policy['required'] else policy['excluded_reason']
         entry=dict(key=('id',cid),core_id=cid,detail=' / '.join(dict.fromkeys(item.get('detail','') for item in items)),slots=[],active_slots=[],all_slots=[],
                    complete=False,reason=reason,reason_items=(reason,),causes=frozenset({'identity'}),pending_nodes=tuple(dict.fromkeys(item['node_id'] for item in items)),**policy)
         by_id[cid]=entry;(targets if policy['required'] else excluded).append(entry)

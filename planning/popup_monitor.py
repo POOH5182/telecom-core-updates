@@ -2,8 +2,8 @@
 
 
 STAGE_WINDOW_COLORS={'gis':'#2563eb','before':'#15803d','after':'#c2410c'}
-STAGE_WINDOW_LABELS={'gis':'GIS','before':'현장','after':'후도면'}
-STAGE_WINDOW_NAMES={'gis':'GIS 도면','before':'현장반영 도면','after':'후도면'}
+STAGE_WINDOW_LABELS={'gis':'임시도면','before':'현장','after':'후도면'}
+STAGE_WINDOW_NAMES={'gis':'임시도면','before':'현장반영 도면','after':'후도면'}
 
 
 def stage_window_context(widget):

@@ -180,7 +180,7 @@ def populated_row(dialog,cable,index):
 
 
 def assert_stage_chrome(window,kind,reference=True):
-    prefixes={'gis':'[GIS]','before':'[현장]','after':'[후도면]'}
+    prefixes={'gis':'[임시도면]','before':'[현장]','after':'[후도면]'}
     assert window.title().startswith(prefixes[kind]),window.title()
     assert window._stage_kind==kind and window._stage_reference is reference
     # The visible band is the user's primary cue even when title bars truncate.

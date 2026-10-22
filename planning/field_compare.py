@@ -32,7 +32,7 @@ def field_reference_for_app(app):
         conn=sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True)
         try:return field_capture_reference(conn)
         finally:conn.close()
-    return field_capture_reference(app.store.conn,'조사 시작 도면 (GIS 기준본 없음)')
+    return field_capture_reference(app.store.conn,'조사 시작 도면 (임시도면 기준본 없음)')
 
 
 def field_keep_reference(store,reference):
@@ -104,13 +104,13 @@ def field_enrich_comparison(engine,rows):
                 related.append(note.get('time','')+' · '+note.get('text',''))
         treatment='기존 유지' if row['status']=='확인완료' and relation=='같음' else '수정·확인 완료' if row['status']=='확인완료' else '조사 필요' if row['source']!='조사표' else '확인 대기' if row.get('matching') else '수정 대기'
         if engine.record.get('overlay_mode'):
-            treatment=('기존 유지' if row['local_mode']=='GIS 자동 일치' else '수정·확인 완료') if row['local_status']=='OK' else '수정 대기' if row.get('local_pending') or row['source']=='조사표' else '조사 필요'
+            treatment=('기존 유지' if row['local_mode']=='임시도면 자동 일치' else '수정·확인 완료') if row['local_status']=='OK' else '수정 대기' if row.get('local_pending') or row['source']=='조사표' else '조사 필요'
             if row['local_mode']=='현장 신규 자동 OK':treatment='신규 자동 OK'
         if row.get('completion_basis')=='기존 선번' and row.get('local_status')=='OK':treatment='기존 선번 검사 완료'
         row.update(baseline_relation=relation,baseline_connection=' / '.join(before.label(p) for p in old_pairs) or ('기준 연결 없음' if reference else '기준 없음'),
                    baseline_detail='\n'.join(before.label((s,))+' : '+field_identity_text(before.slots.get(s)) for s in sorted(old_slots)),
                    current_detail='\n'.join(engine.label((s,))+' : '+field_identity_text(engine.slots.get(s)) for s in sorted(current_slots)),
-                   field_detail='\n'.join(field_lines),differences=diff+metadata_diff,difference_text=' / '.join(diff+metadata_diff) or ('GIS 선번과 같음' if same else row['reason']),
+                   field_detail='\n'.join(field_lines),differences=diff+metadata_diff,difference_text=' / '.join(diff+metadata_diff) or ('임시도면 선번과 같음' if same else row['reason']),
                    treatment=treatment,note=(notes.get(row['key']) or {}).get('text',''),related_notes='\n'.join(related),baseline_slots=sorted(old_slots))
     return rows
 
@@ -132,7 +132,7 @@ def field_resolution_candidates(store,node_id,keys):
     slots={s for r in rows for s in r['slots']}
     slots.update(s for p in engine.pairs if slots.intersection(p) for s in p)
     reference=FieldReference(engine.reference,node_id);result=[];seen=set()
-    for source,members in (('현재 도면',[store.core(*s) for s in sorted(slots)]),('GIS 보존내역',[reference.slots.get(s) for s in sorted(slots)])):
+    for source,members in (('현재 도면',[store.core(*s) for s in sorted(slots)]),('임시도면 보존내역',[reference.slots.get(s) for s in sorted(slots)])):
         for row in members:
             if not row or not str(row.get('core_id') or '').strip():continue
             signature=tuple(str(row.get(k) or '') for k in ('core_id','detail','status1','status2','signal'))
@@ -249,7 +249,7 @@ def field_resolve(store,node_id,choices,reason,expected_revision,expected_genera
             key=row['key'];current.record.setdefault('checked',{})[key]=current.fingerprint(row['slots']);current.record.setdefault('flags',{}).pop(key,None);current.record.setdefault('add_errors',{}).pop(key,None)
         current.persist('현장 비교 수정·기존내역 보존')
         for pair in old_pairs:
-            if pair not in current.pairs:changes.insert(0,('기존 연결 해제',engine.label(pair),'GIS 내역은 비교표에 보존'))
+            if pair not in current.pairs:changes.insert(0,('기존 연결 해제',engine.label(pair),'임시도면 내역은 비교표에 보존'))
         for row in rows:changes.append(('현장 연결',engine.label(row['slots']),'사용 내역 '+choices[row['key']]['core_id']))
         for p in pending:
             if p.get('state')=='대기':changes.append(('내역 배정대기',p['core_id'],p.get('detail','')+' · 원본 보존, 완료 처리 보류'))
@@ -283,7 +283,7 @@ def field_review_pending(store,node_id,pending_id,action,reason):
     if action=='재배정 확인':
         actual=store.all_core_rows(entry['core_id']);report=completion_report(store)
         if not actual or not report['by_id'].get(entry['core_id'],{}).get('complete'):raise ValueError('이 코어ID를 실제 경로에 배정하고 연결을 완료한 뒤 확인하세요.')
-    elif action!='GIS 오기록 확인':raise ValueError('올바른 처리 구분을 선택하세요.')
+    elif action!='임시도면 오기록 확인':raise ValueError('올바른 처리 구분을 선택하세요.')
     entry.update(state=action,review=reason.strip(),reviewed_at=now());engine.persist('현장 보존내역 '+action)
 
 
@@ -304,7 +304,7 @@ class FieldComparisonPanel(ttk.Frame):
         self.status=tk.StringVar(value='비교할 행을 선택하세요.')
         ttk.Label(self,textvariable=self.status,foreground='#c62828',wraplength=1280,padding=5).pack(fill='x')
         columns=ttk.Frame(self);columns.pack(fill='both',expand=True)
-        for title in ('GIS 기준 선번·기존 내역','현장 조사 선번·입력 내역','현재 도면 연결·내역'):
+        for title in ('임시도면 기준 선번·기존 내역','현장 조사 선번·입력 내역','현재 도면 연결·내역'):
             frame=ttk.LabelFrame(columns,text=title,padding=4);frame.pack(side='left',fill='both',expand=True,padx=3)
             self.texts.append(field_readonly_text(frame,6))
         bar=ttk.Frame(self,padding=5);bar.pack(fill='x');ttk.Label(bar,text='수정·확인 메모').pack(side='left')
@@ -341,7 +341,7 @@ class FieldResolutionDialog(RememberedToplevel):
         super().__init__(parent);self.parent=parent;self.app=parent.app;self.store=parent.store;self.node_id=parent.node_id
         self.rows=rows;self.choices={};self.auto_notes={};self.previous_grab=self.grab_current();self.generation=self.store._view_generation;self.revision=self.store.data_revision()
         self.title('현장 비교 · 사용할 내역 선택 후 연결 수정');self.geometry('1260x810');self.minsize(950,650);self.transient(parent);self.grab_set()
-        ttk.Label(self,text='자동 내역선택은 코어ID만 비교합니다. 이름이 다르거나 비어 있어도 같은 ID면 선택합니다. 조사표에 이름을 넣었으면 그 이름을 사용하고, 없으면 구간별 기존 이름을 유지합니다. 코어명을 직접 지정하면 선택한 연결 경로에 적용합니다. 서로 바뀐 번호는 관련 행을 함께 선택하세요. GIS·변경 전 내역은 보존됩니다.',padding=10,wraplength=1180).pack(fill='x')
+        ttk.Label(self,text='자동 내역선택은 코어ID만 비교합니다. 이름이 다르거나 비어 있어도 같은 ID면 선택합니다. 조사표에 이름을 넣었으면 그 이름을 사용하고, 없으면 구간별 기존 이름을 유지합니다. 코어명을 직접 지정하면 선택한 연결 경로에 적용합니다. 서로 바뀐 번호는 관련 행을 함께 선택하세요. 임시도면·변경 전 내역은 보존됩니다.',padding=10,wraplength=1180).pack(fill='x')
         frame=ttk.Frame(self);frame.pack(fill='both',expand=True,padx=8)
         self.tree=SortableTreeview(frame,columns=('row','link','old','id','detail'),show='headings',height=7)
         for col,title,width in zip(('row','link','old','id','detail'),('조사행','현장 연결','현재 코어ID','사용할 코어ID','사용할 코어명'),(65,370,220,170,280)):
@@ -422,7 +422,7 @@ class FieldArchiveDialog(RememberedToplevel):
         self.tree.pack(fill='both',expand=True,padx=8);self.tree.bind('<<TreeviewSelect>>',self.pick)
         self.details=field_readonly_text(self,12)
         bar=ttk.Frame(self,padding=8);bar.pack(fill='x')
-        for title,command in (('현재 경로 보기',self.route),('재배정 확인',lambda:self.review('재배정 확인')),('GIS 오기록으로 정리',lambda:self.review('GIS 오기록 확인')),('새로고침',self.reload),('닫기',self.destroy)):
+        for title,command in (('현재 경로 보기',self.route),('재배정 확인',lambda:self.review('재배정 확인')),('임시도면 오기록으로 정리',lambda:self.review('임시도면 오기록 확인')),('새로고침',self.reload),('닫기',self.destroy)):
             ttk.Button(bar,text=title,command=command).pack(side='left',padx=3)
         self.reload();self.bind('<Escape>',lambda e:self.destroy())
 
@@ -468,7 +468,7 @@ class FieldArchiveDialog(RememberedToplevel):
             if not selected:return
             kind,row=self.items[int(selected[0])]
             if kind!='pending':raise ValueError('배정대기 코어를 선택하세요.')
-            prompt=(row['core_id']+'의 실제 재배정 경로를 확인한 근거' if action=='재배정 확인' else row['core_id']+'가 실제 연결 대상이 아닌 GIS 오기록임을 확인한 근거')
+            prompt=(row['core_id']+'의 실제 재배정 경로를 확인한 근거' if action=='재배정 확인' else row['core_id']+'가 실제 연결 대상이 아닌 임시도면 오기록임을 확인한 근거')
             reason=simpledialog.askstring(action,prompt,parent=self)
             if reason is None:return
             field_review_pending(self.store,self.node_id,row['id'],action,reason);self.app.refresh();self.reload()

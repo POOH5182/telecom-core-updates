@@ -105,7 +105,7 @@ class FieldGISTests(unittest.TestCase):
         preview=wf.field_connection_separation_preview(self.s,self.reference)
         with self.assertRaises(ValueError):wf.field_connection_separation_commit(self.s,preview)
         self.assertEqual(self.snapshot(),before)
-        with self.assertRaises(ValueError):wf.field_connection_separation_preview(self.s,dict(self.reference,source='조사 시작 도면 (GIS 기준본 없음)'))
+        with self.assertRaises(ValueError):wf.field_connection_separation_preview(self.s,dict(self.reference,source='조사 시작 도면 (임시도면 기준본 없음)'))
 
     def test_all_locks_preserve_data_are_atomic_and_survive_reopen(self):
         self.select(1);before=self.snapshot();count=self.s.set_all_enclosures_locked(True)

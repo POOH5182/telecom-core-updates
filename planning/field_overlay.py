@@ -31,10 +31,10 @@ def field_local_enrich(engine,rows):
         represented={s for row in rows for s in row['slots']}
         for pair in sorted(before.pairs):
             if represented.intersection(pair):continue
-            rows.append(dict(key='gis:'+field_pair_key(pair),row='—',source='GIS만 있음',slots=pair,errors=[],
+            rows.append(dict(key='gis:'+field_pair_key(pair),row='—',source='임시도면만 있음',slots=pair,errors=[],
                 status='미확인',observed='조사자료 없음',current='현재 연결 없음',gis='차이',matching=False,
-                addition=False,comparison='GIS만 있음',core_ids=sorted({before.slots.get(s,{}).get('core_id','') for s in pair}-{''}),
-                reason='GIS에만 있는 연결입니다. 현장 연결과 기존 내역을 확인하세요.'))
+                addition=False,comparison='임시도면만 있음',core_ids=sorted({before.slots.get(s,{}).get('core_id','') for s in pair}-{''}),
+                reason='임시도면에만 있는 연결입니다. 현장 연결과 기존 내역을 확인하세요.'))
     for row in rows:
         pair=row['slots'];members=set(pair)
         old_pairs=sorted(p for p in before.pairs if members.intersection(p))
@@ -51,25 +51,25 @@ def field_local_enrich(engine,rows):
         observed=row['source']=='조사표'
         not_applied=observed and not row['errors'] and not field_topology_matches(engine,pair)
         blocked=not_applied or bool(related)
-        reason='GIS와 현장 선번·코어ID가 같습니다.'
+        reason='임시도면과 현장 선번·코어ID가 같습니다.'
         ok=bool(engine.reference) and observed and same and actual and ids_same
         if row['errors']:reason=' / '.join(row['errors'])
         elif not observed:
             actual=not row['errors'] and field_topology_matches(engine,pair)
             ok=actual and not field_slot_pair_mismatch([engine.slots.get(s,{}) for s in pair]) and not any('error' in statuses(engine.slots.get(s,{})) for s in pair)
             reason='기존 저장 선번으로 코어ID·신호와 연결 상태를 검사했습니다.' if ok else '기존 선번의 코어연결·ID·신호를 확인하세요.'
-        elif not same:reason='GIS와 현장 선번이 다르거나 GIS 배정이 없습니다. 비교 내용을 확인하고 필요한 연결·내역을 직접 수정하세요.'
+        elif not same:reason='임시도면과 현장 선번이 다르거나 임시도면 배정이 없습니다. 비교 내용을 확인하고 필요한 연결·내역을 직접 수정하세요.'
         elif not actual:reason='현장 선번과 현재 접속 또는 양쪽 코어ID가 다릅니다. 비교 후 연결·내역을 직접 수정하세요.'
-        elif not ids_same:reason='GIS와 현재 코어ID가 다릅니다. 현장에 맞는 내역을 확인한 뒤 OK로 변경하세요.'
+        elif not ids_same:reason='임시도면과 현재 코어ID가 다릅니다. 현장에 맞는 내역을 확인한 뒤 OK로 변경하세요.'
         new_temporary=(bool(engine.reference) and observed and actual and len(pair)==2 and not old_pairs
                        and not any(old_ids) and all(cid.startswith('임시-') for cid in current_ids)
                        and not engine.record.get('flags',{}).get(row['key']))
         if new_temporary:
-            ok=True;reason='GIS에 배정·접속이 없던 신규 선번입니다. 현장 연결의 양쪽을 같은 임시코어ID로 배정해 자동 OK로 처리했습니다.'
+            ok=True;reason='임시도면에 배정·접속이 없던 신규 선번입니다. 현장 연결의 양쪽을 같은 임시코어ID로 배정해 자동 OK로 처리했습니다.'
         if row.get('input_core_id') and any(cid!=row['input_core_id'] for cid in current_ids):
             ok=False;reason='조사표 코어ID와 현재 내역이 다릅니다. 선번은 유지하고 내역을 확인하세요.'
         decision=engine.record.get('local_checks',{}).get(row['key'],{})
-        mode=('현장 신규 자동 OK' if new_temporary else 'GIS 자동 일치' if observed else '기존 선번 자동 검사') if ok else '확인 필요'
+        mode=('현장 신규 자동 OK' if new_temporary else '임시도면 자동 일치' if observed else '기존 선번 자동 검사') if ok else '확인 필요'
         if decision.get('status')=='NOT OK':
             ok=False;reason=decision.get('note') or '사용자가 이 함체의 접속을 NOT OK로 지정했습니다.';mode='수동 NOT OK'
         elif decision.get('status')=='OK':
@@ -80,7 +80,7 @@ def field_local_enrich(engine,rows):
             ok=False
             mode='현장 선번 미반영' if not_applied else '관련 선번 미반영'
             wanted=engine.label(pair) if not_applied else ' / '.join(engine.label(r['slots']) for r in related)
-            reason='기존 GIS/현재 선번 유지 · 현장 '+wanted+' 미반영. GIS·현장·현재 연결을 비교하고 직접 수정한 뒤 OK로 확인하세요.'
+            reason='기존 임시도면/현재 선번 유지 · 현장 '+wanted+' 미반영. 임시도면·현장·현재 연결을 비교하고 직접 수정한 뒤 OK로 확인하세요.'
             if decision.get('note'):reason+=' · '+decision['note']
         row.update(local_status='OK' if ok else 'NOT OK',local_reason=reason,local_mode=mode,
                    completion_basis='현장 조사' if observed else '기존 선번',
@@ -157,7 +157,7 @@ def field_overlay_apply(store,node_id,raw,revision,generation,reference=None,key
     """Persist comparisons; only add new blank pairs, never replace a splice."""
     if field_slot_mode(store):return field_slot_overlay(store,node_id,raw,revision,generation,reference,keys)
     field_overlay_guard(store,node_id,revision,generation)
-    reference=field_reference(store) or reference or field_capture_reference(store.conn,'조사 시작 도면 (GIS 기준본 없음)')
+    reference=field_reference(store) or reference or field_capture_reference(store.conn,'조사 시작 도면 (임시도면 기준본 없음)')
     engine,merged,selected=field_overlay_input(store,node_id,raw,reference,keys)
     before=FieldReference(reference,node_id)
     pairs={r['slots'] for r in selected if len(r['slots'])==2};members={s for r in selected for s in r['slots']}
@@ -168,7 +168,7 @@ def field_overlay_apply(store,node_id,raw,revision,generation,reference=None,key
     before_rows=[dict(engine.slots[s],slot=list(s),position=store._slot_title(*s)) for s in sorted(old_slots) if s in engine.slots]
     survey=[r for r in engine.report(merged) if r['key'] in {r['key'] for r in selected}]
     changes=[];temps=[]
-    with store.action('현장 조사 저장·GIS 유지'):
+    with store.action('현장 조사 저장·임시도면 유지'):
         field_keep_reference(store,reference)
         for row in deferred:
             pair=row['slots'];related=[p for p in sorted(old_pairs) if set(pair).intersection(p)]
@@ -178,33 +178,33 @@ def field_overlay_apply(store,node_id,raw,revision,generation,reference=None,key
         for pair in sorted(added):
             a,b=pair;store.conn.execute('INSERT INTO splices VALUES(?,?,?,?,?)',(node_id,*a,*b))
             store.set_auto_splice_exclusions(node_id,pair,False)
-            changes.append(('신규 현장 연결',engine.label(pair),'GIS·현재 양쪽 모두 빈 선번 → 임시코어로 추가'))
+            changes.append(('신규 현장 연결',engine.label(pair),'임시도면·현재 양쪽 모두 빈 선번 → 임시코어로 추가'))
             temp_id=store.next_temp_core_id()
             for slot in pair:
                 old=store.core(*slot)
                 store._write_core(*slot,(temp_id,*[str(old.get(k) or '') for k in ('detail','status1','status2','signal')]))
                 temps.append(slot);changes.append(('신규 임시코어',store._slot_title(*slot),temp_id+' · 현장 선번의 빈 배분 등록'))
         for row in selected:
-            if field_topology_matches(engine,row['slots']):changes.append(('기존 선번 유지',engine.label(row['slots']),'조사값 저장 · GIS·코어ID와 비교해 OK / NOT OK 표시'))
+            if field_topology_matches(engine,row['slots']):changes.append(('기존 선번 유지',engine.label(row['slots']),'조사값 저장 · 임시도면·코어ID와 비교해 OK / NOT OK 표시'))
         current=FieldSurvey(store,node_id);current.record.update(text=merged,time=now(),overlay_mode=True,overlay_policy='preserve_gis')
         current.record['gis_pairs']=[list(p) for p in before.pairs];current.record['gis_known']=True
         auto_rows=[r for r in current.report(merged,compare=False) if r['key'] in {s['key'] for s in selected} and r['local_mode']=='현장 신규 자동 OK']
         for row in auto_rows:
-            changes.append(('현장 신규 자동 OK',row['observed'],'같은 임시코어ID: '+' / '.join(row['core_ids'])+' · GIS에 없는 신규 접속 확인'))
+            changes.append(('현장 신규 자동 OK',row['observed'],'같은 임시코어ID: '+' / '.join(row['core_ids'])+' · 임시도면에 없는 신규 접속 확인'))
         current.record.setdefault('corrections',[]).append(dict(kind='현장 조사 저장',time=now(),
-            reason='GIS·현재 선번 유지 · 불일치는 현장 선번 미반영으로 보관 · 양쪽 신규 빈 선번만 임시코어',
+            reason='임시도면·현재 선번 유지 · 불일치는 현장 선번 미반영으로 보관 · 양쪽 신규 빈 선번만 임시코어',
             old_pairs=sorted(old_pairs),new_pairs=sorted(old_pairs|added),requested_pairs=sorted(pairs),deferred_pairs=[r['slots'] for r in deferred],
             old_local=before_rows,preserved=before_rows,survey=survey,
             changes=changes,choices={},auto_ok_keys=[r['key'] for r in auto_rows],text_before=engine.record.get('text',''),text_after=merged))
         current.persist('현장 선번·기존내역 보존')
-    if not changes:changes=[('선번 유지',engine.label(r['slots']),'현장 조사값 저장 · GIS와 함체별 OK / NOT OK 비교') for r in selected]
+    if not changes:changes=[('선번 유지',engine.label(r['slots']),'현장 조사값 저장 · 임시도면과 함체별 OK / NOT OK 비교') for r in selected]
     return dict(changes=changes,removed=0,added=len(added),temporary_slots=len(temps),auto_ok=len(auto_rows),deferred=len(deferred),observed=len(selected),text=merged)
 
 
 def field_overlay_preview(store,node_id,raw,reference=None,keys=None):
     revision=store.data_revision();generation=getattr(store,'_view_generation',0)
     field_overlay_guard(store,node_id,revision,generation)
-    reference=field_reference(store) or reference or field_capture_reference(store.conn,'조사 시작 도면 (GIS 기준본 없음)')
+    reference=field_reference(store) or reference or field_capture_reference(store.conn,'조사 시작 도면 (임시도면 기준본 없음)')
     trial=type(store)(':memory:')
     try:
         store.conn.backup(trial.conn);trial.create_schema()
@@ -229,7 +229,7 @@ def field_overlay_dialog(dialog,event=None,selected=False):
         preview=field_overlay_preview(dialog.store,dialog.node_id,dialog.sheet.get_text(),dialog.reference,keys)
         previous=dialog.grab_current()
         slot_mode=field_slot_mode(dialog.store)
-        review=TableDialog(dialog,'현장 선번 적용 · 케이블별 내역 유지' if slot_mode else '현장 조사 저장 · GIS 선번 유지',('처리','케이블·코어번호','내용'),preview['changes'],'확인한 현장 선번 적용' if slot_mode else '조사 저장 · 불일치 보류')
+        review=TableDialog(dialog,'현장 선번 적용 · 케이블별 내역 유지' if slot_mode else '현장 조사 저장 · 임시도면 선번 유지',('처리','케이블·코어번호','내용'),preview['changes'],'확인한 현장 선번 적용' if slot_mode else '조사 저장 · 불일치 보류')
         review.enable_space_action();dialog.wait_window(review)
         if previous is not None and previous.winfo_exists():previous.grab_set()
         if not review.accepted:return 'break'

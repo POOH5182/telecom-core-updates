@@ -1,6 +1,6 @@
 """Reviewed current-stage removal, previous-stage activation and local recovery."""
 STAGE_ORDER=('gis','before','after')
-STAGE_NAMES={'gis':'GIS 도면','before':'현장반영 도면','after':'후도면'}
+STAGE_NAMES={'gis':'임시도면','before':'현장반영 도면','after':'후도면'}
 
 
 def stage_database_token(conn):
@@ -176,7 +176,7 @@ class StageDeleteDialog(RememberedToplevel):
         super().__init__(parent or app);self.app=app;self.preview=preview
         self.title('현재 단계 삭제 · 이전 단계로');self.geometry('640x430');self.minsize(560,380);self.transient(parent or app)
         body=ttk.Frame(self,padding=16);body.pack(fill='both',expand=True)
-        name=STAGE_NAMES[preview['kind']];destination=STAGE_NAMES[preview['previous']] if preview['previous'] else '빈 GIS 화면'
+        name=STAGE_NAMES[preview['kind']];destination=STAGE_NAMES[preview['previous']] if preview['previous'] else '빈 임시도면 화면'
         ttk.Label(body,text=name+' 삭제',style='Title.TLabel').pack(anchor='w',pady=(0,12))
         self.explanation=(f'삭제 대상: 현재 {name}와 해당 단계 저장본\n복귀 화면: {destination}\n\n'
                           f"시설 {preview['counts']['nodes']}개 · 케이블 {preview['counts']['cables']}개 · 접속 {preview['counts']['splices']}개\n\n"
@@ -193,7 +193,7 @@ class StageDeleteDialog(RememberedToplevel):
             stage_check_editors(self.app);folder=stage_delete_commit(self.app,self.preview)
         except (ValueError,sqlite3.Error,OSError) as error:self.notice.set(str(error));return
         app=self.app;kind=self.preview['kind'];previous=self.preview['previous'];self.destroy();stage_refresh_app(app)
-        app.status.set(STAGE_NAMES[kind]+' 삭제 완료 · '+(STAGE_NAMES[previous] if previous else '빈 GIS 화면')+'으로 복귀 · 단계 삭제 되돌리기 가능')
+        app.status.set(STAGE_NAMES[kind]+' 삭제 완료 · '+(STAGE_NAMES[previous] if previous else '빈 임시도면 화면')+'으로 복귀 · 단계 삭제 되돌리기 가능')
 
 
 def open_stage_delete(app,parent=None):

@@ -21,7 +21,7 @@ class StageWindowTests(unittest.TestCase):
 
     def test_titles_are_readable_idempotent_and_change_stage(self):
         title=wf.stage_window_title('함체 TEST 내역','gis',True)
-        self.assertEqual(title,'[GIS] 함체 TEST 내역 · 참고용')
+        self.assertEqual(title,'[임시도면] 함체 TEST 내역 · 참고용')
         self.assertEqual(wf.stage_window_title(title,'gis',True),title)
         self.assertEqual(wf.stage_window_title(title,'before',False),'[현장] 함체 TEST 내역 · 편집 중')
         self.assertEqual(wf.stage_window_title('통신도면 V119','after',False),'[후도면] 통신도면 V119 · 편집 중')

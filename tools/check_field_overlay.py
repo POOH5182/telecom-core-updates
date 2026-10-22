@@ -311,7 +311,7 @@ def windows_ui():
                     editor.tree.selection_set(str(index));app.update()
                     editor.source.set(next(k for k,v in editor.labels.items() if v.get('core_id')==f'ID-{number}'))
                     editor.source_changed();editor.assign()
-                editor.reason.set('GIS와 현장 차이 확인 후 선번 직접 수정')
+                editor.reason.set('임시도면과 현장 차이 확인 후 선번 직접 수정')
                 def accept_correction():
                     popup=next(w for w in editor.winfo_children() if isinstance(w,wf.ConnectionRouteDialog));popup.confirm()
                 app.after(200,accept_correction);editor.preview();app.update()

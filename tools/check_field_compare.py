@@ -141,8 +141,8 @@ class CompareTests(unittest.TestCase):
         self.assertIn('LOST',{r['core_id'] for r in s.incomplete_core_groups()})
         self.assertTrue(any(r['core_id']=='LOST' for r in wf.field_check_rows(s)))
         with self.assertRaises(ValueError):wf.field_review_pending(s,self.h,pending[0]['id'],'재배정 확인','연결 안 됨')
-        old=self.snapshot();wf.field_review_pending(s,self.h,pending[0]['id'],'GIS 오기록 확인','원본 중복 기재 확인')
-        self.assertNotIn('LOST',s.drawing_connection_progress()['by_id']);self.assertEqual(wf.field_records(s)[self.h]['pending_identities'][0]['state'],'GIS 오기록 확인')
+        old=self.snapshot();wf.field_review_pending(s,self.h,pending[0]['id'],'임시도면 오기록 확인','원본 중복 기재 확인')
+        self.assertNotIn('LOST',s.drawing_connection_progress()['by_id']);self.assertEqual(wf.field_records(s)[self.h]['pending_identities'][0]['state'],'임시도면 오기록 확인')
         s.undo();self.assertEqual(wf.field_records(s),old[1])
 
     def test_remote_route_changes_are_previewed_but_other_same_ids_stay_untouched(self):
@@ -238,7 +238,7 @@ def windows_ui():
                 app.after(150,accept_preview);editor.preview();app.update()
                 assert s.core(right,2)['core_id']=='ID-1' and s.core(right,1)['core_id']=='ID-2'
                 assert dialog.rows[0]['baseline_relation']=='선번 다름';assert dialog.rows[0]['treatment']=='수정·확인 완료'
-                dialog.filter.set('GIS와 다른 항목');dialog.show_rows();app.update();assert len(dialog.visible)==3
+                dialog.filter.set('임시도면과 다른 항목');dialog.show_rows();app.update();assert len(dialog.visible)==3
                 archive=wf.FieldArchiveDialog(dialog,s,h);app.update();assert archive.items;assert '변경 전 보존내역' in archive.details.get('1.0','end');archive.destroy()
                 assert app.scenario_path('gis').read_bytes()==gis
                 dialog.destroy();node.destroy();app.scenario_path('gis').unlink() # comparison is embedded in the working drawing

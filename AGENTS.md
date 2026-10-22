@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V151 renames user-facing GIS stage labels to 임시도면; retain gis keys,
+  snapshot paths and source=GIS compatibility. survey_status.py owns manual
+  field-only hamche/RN 조사완료 metadata in node extra_json. Never infer from
+  topology, survey rows or completion. Preserve locks, stale guards, backups,
+  atomic undo and drafts. Canvas/SVG badges have their own persistent display
+  preference; hiding cannot clear status. Run check_survey_status.py and full
+  Windows publication/installed-launcher verification.
+
 - V150 (user: switching must feel like a browser link): show() copies the
   visible page's exact wm geometry (no V139 max-size growth), runs pause()
   state work first, deiconifies + paints the new page (page.update()) and only
