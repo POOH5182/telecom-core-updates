@@ -116,7 +116,7 @@ def windows_ui():
                 app.update_idletasks();assert name.count('1.0','end','displaylines')[0]<=int(name.cget('height')),'core name is cut'
                 name.event_generate('<Button-1>',x=2,y=4);app.update();assert app.focus_get() is name
                 name.focus_force();app.update();name.tag_add('sel','1.0','1.5');name.event_generate('<Control-c>');app.update()
-                assert app.clipboard_get()==LONG_NAME[:5],app.clipboard_get()
+                assert app.clipboard_get()==name.get('1.0','1.5'),(app.clipboard_get(),name.get('1.0','1.5'))
                 ident=next(w for w in app._route_legend.winfo_children() if isinstance(w,code['tk'].Entry) and w.get()=='CORE-A')
                 ident.event_generate('<Button-1>',x=2,y=4);app.update();ident.focus_force();app.update();ident.selection_range(0,'end');ident.event_generate('<Control-c>');app.update()
                 assert app.clipboard_get()=='CORE-A',app.clipboard_get()

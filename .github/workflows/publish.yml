@@ -41,6 +41,8 @@ jobs:
         run: python tools/materialize_release.py
       - name: 임시도면 명칭·함체 RN 선번조사·상태표시 설정·기록 보존 검증
         run: python tools/check_survey_status.py --emit-screenshots
+      - name: 코어확인 클릭 경로·코어번호만 표시·깜빡이는 색 안내표·RN 배정 포트 표시 검증
+        run: python tools/check_route_legend.py
       - name: Windows 화면 및 저장 확인
         run: python tools/smoke_windows.py
       - name: 도면 목록 삭제·취소·작업 보관·다른 PC 재등장 방지 검증
@@ -143,8 +145,6 @@ jobs:
         run: python tools/check_off_assignment.py
       - name: 함체 코어 연결도·임시 완료 상태·ID 충돌 케이블 표시 검증
         run: python tools/check_node_diagram.py
-      - name: 코어확인 클릭 경로·코어번호만 표시·깜빡이는 색 안내표·RN 배정 포트 표시 검증
-        run: python tools/check_route_legend.py
       - name: 깜빡이는 코어확인 창이 열린 채 종료해도 오류창 없음·예약 동작 정리 검증
         run: python tools/check_close_cleanup.py
       - name: 미완료 목록에서 바로 도면 코어배정 검증
