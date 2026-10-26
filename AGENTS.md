@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V152 cable ID/LOT display defaults are false; explicit saved preferences remain.
+  Only canvas selection expands label details, not SVG/print or saved options.
+  Missing cleaned ID or blank/null LOT has a steady yellow outer rim; keep
+  normal status strokes, new-cable dashes, hit targets and route blinking.
+  The independent cable_missing_info preference applies to canvas/reference/SVG.
+  Reads/selection never mutate drawing/history. Run check_cable_display.py and
+  the full Windows release and installed-launcher download verification.
+
 - V151 renames user-facing GIS stage labels to 임시도면; retain gis keys,
   snapshot paths and source=GIS compatibility. survey_status.py owns manual
   field-only hamche/RN 조사완료 metadata in node extra_json. Never infer from
