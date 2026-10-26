@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V161 (user: ID, name AND signal of a connected 임시코어 must follow from any
+  one edit, without the route sheet): signal edits on a temporary slot also
+  write the signal to temporary_route_targets (propagate_temporary_signal in
+  field_slots.py) from update_core (field + after drawings),
+  set_core_signal(slot) and field_signal_at_node. Real IDs and unconnected
+  same-ID slots stay. Tests that need per-slot conflicting temporary signals
+  must seed with field_slot_write, not update_core.
+
 - V160 (user: renaming a connected 임시코어 at one end changed only that
   segment): update_core normalizes 임시코어N input to 임시-N. In field-slot
   drawings an ID/name edit of a temporary slot also writes ID/name (blank name

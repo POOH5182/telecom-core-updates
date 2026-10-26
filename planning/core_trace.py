@@ -155,12 +155,15 @@ def field_signal_at_node(store,node_id,slot,signal):
         reverse=[other for nid,other in net.links.get(peers[0],()) if nid==node_id]
         if reverse!=[slot] or net.bad.get(peers[0]):raise ValueError('반대편 번호의 중복·잘못된 접속을 먼저 확인하세요.')
     positions=[slot]+peers
+    # V161: a connected temporary core takes the signal on every segment.
+    own=store.core(*slot);targets=temporary_route_targets(store,slot,str((own['core_id'] if own else '') or '').strip())
     with store.action('함체 양쪽 접속 신호 변경'):
         for position in positions:
             row=store.core(*position)
             if not row:raise ValueError('선택한 코어가 없어졌습니다.')
             field_slot_write(store,position,[row[k] for k in FIELD_SLOT_FIELDS[:4]]+[signal])
-    return positions
+        propagate_temporary_signal(store,slot,signal,[t for t in targets if t not in positions])
+    return positions+[t for t in targets if t not in positions]
 
 
 def field_incomplete_entries(store):

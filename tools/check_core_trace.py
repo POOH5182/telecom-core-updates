@@ -49,7 +49,9 @@ class CoreTraceTests(unittest.TestCase):
         self.assertTrue(all(w['temporary_complete']==0 for w in self.s.cable_core_warning_summary().values()))
         self.s.connect(self.nodes[3],self.slot(2,2),('PORT:'+self.nodes[3],1))
         self.assertEqual([self.s.cable_core_warning_summary()[c]['temporary_complete'] for c in self.cables],[1,0,1])
-        self.set(0,2,'임시-80','','on');self.set(2,2,'임시-82','','off')
+        # V161: update_core now spreads a temporary signal, so seed the conflict per slot.
+        with self.s.action('합성 신호 충돌'):
+            wf.field_slot_write(self.s,self.slot(0,2),('임시-80','','normal','','on'));wf.field_slot_write(self.s,self.slot(2,2),('임시-82','','normal','','off'))
         self.assertTrue(all(w['temporary_complete']==0 for w in self.s.cable_core_warning_summary().values()))
         # One cable between two different true terminals counts once, not twice.
         a=self.s.add_node('단독 끝 A',0,300);b=self.s.add_node('단독 끝 B',240,300)

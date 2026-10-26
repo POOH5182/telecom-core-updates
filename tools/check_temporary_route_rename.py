@@ -1,4 +1,4 @@
-"""V160: editing a connected temporary core's ID/name at one number renames the whole path."""
+"""V160/V161: editing a connected temporary core's ID/name/signal at one number updates the whole path."""
 from pathlib import Path
 import sys
 import tempfile
@@ -69,6 +69,25 @@ class TemporaryRouteRename(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'잠겨'):
             self.s.update_core(c[0],1,['REAL-9','x',old['status1'],old['status2'],old['signal']])
         self.assertEqual([self.s.core(x,1)['core_id'] for x in c],['임시-7']*3)
+
+    def test_signal_follows_connected_temporary_path(self):
+        self.s,n,c=fixture(self.home/'s.sqlite3',True)
+        old=self.s.core(c[0],1);stray=self.s.core(c[0],6)['signal']
+        self.s.update_core(c[0],1,[old['core_id'],old['detail'],old['status1'],old['status2'],'off'])
+        self.assertEqual([self.s.core(x,1)['signal'] for x in c],['off']*3)
+        self.assertEqual(self.s.core(c[0],6)['signal'],stray)
+        self.s.undo();self.assertEqual([self.s.core(x,1)['signal'] for x in c],['on','unknown','off'])
+        with self.s.action('케이블 신호'):self.s.set_core_signal('임시-7','on',slot=(c[1],1))
+        self.assertEqual([self.s.core(x,1)['signal'] for x in c],['on']*3)
+        with self.s.action('함체 신호'):positions=self.s.set_core_signal('임시-7','unknown',slot=(c[2],1),node_id=n[2])
+        self.assertEqual(len(positions),3);self.assertEqual([self.s.core(x,1)['signal'] for x in c],['unknown']*3)
+
+    def test_after_drawing_signal(self):
+        self.s,n,c=fixture(self.home/'a.sqlite3',False)
+        self.s.conn.execute("UPDATE meta SET value='after' WHERE key='active_scenario'");self.s.conn.commit()
+        old=self.s.core(c[1],1)
+        self.s.update_core(c[1],1,[old['core_id'],old['detail'],old['status1'],old['status2'],'on'])
+        self.assertEqual([self.s.core(x,1)['signal'] for x in c],['on']*3)
 
 
 if __name__=='__main__':

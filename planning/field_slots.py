@@ -123,6 +123,18 @@ def propagate_temporary_identity(store,targets,old_id,new_id,detail):
     return changed
 
 
+def propagate_temporary_signal(store,slot,signal,targets=None):
+    """V161: a signal edit on a connected temporary core reaches the whole path."""
+    if targets is None:
+        row=store.core(*slot);targets=temporary_route_targets(store,slot,str((row['core_id'] if row else '') or '').strip())
+    changed=[]
+    for other in targets:
+        row=store.core(*other)
+        if not row or str(row['signal'] or '')==str(signal or ''):continue
+        field_slot_write(store,other,[row[k] for k in FIELD_SLOT_FIELDS[:4]]+[signal]);changed.append(other)
+    return changed
+
+
 def reconnect_selected(store,node_id,a,b,temporary=False):
     """Explicit enclosure selection replaces only touching local splices."""
     a,b=tuple(a),tuple(b)
