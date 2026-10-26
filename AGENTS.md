@@ -1,7 +1,7 @@
 # Telecom Core updater project
 
-- V157 ships the unpublished V156 (its Windows highlight gate failed);
-  check_connection_highlight.py now prints ::error:: annotations.
+- V158 ships unpublished V156/V157: the highlight gate died printing Korean
+  to the non-UTF-8 Windows console. Keep check PASS/::error:: output ASCII.
 
 - V156 (user: on a shared 11·19번 cable you can't tell which core continues
   where): overlap_junctions() in connection_highlight.py turns each saved

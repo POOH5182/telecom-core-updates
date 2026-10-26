@@ -193,13 +193,15 @@ def windows_ui():
                 assert not app.highlight_cables and not app.canvas.find_withtag('core_join_hint')
                 assert not errors,errors;assert not error.called,error.call_args
             finally:app.on_close()
-        print('PASS Windows actual core selection: shared-cable 코어 이어짐 callout, real timer color/width/halo blinking including overlaps, original geometry, gap callout target/open, read preservation, merge/undo, zoom, selection and stale cleanup')
+        print('PASS Windows actual core selection: shared-cable core continuation callout, real timer color/width/halo blinking including overlaps, original geometry, gap callout target/open, read preservation, merge/undo, zoom, selection and stale cleanup')
     finally:case.tearDown()
 
 
 def annotate(text):
     # Windows job logs are unreadable here; check-run annotations are not.
-    print('::error::'+' | '.join(str(text).strip().splitlines()[-12:]).replace('%','%25'),flush=True)
+    # The Windows console is not UTF-8 here: keep the line ASCII.
+    line=' | '.join(str(text).strip().splitlines()[-12:]).replace('%','%25')
+    print('::error::'+line.encode('ascii','backslashreplace').decode('ascii'),flush=True)
 
 
 if __name__=='__main__':
