@@ -85,6 +85,44 @@ def merge_connected_temporary_ids(store,a,b):
     return ' · 임시코어'+target[3:]+'으로 통합 ('+str(changed)+'곳)' if changed else ''
 
 
+def temporary_route_targets(store,slot,old_id):
+    """V160: connected numbers that still carry a temporary ID.
+
+    A temporary core joined end to end is one core, so an ID/name edit at one
+    number must reach the whole saved splice path. Real IDs are never touched.
+    """
+    slot=tuple(slot)
+    if not str(old_id or '').startswith('임시-'):return []
+    targets=[]
+    for other in sorted(store.component(slot)):
+        if other==slot:continue
+        row=store.core(*other)
+        if not row or not str(row['core_id'] or '').strip().startswith('임시-'):continue
+        cable=store.cable(other[0]) if not other[0].startswith('PORT:') else None
+        nodes=(cable['n1id'],cable['n2id']) if cable else (other[0][5:],)
+        if any(node_locked(store,nid) for nid in nodes):raise ValueError(store._slot_title(*other)+': 연결된 임시코어 구간이 잠겨 있어 전체 변경할 수 없습니다.')
+        targets.append(other)
+    return targets
+
+
+def propagate_temporary_identity(store,targets,old_id,new_id,detail):
+    """Write the edited ID/name to every connected temporary number.
+
+    Each number keeps its own status and signal; a blank name keeps the old one.
+    """
+    new_id=str(new_id or '').strip();detail=str(detail or '').strip()
+    if not new_id:return 0
+    changed=0;old_ids={old_id}
+    for other in targets:
+        row=store.core(*other)
+        cid=str(row['core_id'] or '').strip()
+        if cid==new_id and (not detail or str(row['detail'] or '').strip()==detail):continue
+        store._write_core_identity(*other,new_id,detail,False)
+        old_ids.add(cid);changed+=1
+    for old in sorted(old_ids):phase_promote_identity(store,old,new_id)
+    return changed
+
+
 def reconnect_selected(store,node_id,a,b,temporary=False):
     """Explicit enclosure selection replaces only touching local splices."""
     a,b=tuple(a),tuple(b)

@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V160 (user: renaming a connected 임시코어 at one end changed only that
+  segment): update_core normalizes 임시코어N input to 임시-N. In field-slot
+  drawings an ID/name edit of a temporary slot also writes ID/name (blank name
+  keeps old) to every slot of store.component() that still holds a 임시- ID
+  (temporary_route_targets/propagate_temporary_identity in field_slots.py);
+  real IDs, statuses, signals and unconnected same-ID slots stay. Locked nodes
+  on the path refuse the edit. Plain drawings: temp→real also covers spliced
+  temporary slots with other temp IDs. Run check_temporary_route_rename.py.
+
 - V159 (user: cable editor 신호 dropdown raised 'str' has no 'bindtags'):
   the global <Map> handler in install_monitor_dialogs receives Tcl-only
   windows (ttk Combobox popdown) as a plain name string. Ignore any

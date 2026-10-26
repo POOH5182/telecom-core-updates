@@ -55,10 +55,11 @@ class RouteTests(unittest.TestCase):
         self.assertTrue(all(self.s.core(*r['slot'])['core_id']=='REAL-NEW' for r in p['rows']))
         self.assertEqual(self.s.core(self.c[0],6)['detail'],'분리 내역')
     def test_real_conflict_duplicates_remote_lock_and_no_change(self):
-        self.s.update_core(self.c[2],1,('OTHER','다른 실제코어','normal','','off'));before=self.snap()
+        # V160: update_core renames a whole temporary route, so seed one slot directly.
+        wf.field_slot_write(self.s,(self.c[2],1),('OTHER','다른 실제코어','normal','','off'));self.s.conn.commit();before=self.snap()
         with self.assertRaisesRegex(ValueError,'다른 실제'):self.preview()
         self.assertEqual(self.snap(),before)
-        self.s.update_core(self.c[2],1,('임시-2','다른 임시','normal','','off'))
+        wf.field_slot_write(self.s,(self.c[2],1),('임시-2','다른 임시','normal','','off'));self.s.conn.commit()
         self.s.update_core(self.c[0],3,('REAL-NEW','분리 실코어','normal','','unknown'))
         with self.assertRaisesRegex(ValueError,'이미'):self.preview()
         self.s.set_node_locked(self.n[-2],True)
@@ -87,8 +88,9 @@ class RouteTests(unittest.TestCase):
             a,b=sorted(((self.c[0],2),(self.c[1],1)));self.s.conn.execute('INSERT INTO splices VALUES(?,?,?,?,?)',(self.n[1],*a,*b))
         with self.assertRaisesRegex(ValueError,'중복 접속'):self.preview()
     def test_existing_local_edit_and_other_stages_unchanged(self):
+        # V160: a temporary route edited at one number follows on every connected number.
         self.s.apply_core_identity_changes(self.c[0],[(1,'LOCAL','로컬 수정')])
-        self.assertEqual(self.s.core(self.c[1],1)['core_id'],'임시-1')
+        self.assertEqual(self.s.core(self.c[1],1)['core_id'],'LOCAL');self.assertEqual(self.s.core(self.c[0],6)['core_id'],'임시-1')
         for kind in ('after','gis'):
             self.s.conn.execute("UPDATE meta SET value=? WHERE key='active_scenario'",(kind,));self.s.conn.commit()
             with self.assertRaises(ValueError):self.preview()

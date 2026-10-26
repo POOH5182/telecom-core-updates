@@ -69,6 +69,8 @@ jobs:
         run: python tools/check_rn_terminal.py --emit-screenshots
       - name: 현장 케이블 ID·내역 연결 구간 반영·RN·신호 보존·취소·실행취소 검증
         run: python tools/check_field_route_identity.py --emit-screenshots
+      - name: 연결된 임시코어 한쪽 ID·코어명 수정 시 경로 전체 반영 검증
+        run: python tools/check_temporary_route_rename.py
       - name: 함체 통합 연결도·초기 전체 보기·박스 이동·구간 점멸·실시간 갱신 검증
         run: python tools/check_core_layout_map.py --emit-screenshots
       - name: 새 창 케이블 우측 신호·연결 상태·선택 갱신·단계 격리 검증
