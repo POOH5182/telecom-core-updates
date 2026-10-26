@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V163 (user: changing core signals one by one in the cable editor is slow):
+  the 코어 상태·신호 tree is selectmode=extended. remember_status_cell skips its
+  own selection_set on Shift/Ctrl+Button-1 so Treeview range/toggle works;
+  Ctrl+A selects all. apply_core with several rows calls
+  Store.set_cores_signal (one "코어 신호 일괄수정" undo group, each number via
+  update_core so V161 temporary path propagation still applies; empty or
+  same-signal numbers skipped, refused numbers reported). Single-row actions
+  (copy, swap, move, delete, trace) use the first selected row. Run
+  check_signal_batch.py (unit + Windows UI).
+
 - V162 (user: the 코어 경로 안내 popup must say whether the clicked core has a
   signal, has none, or is not entered yet): compact_route_display adds
   signal/signal_text/signal_color to each segment legend row via
