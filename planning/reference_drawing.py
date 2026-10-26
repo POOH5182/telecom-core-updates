@@ -401,6 +401,7 @@ class ReferenceDrawingDialog(RememberedToplevel):
         if kind=='core' and not rows:return False
         self.clear_reference_highlight(repaint=False)
         self.selected_item=(kind,key)
+        if kind=='cable':self._active_cable=key
         self.selected={key} if kind in ('node','cable') else {r['slot'][0][5:] if r['slot'][0].startswith('PORT:') else r['slot'][0] for r in rows}
         title=(row['name'] if kind=='node' else row['cable_id'] or row['spec']) if row is not None else key
         self.notice.set(str(title)+' · '+('전체 코어 경로 표시 · 선택 내역에서 접속 확인' if kind=='core' else '더블클릭 또는 선택 내역으로 열기'))

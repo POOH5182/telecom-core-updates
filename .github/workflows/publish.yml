@@ -39,7 +39,7 @@ jobs:
         run: python -m unittest discover -s tools -p "test_*.py" -v
       - name: 배포할 프로그램 준비
         run: python tools/materialize_release.py
-      - name: 케이블 기본 규격·클릭 상세·ID LOT 누락 테두리·보기설정 검증
+      - name: 기존 설정 규격 기본화·선택 케이블 앞으로·클릭 상세·누락 테두리 검증
         run: python tools/check_cable_display.py --emit-screenshots
       - name: 임시도면 명칭·함체 RN 선번조사·상태표시 설정·기록 보존 검증
         run: python tools/check_survey_status.py --emit-screenshots

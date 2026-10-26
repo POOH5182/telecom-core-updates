@@ -33,7 +33,12 @@ class CableDisplayTests(unittest.TestCase):
             self.assertEqual(code['read_display_options'](p),options)
             p.write_text('{"cable_id":true,"cable_lot":true}')
             legacy=code['read_display_options'](p)
-            self.assertTrue(legacy['cable_id'] and legacy['cable_lot'] and legacy['cable_missing_info'])
+            self.assertFalse(legacy['cable_id']);self.assertFalse(legacy['cable_lot'])
+            self.assertTrue(legacy['cable_missing_info'])
+            self.assertEqual(p.read_text(),'{"cable_id":true,"cable_lot":true}')
+            legacy.update(cable_id=True,cable_lot=True)
+            code['save_display_options'](p,legacy)
+            self.assertEqual(code['read_display_options'](p),legacy)
 
 
 def windows_ui():
@@ -41,6 +46,8 @@ def windows_ui():
     import faulthandler
     faulthandler.dump_traceback_later(90,exit=True)
     with tempfile.TemporaryDirectory() as temp,patch.dict(os.environ,TELECOM_APP_HOME=temp):
+        pref=Path(temp)/'data'/'display_options.json';pref.parent.mkdir(exist_ok=True)
+        pref.write_text('{"cable_id":true,"cable_lot":true,"grid":false}')
         app=code['App']();errors=[];app.report_callback_exception=lambda *a:errors.append(a)
         try:
             s=app.store;a=s.add_node('합성 시작',380,220);b=s.add_node('합성 끝',900,220)
@@ -59,7 +66,15 @@ def windows_ui():
             def click(cid):
                 p=label(app,cid);x=int(p['x']-app.canvas.canvasx(0));y=int(p['y']-app.canvas.canvasy(0))
                 app.canvas.event_generate('<ButtonPress-1>',x=x,y=y);app.canvas.event_generate('<ButtonRelease-1>',x=x,y=y);app.update()
+            def assert_front(view,cid):
+                order={item:index for index,item in enumerate(view.canvas.find_all())}
+                assert all(order[view.cable_line_items[cid]]>order[item] for key,item in view.cable_line_items.items() if key!=cid)
+                labels=view.canvas.find_withtag('cable_label')
+                chosen=[order[i] for i in labels if view.item_to_cable[i]==cid]
+                others=[order[i] for i in labels if view.item_to_cable[i]!=cid]
+                assert min(chosen)>max(others)
             click(full);assert app.selected=={full};assert label(app,full)['text']=='12C =9340= (100001584485)'
+            assert_front(app,full)
             # Selection is a screen inspection; SVG/print still follows the chosen persistent settings.
             assert '100001584485' not in app.drawing_svg()
             click(empty);assert 'ID 미입력' in label(app,empty)['text'] and 'LOT 미입력' in label(app,empty)['text']
@@ -83,11 +98,25 @@ def windows_ui():
             view=wf.open_reference_drawing(app,'gis');app.update()
             assert rims(view)=={no_lot,empty} and label(view,full)['text']=='12C'
             view.select_item('cable',full);app.update();assert '9340' in label(view,full)['text']
+            assert_front(view,full)
             view.clear_selection();app.update();assert label(view,full)['text']=='12C';view.destroy();app.update()
-            click(full)
+            # Different endpoint pairs cross the selected cable and its label.
+            c=s.add_node('교차 시작',380,106);d=s.add_node('교차 끝',900,266)
+            cross=s.add_cable(c,d,'CROSS','36C','기설',lot_no='2222')
+            app.selected.clear();app.refresh();app.update()
+            before=wf.plan_snapshot(s.conn);history=s.history_rows()
+            coords=app.canvas.coords(app.cable_line_items[full]);x1,y1,mx,my,x2,y2=coords
+            t=.25;x=(1-t)**2*x1+2*(1-t)*t*mx+t*t*x2;y=(1-t)**2*y1+2*(1-t)*t*my+t*t*y2
+            x=int(x-app.canvas.canvasx(0));y=int(y-app.canvas.canvasy(0))
+            app.canvas.event_generate('<ButtonPress-1>',x=x,y=y);app.canvas.event_generate('<ButtonRelease-1>',x=x,y=y);app.update()
+            assert app.selected=={full},app.selected
+            assert_front(app,full)
+            for scale in (1.2,1.):
+                app.view_scale=scale;app.refresh();app.update();assert_front(app,full)
+            assert wf.plan_snapshot(s.conn)==before and s.history_rows()==history
             if '--emit-screenshots' in sys.argv:
                 from check_desktop_design import screenshot
-                Path('dist').mkdir(exist_ok=True);screenshot(app,Path('dist')/'v152-cable-display.png')
+                Path('dist').mkdir(exist_ok=True);screenshot(app,Path('dist')/'v153-cable-display.png')
             assert not errors,errors
         finally:app.on_close()
     faulthandler.cancel_dump_traceback_later()

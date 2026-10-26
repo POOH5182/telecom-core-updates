@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V153 supersedes V152 legacy preference retention: absent compact_v153 policy
+  in display_options resets only cable_id/cable_lot on read (no disk write).
+  Explicit settings Apply saves the policy so subsequent choices persist.
+  Selected cable geometry is raised before facilities, selected labels last;
+  the latest clicked selected cable wins. Never reorder parallel curve geometry
+  or mutate drawing/history. Main/reference share rendering. Run the extended
+  check_cable_display.py and full Windows publication/launcher verification.
+
 - V152 cable ID/LOT display defaults are false; explicit saved preferences remain.
   Only canvas selection expands label details, not SVG/print or saved options.
   Missing cleaned ID or blank/null LOT has a steady yellow outer rim; keep
