@@ -197,7 +197,15 @@ def windows_ui():
     finally:case.tearDown()
 
 
+def annotate(text):
+    # Windows job logs are unreadable here; check-run annotations are not.
+    print('::error::'+' | '.join(str(text).strip().splitlines()[-12:]).replace('%','%25'),flush=True)
+
+
 if __name__=='__main__':
     result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(HighlightTests))
+    for test,trace in result.failures+result.errors:annotate(f'{test}: {trace}')
     if not result.wasSuccessful():raise SystemExit(1)
-    windows_ui()
+    try:windows_ui()
+    except BaseException:
+        import traceback;annotate(traceback.format_exc());raise
