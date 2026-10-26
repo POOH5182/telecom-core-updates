@@ -103,6 +103,8 @@ jobs:
         run: python tools/check_save_status.py
       - name: 부모 모니터 중앙·3화면 음수 좌표·중첩 팝업·기본 알림 검증
         run: python tools/check_popup_monitor.py
+      - name: 콤보박스 목록 열기 오류 없음 검증
+        run: python tools/check_combobox_dropdown.py
       - name: 현장 작업방법 유지·절단 우선·선번 접속 절체·Windows 전체목록 검증
         run: python tools/check_work_classification.py
       - name: 케이블 3번 상태 미완료·연결 후 표시·실행취소·입력 보존 검증

@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V159 (user: cable editor 신호 dropdown raised 'str' has no 'bindtags'):
+  the global <Map> handler in install_monitor_dialogs receives Tcl-only
+  windows (ttk Combobox popdown) as a plain name string. Ignore any
+  event.widget that is not a tk.Misc before touching bindtags/Toplevel.
+  check_combobox_dropdown.py posts a readonly Combobox under the monitor.
+
 - V158 ships unpublished V156/V157: the highlight gate died printing Korean
   to the non-UTF-8 Windows console. Keep check PASS/::error:: output ASCII.
 

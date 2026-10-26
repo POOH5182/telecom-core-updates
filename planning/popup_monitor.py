@@ -288,6 +288,8 @@ def install_monitor_dialogs(app):
     existing(app)
     def mapped(event):
         window=event.widget
+        # Tcl-only windows (ttk Combobox dropdown list) arrive as a plain name string.
+        if not isinstance(window,tk.Misc):return
         close_binding(window)
         if isinstance(window,tk.Toplevel) and not window.overrideredirect() and not getattr(window,'_navigation_scheduled',False):
             window._navigation_scheduled=True
