@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V162 (user: the 코어 경로 안내 popup must say whether the clicked core has a
+  signal, has none, or is not entered yet): compact_route_display adds
+  signal/signal_text/signal_color to each segment legend row via
+  route_signal_state (connection_highlight.py) from the saved slot signals
+  (blank/확인필요 = 신호 미입력; different signals = 신호 섞임 with counts).
+  render_route_legend shows it as a colored Label in grid column 2 (name moved
+  to column 3). Read-only. Run check_route_legend.py (unit + Windows UI).
+
 - V161 (user: ID, name AND signal of a connected 임시코어 must follow from any
   one edit, without the route sheet): signal edits on a temporary slot also
   write the signal to temporary_route_targets (propagate_temporary_signal in

@@ -20,6 +20,26 @@ def _route_id_text(value):
     return ('임시코어'+value[3:]) if value.startswith('임시-') and value[3:].isdigit() else value
 
 
+ROUTE_SIGNAL_TEXT={'on':'신호 있음 (ON)','off':'신호 없음 (OFF)','unknown':'신호 미입력','exception':'신호 예외','error':'신호 오류'}
+ROUTE_SIGNAL_SHORT={'on':'ON','off':'OFF','unknown':'미입력','exception':'예외','error':'오류'}
+ROUTE_SIGNAL_COLORS={'on':'#15803d','off':'#475569','unknown':'#b45309','exception':'#6a1b9a','error':'#c62828','mixed':'#c62828'}
+
+
+def route_signal_state(rows,slots):
+    """Saved signal of one traced segment: ON, OFF, 미입력 (blank/확인필요) or mixed. Read-only."""
+    counts=defaultdict(int)
+    for slot in slots:
+        row=rows.get(slot)
+        if row is None:continue
+        code=core_signal_code(dict(row).get('signal'))
+        counts[code if code in ROUTE_SIGNAL_TEXT else 'unknown']+=1
+    if not counts:counts['unknown']=1
+    if len(counts)==1:
+        code=next(iter(counts));return code,ROUTE_SIGNAL_TEXT[code]
+    order=('on','off','unknown','exception','error')
+    return 'mixed','신호 섞임: '+' · '.join(f'{ROUTE_SIGNAL_SHORT[c]} {counts[c]}' for c in order if counts.get(c))
+
+
 def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLOR,nodes=None):
     """Cable text is only the core number; IDs, cables and segment colors go to a legend."""
     numbers=defaultdict(list);legend=[];ports=defaultdict(list);nodes=nodes or {}
@@ -39,9 +59,10 @@ def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLO
                 parts.append(str((nodes.get(nid) or {}).get('name') or 'RN')+' '+port)
                 ports[nid].append(dict(port=port,color=group['color'],number=group['number']))
         names=list(dict.fromkeys(str(rows.get(x,{}).get('detail') or '').strip() for x in group['slots'] if str(rows.get(x,{}).get('detail') or '').strip()))
+        signal,signal_text=route_signal_state(rows,group['slots'])
         legend.append(dict(kind='segment',number=group['number'],color=group['color'],ids=tuple(ids),name_text=' / '.join(names),
             core_text=' / '.join(ids) or 'ID 없음',cable_text=', '.join(dict.fromkeys(parts)),
-            fault=' · '.join(group.get('faults') or ())))
+            fault=' · '.join(group.get('faults') or ()),signal=signal,signal_text=signal_text,signal_color=ROUTE_SIGNAL_COLORS[signal]))
     short={cable:'·'.join(str(n) for n in sorted(set(values)))+'번' for cable,values in numbers.items()}
     shared=sorted(overlaps,key=cable_name)
     if shared:legend.append(dict(kind='overlap',number=0,color=overlap_color,ids=(),core_text='겹침',name_text='같은 케이블에 여러 코어',

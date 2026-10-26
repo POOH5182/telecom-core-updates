@@ -68,6 +68,24 @@ class RouteLegendTests(unittest.TestCase):
         model=self.model();row=next(r for r in model['legend'] if r['kind']=='segment' and 'CORE-A' in r['core_text'])
         self.assertIn(LONG_NAME,row['name_text'])
 
+    def segment_rows(self):return [r for r in self.model()['legend'] if r['kind']=='segment']
+
+    def test_v162_legend_row_shows_saved_signal(self):
+        self.connect_all()
+        for signal,text in (('on','신호 있음 (ON)'),('off','신호 없음 (OFF)'),('unknown','신호 미입력'),('','신호 미입력')):
+            for i in range(len(self.cables)):self.set(i,1,'CORE-A',signal=signal)
+            before=self.snapshot();history=self.s.history_rows()
+            rows=self.segment_rows();row=next(r for r in rows if 'CORE-A' in r['core_text'])
+            self.assertEqual(row['signal_text'],text,(signal,rows));self.assertTrue(row['signal_color'].startswith('#'))
+            # Reading the legend never changes the drawing.
+            self.assertEqual(self.snapshot(),before);self.assertEqual(self.s.history_rows(),history)
+
+    def test_v162_mixed_signal_counts_each_slot(self):
+        rows={('a',1):{'signal':'on'},('b',1):{'signal':'on'},('c',1):{'signal':''},('PORT:x',1):{'signal':'확인필요'}}
+        self.assertEqual(wf.route_signal_state(rows,[('a',1),('b',1)]),('on','신호 있음 (ON)'))
+        self.assertEqual(wf.route_signal_state(rows,list(rows)),('mixed','신호 섞임: ON 2 · 미입력 2'))
+        self.assertEqual(wf.route_signal_state({},[('z',1)])[1],'신호 미입력')
+
 
 def windows_ui():
     if sys.platform!='win32' and not os.environ.get('TELECOM_CHECK_UI'):return
@@ -111,6 +129,10 @@ def windows_ui():
                 words=code['route_legend_text'](app)
                 assert 'RN-1 SP1' not in words and '1번' not in words,words
                 assert LONG_NAME in words,words
+                # V162: each route row says whether the core has a signal (CORE-A is not entered yet).
+                assert '신호 미입력' in words,words
+                badge=next(w for w in app._route_legend.winfo_children() if isinstance(w,code['tk'].Label) and w.cget('text')=='신호 미입력')
+                assert int(badge.grid_info()['column'])==2 and badge.winfo_manager()=='grid'
                 # V144: the full name is visible (wrapped) and can be dragged and copied.
                 name=next(w for w in app._route_legend.winfo_children() if isinstance(w,code['tk'].Text) and LONG_NAME in w.get('1.0','end'))
                 app.update_idletasks();assert name.count('1.0','end','displaylines')[0]<=int(name.cget('height')),'core name is cut'
