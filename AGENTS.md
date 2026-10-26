@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V154 facility labels default to name/symbol only. Selection reveals saved
+  hamche spec/ID or RN rnSpec/ID/computer number; missing fields say 미입력.
+  No inferred ports/specs or internal UUIDs. Independent compact_v154 preference
+  migration resets only facility always-show flags; explicit Apply persists them.
+  Main/reference selection expands and raises mapped facility items, last click
+  first; SVG remains preference-driven. Keep badges, drafts and data intact.
+  Run check_facility_display.py, cable display and full Windows release gates.
+
 - V153 supersedes V152 legacy preference retention: absent compact_v153 policy
   in display_options resets only cable_id/cable_lot on read (no disk write).
   Explicit settings Apply saves the policy so subsequent choices persist.
