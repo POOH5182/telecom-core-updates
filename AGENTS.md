@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V155 ships the unreleased V154 facility details (V154 failed its gate and
+  was never published). Canvas drop with a drag_anchor but no B1-Motion
+  (pending_drag is None) is a plain click: clear the anchor and return without
+  grid snapping or a 시설 이동 history row. Real drags still snap and record once.
+  check_facility_display.py asserts click nonmutation plus one drag + undo.
+
 - V154 facility labels default to name/symbol only. Selection reveals saved
   hamche spec/ID or RN rnSpec/ID/computer number; missing fields say 미입력.
   No inferred ports/specs or internal UUIDs. Independent compact_v154 preference

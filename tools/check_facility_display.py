@@ -1,4 +1,4 @@
-"""V154 facility compact defaults and read-only selected metadata on drawings."""
+"""V154/V155 facility compact defaults and read-only selected metadata on drawings."""
 import json
 import os
 from pathlib import Path
@@ -65,6 +65,11 @@ def windows_ui():
             assert not details(view);view.select_item('node',rn);app.update();assert 'RN-123' in details(view)[rn];front(view,rn)
             view.clear_selection();app.update();assert not details(view);view.destroy();app.update()
             assert wf.plan_snapshot(s.conn)==before and s.history_rows()==history
+            # V155: a click never snaps or moves a facility; a real drag still moves it once.
+            n=s.node(h);x=int(n['x']*app.view_scale-app.canvas.canvasx(0));y=int(n['y']*app.view_scale-app.canvas.canvasy(0))
+            app.canvas.event_generate('<ButtonPress-1>',x=x,y=y);app.canvas.event_generate('<B1-Motion>',x=x,y=y+80);app.canvas.event_generate('<ButtonRelease-1>',x=x,y=y+80);app.update()
+            assert s.node(h)['y']!=300 and len(s.history_rows())==len(history)+1
+            s.undo();app.refresh();app.update();assert wf.plan_snapshot(s.conn)==before
             click(rn)
             if '--emit-screenshots' in sys.argv:
                 from check_desktop_design import screenshot
