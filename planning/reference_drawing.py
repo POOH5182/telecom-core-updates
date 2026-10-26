@@ -104,7 +104,8 @@ def reference_slot_highlight(store,slots):
     labels={cable:('겹침 · '+str(len(cable_slots[cable]))+'개 선번\n' if cable in overlaps else '')+
             '\n'.join(item['text'] for item in items) for cable,items in bands.items()}
     short_labels,legend,port_labels=compact_route_display(groups,rows,net.cables,overlaps,nodes=net.nodes)
-    return dict(seed_slots=seeds,slots=frozenset(visited),groups=groups,nodes=frozenset(nodes),colors=colors,labels=labels,short_labels=short_labels,legend=legend,port_labels=port_labels,
+    junctions=overlap_junctions(net,rows,visited,overlaps)
+    return dict(seed_slots=seeds,slots=frozenset(visited),groups=groups,nodes=frozenset(nodes),colors=colors,labels=labels,short_labels=short_labels,legend=legend,port_labels=port_labels,junctions=junctions,
                 bands=dict(bands),label_colors=label_colors,overlaps=overlaps,boundaries=[],
                 summary=f'실제 접속 {len(groups)}구간 · {len(visited)}개 선번')
 

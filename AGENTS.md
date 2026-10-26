@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V156 (user: on a shared 11·19번 cable you can't tell which core continues
+  where): overlap_junctions() in connection_highlight.py turns each saved
+  splice at an end enclosure of an overlap cable into one line
+  "far쪽 N번 → far쪽 M번" (cable name added only for parallel cables; RN
+  ports by label). Read-only, no inferred pairs; free ends stay boundaries.
+  Model key 'junctions' (main + reference_slot_highlight); canvas tag
+  core_path_junction, item_to_node opens the enclosure. Run
+  check_connection_highlight.py (unit + Windows UI) and full release gates.
+
 - V155 ships the unreleased V154 facility details (V154 failed its gate and
   was never published). Canvas drop with a drag_anchor but no B1-Motion
   (pending_drag is None) is a plain click: clear the anchor and return without

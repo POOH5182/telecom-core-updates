@@ -1,4 +1,4 @@
-"""V83 shared-cable colors and real timer blinking; reads never rewire."""
+"""V83/V156 shared-cable colors and real timer blinking; reads never rewire."""
 import os
 import sys
 import unittest
@@ -93,7 +93,28 @@ class HighlightTests(unittest.TestCase):
         self.assertEqual(model['overlaps'],{self.cables[0]})
         self.assertEqual(model['colors'][self.cables[0]],wf.OVERLAP_COLOR)
         before=self.snapshot();self.assertEqual(self.model()['colors'],model['colors']);self.assertEqual(self.snapshot(),before)
-        self.s.undo();self.assertFalse(self.model()['overlaps'])
+        # V156: the shared cable (1·2번) says which core continues where at its end enclosure.
+        junction=next(j for j in model['junctions'] if j['node_id']==self.nodes[1])
+        self.assertEqual(junction['lines'],('끝 A쪽 1번 → 함체 2쪽 B 1번','끝 A쪽 2번 → 함체 2쪽 RETURN 1번'))
+        self.assertIn('코어 이어짐',junction['text']);self.assertEqual(junction['color'],wf.OVERLAP_COLOR)
+        self.assertNotIn(self.nodes[2],[j['node_id'] for j in model['junctions']])
+        self.assertIn('코어 이어짐 안내 1곳',model['summary'])
+        ref=wf.reference_slot_highlight(self.s,[self.slot(0)])
+        self.assertEqual([j['lines'] for j in ref['junctions']],[junction['lines']])
+        self.assertEqual(self.snapshot(),before)
+        self.s.undo();self.assertFalse(self.model()['overlaps']);self.assertFalse(self.model()['junctions'])
+
+    def test_junction_lines_follow_each_core_without_parallel_names(self):
+        # Like 11·19번 on one cable: 1 continues to C 1, 2 turns to a side cable 5.
+        self.connect_all();side=self.s.add_node('옆 함체',480,240)
+        branch=self.s.add_cable(self.nodes[2],side,'D','12C','기설')
+        self.s.connect(self.nodes[1],self.slot(0,2),self.slot(1,2));self.s.connect(self.nodes[2],self.slot(1,2),(branch,5))
+        before=self.snapshot();model=self.model(self.slot(0),self.slot(0,2))
+        self.assertEqual(model['overlaps'],{self.cables[0],self.cables[1]})
+        lines={j['node_id']:j['lines'] for j in model['junctions']}
+        self.assertEqual(lines[self.nodes[2]],('함체 1쪽 1번 → 끝 B쪽 1번','함체 1쪽 2번 → 옆 함체쪽 5번'))
+        self.assertEqual(lines[self.nodes[1]],('끝 A쪽 1번 → 함체 2쪽 1번','끝 A쪽 2번 → 함체 2쪽 2번'))
+        self.assertEqual(model['short_labels'][self.cables[0]],'1·2번');self.assertEqual(self.snapshot(),before)
 
 
 def windows_ui():
@@ -152,7 +173,14 @@ def windows_ui():
                 assert app.highlight_connection_model['overlaps']=={case.cables[0]}
                 assert app.highlight_cable_colors[case.cables[0]]==wf.OVERLAP_COLOR
                 assert '겹침 · 2개 코어' in app.highlight_core_labels[case.cables[0]]
+                assert not app.canvas.find_withtag('core_path_junction')
                 check_live_blink()
+                # V156: spliced shared cable shows a 코어 이어짐 callout at the enclosure.
+                case.s.connect(case.nodes[1],case.slot(0,2),case.slot(1,2));app.refresh();app.update()
+                texts=[app.canvas.itemcget(i,'text') for i in app.canvas.find_withtag('core_path_junction') if app.canvas.type(i)=='text']
+                assert len(texts)==1 and '코어 이어짐' in texts[0] and ('끝 A쪽 2번 → 함체 2쪽 2번' in texts[0] or '함체 2쪽 2번 → 끝 A쪽 2번' in texts[0]),texts
+                item=next(i for i in app.canvas.find_withtag('core_path_junction') if app.canvas.type(i)=='text');assert app.item_to_node[item]==case.nodes[1]
+                case.s.undo();app.refresh();app.update();assert not app.canvas.find_withtag('core_path_junction')
                 # Highlight must follow the original cable geometry without shifted bands.
                 for c,glow in app._highlight_glow_items.items():assert app.canvas.coords(glow)==app.canvas.coords(app.cable_line_items[c])
                 app.view_scale=1.5;app.refresh();app.update();assert app.canvas.find_withtag('core_join_hint');check_live_blink()
@@ -165,7 +193,7 @@ def windows_ui():
                 assert not app.highlight_cables and not app.canvas.find_withtag('core_join_hint')
                 assert not errors,errors;assert not error.called,error.call_args
             finally:app.on_close()
-        print('PASS Windows actual core selection: real timer color/width/halo blinking including overlaps, original geometry, gap callout target/open, read preservation, merge/undo, zoom, selection and stale cleanup')
+        print('PASS Windows actual core selection: shared-cable 코어 이어짐 callout, real timer color/width/halo blinking including overlaps, original geometry, gap callout target/open, read preservation, merge/undo, zoom, selection and stale cleanup')
     finally:case.tearDown()
 
 

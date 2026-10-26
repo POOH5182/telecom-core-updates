@@ -51,6 +51,39 @@ def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLO
     return short,legend,port_labels
 
 
+def overlap_junctions(net,rows,slots,overlaps,color=OVERLAP_COLOR):
+    """Where a cable carries several traced cores, say which core continues where.
+
+    Read-only: each saved splice at an end enclosure of a shared cable becomes
+    one line "far end쪽 11번 → far end쪽 5번". Unconnected ends stay boundaries.
+    """
+    members=set(slots);overlaps=set(overlaps);nodes=net.nodes or {}
+    def name(nid):return str((nodes.get(nid) or {}).get('name') or nid)
+    def far(cable,nid):return cable.get('n2id') if cable.get('n1id')==nid else cable.get('n1id')
+    def side(slot,nid):
+        if slot[0].startswith('PORT:'):return name(slot[0][5:])+' RN 포트 '+str(rows.get(slot,{}).get('label') or slot[1])
+        cable=net.cables.get(slot[0]) or {};end=far(cable,nid)
+        # Parallel cables to the same enclosure also need the cable name.
+        parallel=sum(1 for c in net.cables.values() if nid in (c.get('n1id'),c.get('n2id')) and far(c,nid)==end)>1
+        owner=' '+str(cable.get('cable_id') or cable.get('spec') or slot[0]) if parallel else ''
+        return f'{name(end)}쪽{owner} {slot[1]}번'
+    found=defaultdict(dict)
+    for slot in sorted(members):
+        if slot[0] not in overlaps:continue
+        for nid,peer in net.links.get(slot,()):
+            if peer not in members:continue
+            # Read from the shared cable; when both sides are shared keep one order.
+            a,b=side(slot,nid),side(peer,nid)
+            if peer[0] in overlaps and b<a:a,b=b,a
+            found[nid][frozenset((slot,peer))]=a+' → '+b
+    result=[]
+    for nid in sorted(found,key=lambda n:(name(n),n)):
+        lines=sorted(found[nid].values())
+        result.append(dict(node_id=nid,name=name(nid),color=color,lines=tuple(lines),
+                           text=name(nid)+' · 코어 이어짐\n'+'\n'.join(lines)))
+    return result
+
+
 def core_connection_highlight(store,slots):
     audit=field_slot_audit(store);net=audit['net'];seeds=set(map(tuple,slots))
     chosen={audit['by_slot'][s]['key']:audit['by_slot'][s] for s in seeds if s in audit['by_slot']}
@@ -131,6 +164,8 @@ def core_connection_highlight(store,slots):
     colors={c:OVERLAP_COLOR if c in overlaps else items[0]['color'] for c,items in bands.items()}
     labels={c:(f'겹침 · {len(cable_slots[c])}개 코어\n' if c in overlaps else '')+'\n'.join(item['text'] for item in items) for c,items in bands.items()}
     short_labels,legend,port_labels=compact_route_display(groups,audit['rows'],net.cables,overlaps,nodes=net.nodes)
+    junctions=overlap_junctions(net,audit['rows'],by_slot,overlaps)
     summary=f'실제 접속 {len(groups)}구간 · 미접속 함체 {len(boundaries)}곳 · 겹침 케이블 {len(overlaps)}개(진분홍)'
-    return dict(groups=groups,by_slot=by_slot,bands=dict(bands),colors=colors,labels=labels,short_labels=short_labels,legend=legend,port_labels=port_labels,label_colors=label_colors,
+    if junctions:summary+=f' · 코어 이어짐 안내 {len(junctions)}곳'
+    return dict(junctions=junctions,groups=groups,by_slot=by_slot,bands=dict(bands),colors=colors,labels=labels,short_labels=short_labels,legend=legend,port_labels=port_labels,label_colors=label_colors,
                 boundaries=boundaries,summary=summary,seed_slots=tuple(sorted(seeds)),overlaps=frozenset(overlaps))
