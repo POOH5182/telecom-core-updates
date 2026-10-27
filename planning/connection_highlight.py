@@ -26,16 +26,21 @@ ROUTE_SIGNAL_COLORS={'on':'#15803d','off':'#475569','unknown':'#b45309','excepti
 
 
 def route_signal_state(rows,slots):
-    """Saved signal of one traced segment: ON, OFF, 미입력 (blank/확인필요) or mixed. Read-only."""
+    """Saved signal of one traced segment: ON, OFF, 미입력 (blank/확인필요) or mixed. Read-only.
+
+    미입력 is neutral: ON 1 + 미입력 7 is ON. Only different entered signals (ON and OFF) are mixed.
+    """
     counts=defaultdict(int)
     for slot in slots:
         row=rows.get(slot)
         if row is None:continue
         code=core_signal_code(dict(row).get('signal'))
         counts[code if code in ROUTE_SIGNAL_TEXT else 'unknown']+=1
-    if not counts:counts['unknown']=1
-    if len(counts)==1:
-        code=next(iter(counts));return code,ROUTE_SIGNAL_TEXT[code]
+    known=[c for c in counts if c!='unknown']
+    if not known:return 'unknown',ROUTE_SIGNAL_TEXT['unknown']
+    if len(known)==1:
+        code=known[0];blank=counts.get('unknown')
+        return code,ROUTE_SIGNAL_TEXT[code]+(f' · 미입력 {blank}' if blank else '')
     order=('on','off','unknown','exception','error')
     return 'mixed','신호 섞임: '+' · '.join(f'{ROUTE_SIGNAL_SHORT[c]} {counts[c]}' for c in order if counts.get(c))
 

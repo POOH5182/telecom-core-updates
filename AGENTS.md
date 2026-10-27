@@ -1,5 +1,10 @@
 # Telecom Core updater project
 
+- V165 (user: ON 1 + 미입력 7 must read as ON, not 섞임): route_signal_state
+  treats unknown (blank/확인필요) as neutral. One entered kind → that state plus
+  " · 미입력 N"; 섞임 only when two entered kinds differ (e.g. ON and OFF).
+  Run check_route_legend.py.
+
 - V164 (user: mark cables I have fully checked with my own border colour,
   gray/red/blue, togglable in 보기설정): cables.extra_json checkMark in
   CABLE_CHECK_MARKS (gray/red/blue); cable_check_mark() reads it,
