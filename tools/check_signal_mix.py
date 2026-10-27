@@ -83,6 +83,35 @@ class SignalMix(unittest.TestCase):
                 with self.assertRaises(ValueError):s.set_empty_core_signal((self.c[0],1),'off')
                 s.undo();self.assertEqual(dict(s.core(*slot)),before);self.s.close()
 
+    def test_v168_node_summary_shows_one_signal_per_core(self):
+        s=self.open(False,('on','unknown','unknown'))
+        label=lambda:wf.core_signal_summary_label(s,[s.core(self.c[1],1)])
+        self.assertEqual(label(),'ON')  # ON + 확인필요 elsewhere -> ON
+        with s.action('t'):s.conn.execute("UPDATE cores SET signal='off' WHERE core_id='REAL-1'")
+        self.assertEqual(label(),'OFF')
+        with s.action('t'):s.conn.execute("UPDATE cores SET signal='' WHERE core_id='REAL-1'")
+        self.assertEqual(label(),'확인필요')
+        with s.action('t'):s.conn.execute("UPDATE cores SET signal='on' WHERE cable_id=? AND core_index=1",(self.c[0],));s.conn.execute("UPDATE cores SET signal='off' WHERE cable_id=? AND core_index=1",(self.c[2],))
+        self.assertEqual(label(),'섞임 (ON / OFF)')
+        # An empty number uses only its own signal.
+        self.assertEqual(wf.core_signal_summary_label(s,[s.core(self.c[0],5)]),'확인필요')
+        rows=code['node_summary_rows'](s,self.n[1],code['NodeSummaryDialog']._choices(type('V',(),dict(store=s,node_id=self.n[1]))()))
+        row=next(r for r in rows if r['core']['core_id']=='REAL-1');self.assertEqual(row['values'][-1],'섞임 (ON / OFF)')
+        self.assertNotEqual(row['tag'],'core_issue')
+
+    def test_v168_signal_on_unconnected_core_is_yellow(self):
+        s=self.open(False,('on','unknown','unknown'))
+        choices=lambda nid:code['NodeSummaryDialog']._choices(type('V',(),dict(store=s,node_id=nid))())
+        with s.action('t'):s.conn.execute("UPDATE cores SET core_id='LOOSE-9',detail='끊긴 코어',signal='on' WHERE cable_id=? AND core_index=3",(self.c[0],))
+        with s.action('t'):s.conn.execute("UPDATE cores SET core_id='LOOSE-9',detail='끊긴 코어',signal='' WHERE cable_id=? AND core_index=3",(self.c[1],))
+        rows=code['node_summary_rows'](s,self.n[1],choices(self.n[1]))
+        loose=[r for r in rows if r['core']['core_id']=='LOOSE-9']
+        self.assertTrue(loose and all(r['values'][-1]=='ON' for r in loose),[(r['values'],r['tag']) for r in loose])
+        self.assertTrue(any(r['tag']=='core_issue' for r in loose),[(r['values'],r['tag']) for r in loose])
+        # The connected ON core stays a normal row.
+        real=next(r for r in rows if r['core']['core_id']=='REAL-1');self.assertNotEqual(real['tag'],'core_issue')
+        self.assertEqual(real['values'][-1],'ON')
+
 
 def ui_check():
     if sys.platform!='win32' and not os.environ.get('TELECOM_CHECK_UI'):return

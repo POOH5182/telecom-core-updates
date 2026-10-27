@@ -273,3 +273,19 @@ def signal_mix_warning(store,slots,signal):
     lines=[f'{ROUTE_SIGNAL_SHORT[c]}: '+', '.join(t[:3])+(f' 외 {len(t)-3}곳' if len(t)>3 else '') for c,t in others.items()]
     return ('연결된 다른 구간의 신호가 다릅니다.\n'+'\n'.join(lines)+
             f'\n\n{ROUTE_SIGNAL_SHORT[code]}(으)로 바꾸면 이 경로가 「신호 섞임」이 됩니다. 그래도 바꿀까요?')
+
+
+def core_signal_summary_label(store,rows):
+    """V168: one signal for a core in the 함체 코어내역 table, read over every
+    saved position of its ID: only ON → ON, only OFF → OFF, nothing entered →
+    확인필요, different entered signals → 섞임 (ON / OFF). Read-only."""
+    overview=core_id_overview(store);codes=set()
+    for row in rows:
+        row=dict(row or {});cid=str(row.get('core_id') or '').strip()
+        if cid and cid in overview:codes|={code for code,count in overview[cid]['counts'].items() if count}
+        else:codes.add(core_signal_code(row.get('signal')))
+    order=('on','off','exception','error')
+    known=sorted(codes-{'unknown'},key=lambda c:(order.index(c) if c in order else len(order),c))
+    if not known:return CORE_SIGNAL_NAMES['unknown']
+    if len(known)==1:return CORE_SIGNAL_NAMES.get(known[0],known[0])
+    return '섞임 ('+' / '.join(CORE_SIGNAL_NAMES.get(c,c) for c in known)+')'

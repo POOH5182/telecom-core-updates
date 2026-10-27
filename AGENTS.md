@@ -1,5 +1,12 @@
 # Telecom Core updater project
 
+- V168 (user: 함체 코어내역 signal column = one value per core; ON but not
+  connected = yellow row): node_summary_rows uses core_signal_summary_label
+  (connection_highlight.py) over core_id_overview of every ID in the row
+  (empty numbers use their own signal): ON / OFF / 확인필요 / 섞임 (ON / OFF).
+  Rows with summary ON and a 배정필요 state get tag core_issue (#fff176, same
+  as V167 cable window). Run check_signal_mix.py and check_node_summary.py.
+
 - V167 (user: a core that is both 미완료 and 오류 must count once, as 오류;
   let me mark partly-drawn cores as 예외 with signal ON kept; yellow rows in
   the cable window for 오류/미완료): field mode skips comp['error'] paths in
