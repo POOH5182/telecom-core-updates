@@ -39,10 +39,31 @@ def route_signal_state(rows,slots):
     known=[c for c in counts if c!='unknown']
     if not known:return 'unknown',ROUTE_SIGNAL_TEXT['unknown']
     if len(known)==1:
-        code=known[0];blank=counts.get('unknown')
-        return code,ROUTE_SIGNAL_TEXT[code]+(f' · 미입력 {blank}' if blank else '')
-    order=('on','off','unknown','exception','error')
+        return known[0],ROUTE_SIGNAL_TEXT[known[0]]
+    # V166: the 미입력 count is not shown (user request); only entered signals are counted.
+    order=('on','off','exception','error')
     return 'mixed','신호 섞임: '+' · '.join(f'{ROUTE_SIGNAL_SHORT[c]} {counts[c]}' for c in order if counts.get(c))
+
+
+def route_cable_signals(rows,slots,cables):
+    """Per-cable signal code of one traced segment (cables only, ports stay in the legend)."""
+    found=defaultdict(set)
+    for slot in slots:
+        if slot[0] not in cables:continue
+        code=core_signal_code(dict(rows.get(slot) or {}).get('signal'))
+        found[slot[0]].add(code if code in ROUTE_SIGNAL_TEXT else 'unknown')
+    return {cable:next(iter(codes)) for cable,codes in found.items() if len(codes)==1}
+
+
+ROUTE_SIGNAL_FILLS={'on':'#dcfce7','off':'#e2e8f0','unknown':'#fef3c7','exception':'#f3e8ff','error':'#fee2e2'}
+
+
+def route_cable_signal_fills(model):
+    """Label background per cable on a 섞임 path; one signal per cable only."""
+    marks=defaultdict(set)
+    for row in (model or {}).get('legend') or ():
+        for cable,code in (row.get('cable_signals') or {}).items():marks[cable].add(code)
+    return {cable:ROUTE_SIGNAL_FILLS[next(iter(codes))] for cable,codes in marks.items() if len(codes)==1}
 
 
 def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLOR,nodes=None):
@@ -67,8 +88,15 @@ def compact_route_display(groups,rows,cables,overlaps,overlap_color=OVERLAP_COLO
         signal,signal_text=route_signal_state(rows,group['slots'])
         legend.append(dict(kind='segment',number=group['number'],color=group['color'],ids=tuple(ids),name_text=' / '.join(names),
             core_text=' / '.join(ids) or 'ID 없음',cable_text=', '.join(dict.fromkeys(parts)),
-            fault=' · '.join(group.get('faults') or ()),signal=signal,signal_text=signal_text,signal_color=ROUTE_SIGNAL_COLORS[signal]))
+            fault=' · '.join(group.get('faults') or ()),signal=signal,signal_text=signal_text,signal_color=ROUTE_SIGNAL_COLORS[signal],
+            cable_signals=route_cable_signals(rows,group['slots'],cables) if signal=='mixed' else {}))
     short={cable:'·'.join(str(n) for n in sorted(set(values)))+'번' for cable,values in numbers.items()}
+    # V166: on a 섞임 path every cable says which signal it carries (1번 ON / 1번 OFF).
+    marks=defaultdict(set)
+    for row in legend:
+        for cable,code in row.get('cable_signals',{}).items():marks[cable].add(code)
+    for cable,codes in marks.items():
+        if cable in short and len(codes)==1 and codes!={'unknown'}:short[cable]+=' '+ROUTE_SIGNAL_SHORT[next(iter(codes))]
     shared=sorted(overlaps,key=cable_name)
     if shared:legend.append(dict(kind='overlap',number=0,color=overlap_color,ids=(),core_text='겹침',name_text='같은 케이블에 여러 코어',
         cable_text='같은 케이블에 여러 코어: '+', '.join(cable_name(c) for c in shared),fault=''))
@@ -195,3 +223,53 @@ def core_connection_highlight(store,slots):
     if junctions:summary+=f' · 코어 이어짐 안내 {len(junctions)}곳'
     return dict(junctions=junctions,groups=groups,by_slot=by_slot,bands=dict(bands),colors=colors,labels=labels,short_labels=short_labels,legend=legend,port_labels=port_labels,label_colors=label_colors,
                 boundaries=boundaries,summary=summary,seed_slots=tuple(sorted(seeds)),overlaps=frozenset(overlaps))
+
+
+def signal_mixed_cores(store):
+    """V166: core IDs whose entered signals differ (e.g. ON and OFF). 미입력 is neutral. Read-only."""
+    groups={}
+    for table,owner,index in (('cores','cable_id','core_index'),('ports',"'PORT:'||node_id",'port_index')):
+        for row in store.conn.execute(f"SELECT {owner} AS owner,{index} AS idx,core_id,detail,signal FROM {table} WHERE TRIM(COALESCE(core_id,''))<>'' ORDER BY core_id,owner,idx"):
+            cid=str(row['core_id']).strip();group=groups.setdefault(cid,dict(counts=defaultdict(int),names=[],slots=[]))
+            code=core_signal_code(row['signal']);code=code if code in ROUTE_SIGNAL_TEXT else 'unknown'
+            group['counts'][code]+=1;group['slots'].append(((row['owner'],int(row['idx'])),code))
+            name=str(row['detail'] or '').strip()
+            if name and name not in group['names']:group['names'].append(name)
+    result=[]
+    order=('on','off','exception','error')
+    for cid in sorted(groups):
+        group=groups[cid];counts=group['counts']
+        if len([c for c in counts if c!='unknown'])<2:continue
+        result.append(dict(core_id=cid,detail=' / '.join(group['names']),counts=dict(counts),slots=group['slots'],
+                           text='신호 섞임: '+' · '.join(f'{ROUTE_SIGNAL_SHORT[c]} {counts[c]}' for c in order if counts.get(c))))
+    return result
+
+
+def signal_mix_warning(store,slots,signal):
+    """V166: warning text when giving `signal` to these numbers leaves their
+    connected path with different entered signals; '' when it stays one signal.
+
+    Numbers that follow the edit (same ID when the drawing changes signals by
+    ID, connected temporary cores) are not counted. Read-only.
+    """
+    code=core_signal_code(signal)
+    if code not in ROUTE_SIGNAL_TEXT or code=='unknown':return ''
+    changed={tuple(s) for s in slots};by_id=not field_slot_mode(store) and completion_kind(store)!='after'
+    ids={str((store.core(*s) or {}).get('core_id') or '').strip() for s in changed}-{''}
+    others=defaultdict(list)
+    for slot in sorted(changed):
+        for other in sorted(store.component(slot)):
+            other=tuple(other)
+            if other in changed:continue
+            row=store.core(*other)
+            if not row:continue
+            cid=str(row['core_id'] or '').strip()
+            if cid and cid in ids and (by_id or cid.startswith('임시-')):continue
+            found=core_signal_code(row['signal'])
+            if found==code or found=='unknown' or found not in ROUTE_SIGNAL_TEXT:continue
+            title=store._slot_title(*other)
+            if title not in others[found]:others[found].append(title)
+    if not others:return ''
+    lines=[f'{ROUTE_SIGNAL_SHORT[c]}: '+', '.join(t[:3])+(f' 외 {len(t)-3}곳' if len(t)>3 else '') for c,t in others.items()]
+    return ('연결된 다른 구간의 신호가 다릅니다.\n'+'\n'.join(lines)+
+            f'\n\n{ROUTE_SIGNAL_SHORT[code]}(으)로 바꾸면 이 경로가 「신호 섞임」이 됩니다. 그래도 바꿀까요?')

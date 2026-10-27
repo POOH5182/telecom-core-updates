@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V166 (user: help with 신호 섞임 and keep OFF on empty numbers):
+  route legend rows of a mixed segment carry cable_signals; short labels get
+  " ON"/" OFF" (not 미입력) and route_cable_signal_fills colors the canvas
+  label box. CoreCheckDialog category 신호섞임 uses signal_mixed_cores (IDs
+  with 2+ entered kinds; 미입력 neutral). signal_mix_warning + app
+  confirm_signal_mix ask (askyesno) before cable-editor single/batch and
+  node right-click signal edits that would mix a connected path (same ID
+  follows in plain non-after drawings, temp IDs follow). Store
+  set_empty_core_signal writes only the signal of an empty number (no temp
+  ID, no splice deletion); set_cores_signal uses it; lists show it via
+  core_row_signal_text/core_signal_tag. 미입력 counts are never shown in
+  signal text. Run check_signal_mix.py and check_signal_batch.py.
+
 - V165 (user: ON 1 + 미입력 7 must read as ON, not 섞임): route_signal_state
   treats unknown (blank/확인필요) as neutral. One entered kind → that state plus
   " · 미입력 N"; 섞임 only when two entered kinds differ (e.g. ON and OFF).

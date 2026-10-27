@@ -21,15 +21,19 @@ class SignalBatch(unittest.TestCase):
         self.s,n,c=fixture(self.home/('f.sqlite3' if field else 'p.sqlite3'),field);s=self.s
         self.seed(s,c[0]);empty=s.core(c[0],5);groups=len(s.history_rows())
         changed,skipped,errors=s.set_cores_signal(c[0],[1,2,3,4,5],'off')
-        self.assertEqual((changed,errors),([1,2,3,4],[]));self.assertIn(5,skipped)
+        splices=s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0]
+        self.assertEqual((changed,errors),([1,2,3,4,5],[]))
         self.assertEqual([s.core(c[0],i)['signal'] for i in (1,2,3,4)],['off']*4)
-        # Empty number stays empty and unconnected.
-        self.assertEqual(tuple(s.core(c[0],5)),tuple(empty))
+        # V166: the empty number keeps OFF but stays empty (no ID) and nothing is disconnected.
+        after=dict(s.core(c[0],5));self.assertEqual(after['signal'],'off')
+        self.assertEqual({k:v for k,v in after.items() if k!='signal'},{k:v for k,v in dict(empty).items() if k!='signal'})
+        self.assertEqual(s.conn.execute('SELECT COUNT(*) FROM splices').fetchone()[0],splices)
         # V161: the temporary path keeps following.
         self.assertEqual([s.core(x,1)['signal'] for x in c],['off']*3)
         self.assertEqual(len(s.history_rows()),groups+1)
         s.undo()
         self.assertEqual([s.core(c[0],i)['signal'] for i in (2,3,4)],['unknown']*3)
+        self.assertEqual(dict(s.core(c[0],5)),dict(empty))
         self.assertEqual([s.core(x,1)['signal'] for x in c],['on','unknown','off'])
 
     def test_field_slot_drawing(self):self.check_mode(True)

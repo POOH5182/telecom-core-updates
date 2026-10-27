@@ -84,10 +84,11 @@ class RouteLegendTests(unittest.TestCase):
         rows={('a',1):{'signal':'on'},('b',1):{'signal':'on'},('c',1):{'signal':''},('PORT:x',1):{'signal':'확인필요'}}
         self.assertEqual(wf.route_signal_state(rows,[('a',1),('b',1)]),('on','신호 있음 (ON)'))
         # V165: 미입력 is neutral, so ON + 미입력 is ON; only ON with OFF is mixed.
-        self.assertEqual(wf.route_signal_state(rows,list(rows)),('on','신호 있음 (ON) · 미입력 2'))
+        # V166: the 미입력 count is not shown.
+        self.assertEqual(wf.route_signal_state(rows,list(rows)),('on','신호 있음 (ON)'))
         rows[('d',1)]={'signal':'off'}
-        self.assertEqual(wf.route_signal_state(rows,list(rows)),('mixed','신호 섞임: ON 2 · OFF 1 · 미입력 2'))
-        self.assertEqual(wf.route_signal_state(rows,[('c',1),('d',1)]),('off','신호 없음 (OFF) · 미입력 1'))
+        self.assertEqual(wf.route_signal_state(rows,list(rows)),('mixed','신호 섞임: ON 2 · OFF 1'))
+        self.assertEqual(wf.route_signal_state(rows,[('c',1),('d',1)]),('off','신호 없음 (OFF)'))
         self.assertEqual(wf.route_signal_state(rows,[('c',1),('PORT:x',1)]),('unknown','신호 미입력'))
         self.assertEqual(wf.route_signal_state({},[('z',1)])[1],'신호 미입력')
 
