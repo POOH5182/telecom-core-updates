@@ -1,5 +1,20 @@
 # Telecom Core updater project
 
+- V167 (user: a core that is both 미완료 and 오류 must count once, as 오류;
+  let me mark partly-drawn cores as 예외 with signal ON kept; yellow rows in
+  the cable window for 오류/미완료): field mode skips comp['error'] paths in
+  incomplete entries, cable incomplete counts and field_incomplete_entries;
+  legacy mode skips slots of marked/after same-ID/invalid errors.
+  Store.error_core_slots (cached), set_cores_exception (one "예외코어 지정
+  변경" undo group; adds/removes the 예외코어 label per core ID, keeps other
+  labels, memo, signal, splices), core_id_slots. ConnectionListDialog button
+  「예외로 빼기 (신호 유지)」 (mark_exception, askyesno), CoreCheckDialog
+  「예외로 빼기」/「예외 해제」. core_analysis "exception" now reflects the
+  saved 예외코어 status so the 예외코어 category lists them. CableDialog
+  core_tag → 'core_issue' (#fff176 background) for 오류/미완료, never for
+  예외; status_annotation shows [오류코어] instead of [미완료코어] for error
+  slots. Run check_core_exception_lists.py.
+
 - V166 (user: help with 신호 섞임 and keep OFF on empty numbers):
   route legend rows of a mixed segment carry cable_signals; short labels get
   " ON"/" OFF" (not 미입력) and route_cable_signal_fills colors the canvas

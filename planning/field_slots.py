@@ -471,12 +471,13 @@ def field_slot_warning_summary(store):
     for comp in audit['components']:
         for slot in comp['slots']:
             if slot in audit['exception_complete_slots']:continue
-            if comp['required'] and not comp['complete'] and not core_connection_exempt(audit['rows'].get(slot)):incomplete.append(entry(slot,comp))
+            # V167: a path that is both incomplete and an error counts once, as an error.
+            if comp['required'] and not comp['complete'] and not comp['error'] and not core_connection_exempt(audit['rows'].get(slot)):incomplete.append(entry(slot,comp))
             if comp['error']:
                 errors.append(entry(slot,comp));marked.append(entry(slot,comp))
     for cid in audit['net'].cables:
         slots=[(s,c) for s,c in audit['by_cable'].get(cid,()) if s not in audit['exception_complete_slots']]
-        missing={s[1] for s,c in slots if c['required'] and not c['complete'] and not core_connection_exempt(audit['rows'].get(s))}
+        missing={s[1] for s,c in slots if c['required'] and not c['complete'] and not c['error'] and not core_connection_exempt(audit['rows'].get(s))}
         free={s[1] for s,c in slots if c['required'] and not core_connection_exempt(audit['rows'].get(s)) and any(pos==s for _,pos in c['free'])}
         temp={s[1] for s,c in slots if str(audit['rows'].get(s,{}).get('core_id') or '').startswith('임시-')}
         bad=[(s,c) for s,c in slots if c['error']]

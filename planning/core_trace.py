@@ -170,7 +170,8 @@ def field_incomplete_entries(store):
     """One compact row per actual incomplete component, with full slot details."""
     audit=field_slot_audit(store);net=audit['net'];result=[]
     for comp in audit['components']:
-        if not comp['required'] or comp['complete']:continue
+        # V167: error paths are listed only in 오류코어확인.
+        if not comp['required'] or comp['complete'] or comp['error']:continue
         members=[]
         for slot in comp['slots']:
             if slot in audit['exception_complete_slots'] or core_connection_exempt(audit['rows'].get(slot)):continue

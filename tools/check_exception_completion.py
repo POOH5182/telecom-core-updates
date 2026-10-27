@@ -23,7 +23,7 @@ class ExceptionTests(unittest.TestCase):
         self.assertEqual((report['total'],report['done'],report['excluded']),(1,1,0))
         self.assertEqual(self.s.incomplete_core_entries(),[])
         self.assertFalse(any(self.s.node_assignment_needs(n) for n in self.nodes))
-        self.assertFalse(any(r['exception'] or r['incomplete'] or r['need'] for r in self.s.core_analysis()))
+        self.assertFalse(any(r['incomplete'] or r['need'] for r in self.s.core_analysis()))
         self.assertTrue(all(r['complete'] for r in self.s.core_analysis()))
         self.assertTrue(all(v['incomplete_total']==v['unassigned']==v['error']==0 for v in self.s.cable_core_warning_summary().values()))
         self.assertEqual(wf.core_status_text(self.s,self.s.core(*self.slot(0))),'[완료]')
@@ -61,10 +61,13 @@ class ExceptionTests(unittest.TestCase):
         report=wf.completion_report(self.s);self.assertTrue(report['by_id']['CORE-A']['complete']);self.assertFalse(report['by_id']['OTHER']['complete'])
         comp=wf.field_slot_audit(self.s)['by_slot'][self.slot(0)];self.assertFalse(comp['complete']);self.assertIn('identity',comp['causes'])
         self.assertTrue(self.splices())
-        entries=self.s.incomplete_core_entries();self.assertTrue(entries)
-        self.assertTrue(all(m['core_id']!='CORE-A' for e in entries for m in e.get('members',[e])))
+        # V167: an incomplete path that is also an error is listed once, as an error.
+        self.assertEqual(self.s.incomplete_core_entries(),[])
+        entries=self.s.error_core_summary()['entries'];self.assertTrue(entries)
+        self.assertTrue(all(e['core_id']!='CORE-A' for e in entries))
         self.assertEqual(self.s.cable_core_warning_summary()[self.cables[0]]['incomplete_total'],0)
-        self.assertGreater(self.s.cable_core_warning_summary()[self.cables[1]]['incomplete_total'],0)
+        self.assertEqual(self.s.cable_core_warning_summary()[self.cables[1]]['incomplete_total'],0)
+        self.assertGreater(self.s.cable_core_warning_summary()[self.cables[1]]['error'],0)
 
 
 def windows_ui():
@@ -80,7 +83,7 @@ def windows_ui():
                 case.mark();app.refresh();app.update()
                 assert '[완료]' in str(cable.tree.item('1','values'))
                 assert any('[완료]' in str(summary.tree.item(i,'values')) for i in summary.tree.get_children())
-                for kind,expected in [('예외코어',0),('미완료코어',0),('완료코어',1)]:
+                for kind,expected in [('예외코어',1),('미완료코어',0),('완료코어',1)]:
                     checks.kind.set(kind);checks.reload();assert len(checks.rows)==expected,(kind,checks.rows)
                 case.s.undo();app.refresh();app.update();assert '[완료]' not in str(cable.tree.item('1','values'))
                 checks.kind.set('미완료코어');checks.reload();assert checks.rows
