@@ -1,5 +1,16 @@
 # Telecom Core updater project
 
+- V164 (user: mark cables I have fully checked with my own border colour,
+  gray/red/blue, togglable in 보기설정): cables.extra_json checkMark in
+  CABLE_CHECK_MARKS (gray/red/blue); cable_check_mark() reads it,
+  Store.set_cables_check_mark (one "케이블 확인 표시" undo group, '' clears).
+  Cable right-click menu cascade 「확인 표시 (테두리색)」. Canvas rim tag
+  cable_check_mark is drawn under (wider than) the yellow cable_missing_info
+  rim; SVG too. Display option cable_check_mark (default on). The enclosure
+  lock UPDATE trigger on cables compares extra_json with $.checkMark removed,
+  so marking works on locked cables while LOT etc. stay locked. Run
+  check_cable_check_mark.py (unit + Windows UI).
+
 - V163 (user: changing core signals one by one in the cable editor is slow):
   the 코어 상태·신호 tree is selectmode=extended. remember_status_cell skips its
   own selection_set on Shift/Ctrl+Button-1 so Treeview range/toggle works;

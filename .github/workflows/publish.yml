@@ -73,6 +73,8 @@ jobs:
         run: python tools/check_temporary_route_rename.py
       - name: 케이블 코어 Shift·Ctrl 다중 선택 신호 일괄 변경·한번에 실행취소 검증
         run: python tools/check_signal_batch.py
+      - name: 케이블 확인 표시 테두리색·우클릭 메뉴·보기설정 켜기끄기·잠금 허용·실행취소 검증
+        run: python tools/check_cable_check_mark.py
       - name: 함체 통합 연결도·초기 전체 보기·박스 이동·구간 점멸·실시간 갱신 검증
         run: python tools/check_core_layout_map.py --emit-screenshots
       - name: 새 창 케이블 우측 신호·연결 상태·선택 갱신·단계 격리 검증
