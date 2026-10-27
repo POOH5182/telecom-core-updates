@@ -75,12 +75,16 @@ def windows_ui():
                 cable.reload();app.update();assert 'core_issue' in cable.tree.item('1','tags')
                 assert not errors,errors;assert not error.called,error.call_args
             finally:app.on_close()
-        print('PASS Windows yellow cable rows, list 예외로 빼기 and 예외 해제')
+        print('PASS Windows yellow cable rows, list mark-exception and unmark')
     finally:case.tearDown()
 
 
 if __name__=='__main__':
     result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(CoreExceptionListTests))
-    if not result.wasSuccessful():raise SystemExit(1)
-    windows_ui()
+    if not result.wasSuccessful():
+        for _,text in result.failures+result.errors:print('::error::'+ascii(text[-1500:]))
+        raise SystemExit(1)
+    try:windows_ui()
+    except Exception:
+        import traceback;print('::error::'+ascii(traceback.format_exc()[-1500:]));raise SystemExit(1)
     print('PASS core exception lists')
