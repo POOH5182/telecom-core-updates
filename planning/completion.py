@@ -23,6 +23,14 @@ def after_resolved_off_ids(rows):
     return {cid for cid,kinds in signals.items() if 'off' in kinds and kinds<={'off','unknown'}}
 
 
+def temporary_signal_unconfirmed(row):
+    """임시 ID whose signal is not ON may stop at any enclosure (not NOT OK)."""
+    if not row:return False
+    row=dict(row)
+    return (str(row.get('core_id') or '').strip().startswith('임시-')
+            and str(row.get('signal') or '').strip().lower()!='on' and not is_exception(row))
+
+
 def core_connection_exempt(row):
     """OFF and non-ON broken slots require no allocation or completion work."""
     if not row:return ''

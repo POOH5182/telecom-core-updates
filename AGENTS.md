@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V178 (user: a 확인필요-signal 임시코어 passes one enclosure and stops; other
+  enclosures must not count its free end as NOT OK; hide NOT OK 0 badges):
+  completion.temporary_signal_unconfirmed(row) = 임시- ID, signal not ON, not
+  예외. FieldSurvey.report skips such free slots in its 미조사 pending list and
+  field_slot_enrich never re-adds them as missing, so field_local_summary
+  (badge), field_local_slots (cable panes) and the survey window agree. Real
+  IDs and ON 임시 cores still report NOT OK. node_badge_rows shows NOT OK only
+  when not_ok>0. Run check_temporary_not_ok.py.
+
 - V177 (user: already-drawn same-ID pieces shown in several colors — are
   they bundled automatically? No → whole-drawing join): 코어·검사 도구
   「같은 코어ID 한꺼번에 잇기」 → open_same_id_join → SameIdJoinDialog

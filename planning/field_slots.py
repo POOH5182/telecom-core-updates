@@ -429,7 +429,7 @@ def field_slot_enrich(engine,rows):
     audit=field_slot_audit(engine.store)
     represented={s for r in rows for s in r['slots']}
     for slot,value in engine.slots.items():
-        if slot not in represented and field_slot_required(value):
+        if slot not in represented and field_slot_required(value) and not temporary_signal_unconfirmed(value):
             rows.append(dict(key='missing:'+field_pair_key((slot,)),row='—',source='미조사',slots=(slot,),errors=[],status='미확인',
                 observed='현장 연결 필요',current=engine.label((slot,)),gis='—',matching=False,addition=False,comparison='미조사',
                 core_ids=[value['core_id']] if value.get('core_id') else [],reason='코어ID·코어명·신호가 있는 필수 구간'))

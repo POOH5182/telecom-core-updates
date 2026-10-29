@@ -224,7 +224,7 @@ class OverlayTests(unittest.TestCase):
         self.apply('A\tB\n2\t2');warning=self.s.node_warning_summary()[self.h]
         options=dict(code['DISPLAY_DEFAULTS'],badges=False)
         badges=code['node_badge_rows'](code['visible_node_warning'](warning,options))
-        self.assertEqual([b[0] for b in badges],['OK 2','NOT OK 0'])
+        self.assertEqual([b[0] for b in badges],['OK 2'])
         options['field_checks']=False
         self.assertFalse(code['node_badge_rows'](code['visible_node_warning'](warning,options)))
         path=self.home/'display_options.json';code['save_display_options'](path,options)
