@@ -3,8 +3,11 @@
 AFTER_AUTO_POLICY='after_same_id_v102'
 
 
-def after_auto_groups(net,node_ids=None,store=None):
-    groups=defaultdict(lambda:defaultdict(list))
+def after_auto_groups(net,node_ids=None,store=None,temporary_ids=()):
+    """Same-ID join candidates per facility. 임시- IDs only when named in
+    temporary_ids (V174: a temporary core the user is assigning right now);
+    cut/removed cables never offer a temporary end."""
+    groups=defaultdict(lambda:defaultdict(list));temporary_ids=set(temporary_ids or ())
     exclusions={}
     off_ids=after_resolved_off_ids(net.slots.values())
     def marked(cable):
@@ -17,8 +20,9 @@ def after_auto_groups(net,node_ids=None,store=None):
             if not marked(net.cables.get(peer[0])) and str(net.slots.get(peer,{}).get('core_id') or '').strip()==cid:replacements.add((nid,cid))
     for slot,row in net.slots.items():
         cid=str(row.get('core_id') or '').strip()
-        if not cid or cid.startswith('임시-'):continue
+        if not cid or (cid.startswith('임시-') and cid not in temporary_ids):continue
         cable=net.cables.get(slot[0])
+        if cid.startswith('임시-') and marked(cable):continue
         if cable and str(cable.get('spec') or '').strip()=='드랍':continue
         for nid in ((cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)):
             if net.nodes.get(nid,{}).get('type') not in ('hamche','rn'):continue
@@ -81,10 +85,10 @@ def after_auto_exclusions(store,nid,node):
     return excluded-store._after_deletion_exclusions.get(nid,set())
 
 
-def after_auto_pairs(store,node_ids=None,net=None,touched_slots=None,blocked=None):
+def after_auto_pairs(store,node_ids=None,net=None,touched_slots=None,blocked=None,temporary_ids=()):
     if completion_kind(store)!='after' or (locked(store) and blocked is None):return []
     if net is None:net=Network(store.conn,resolve_rn_ports=True)
-    groups=after_auto_groups(net,node_ids,store=store);occupied=defaultdict(list);existing_pairs=set()
+    groups=after_auto_groups(net,node_ids,store=store,temporary_ids=temporary_ids);occupied=defaultdict(list);existing_pairs=set()
     for sp in net.splices:
         pair=tuple(sorted((sp[f'cable{i}_id'],int(sp[f'core{i}_index'])) for i in (1,2)))
         existing_pairs.add((sp['node_id'],pair))
@@ -134,7 +138,9 @@ def after_auto_pairs(store,node_ids=None,net=None,touched_slots=None,blocked=Non
             if invalid:reject('기존 접속정보를 확인하세요: '+' / '.join(invalid));continue
             if any(any(n>1 for n in Counter(n for n,_ in net.links.get(s,())).values()) for s in component):reject('기존 경로에 중복·분기 접속이 있습니다.');continue
             ids={str(r.get('core_id') or '').strip() for r in rows}-{''}
-            if any(v!=cid and not v.startswith('임시-') for v in ids):reject('기존 접속 경로에 다른 코어ID가 있습니다: '+' / '.join(sorted(ids)));continue
+            real={v for v in ids if not v.startswith('임시-')}
+            # A temporary core may join one real-ID leg, never two different ones.
+            if (len(real)>1 if cid.startswith('임시-') else any(v!=cid for v in real)):reject('기존 접속 경로에 다른 코어ID가 있습니다: '+' / '.join(sorted(ids)));continue
             # Physical joining is independent of work marks and signal/state
             # classification. Preserve those values for their own diagnostics.
             result.append((nid,a,b))

@@ -257,14 +257,20 @@ class IncrementalCoreAllocator(ManualCoreAllocator):
             allowed,reason=self.availability(cable,index)
             if not allowed:raise ValueError(plan_number_label(self.net,(cable,index))+': '+reason)
             new[cable,index]=values
-        if not new:raise ValueError('배정할 케이블의 빈 번호 또는 RN 내부 포트를 선택하세요.')
+        temporary=self.core_id.startswith('임시-')
+        if not new and not temporary:raise ValueError('배정할 케이블의 빈 번호 또는 RN 내부 포트를 선택하세요.')
         net=Network(self.store.conn,resolve_rn_ports=True)
         changes=self.exclusion_changes(new)
         for change in changes:net.nodes[change['node_id']]=dict(net.nodes[change['node_id']],extra_json=change['after'])
         for slot,metadata in new.items():
             net.slots[slot]=dict(self.rows[slot],**dict(zip(PLAN_FIELDS,metadata)))
             net.by_id[self.core_id].add(slot)
-        added={allocation_pair(n,a,b) for n,a,b in after_auto_pairs(self.store,net=net,touched_slots=set(new))}
+        # V174: a temporary core assigned piece by piece is one core, so its
+        # free same-ID ends at a facility are joined too (also earlier pieces).
+        touched=set(new)|(set(net.by_id.get(self.core_id,())) if temporary else set())
+        added={allocation_pair(n,a,b) for n,a,b in after_auto_pairs(self.store,net=net,touched_slots=touched,
+                                                                   temporary_ids={self.core_id} if temporary else ())}
+        if not new and not added:raise ValueError('배정할 케이블의 빈 번호 또는 RN 내부 포트를 선택하세요.')
         p=dict(source=self.source,core_id=self.core_id,token=self.stamp,selected=chosen,
                route=dict(cables=[c for c,n in new],nodes=[],endpoints=[],source='케이블별 코어배정'),
                new=new,splices=self.pairs|added,added=added,removed=set(),exclusion_changes=changes)

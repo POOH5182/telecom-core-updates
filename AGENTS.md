@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V174 (user: 임시코어78 assigned via 도면에서 코어배정 still showed as
+  separate 구간 pieces with 연결 후보 boxes): after_auto_groups/
+  after_auto_pairs take temporary_ids; only named 임시- IDs become join
+  candidates (cut/removed cables never). IncrementalCoreAllocator.preview
+  passes its own 임시 ID and touches every slot of it, so free same-ID ends
+  at a facility join, including pieces saved earlier; a save with no new
+  number is allowed when it adds a join. A temporary join may meet at most
+  one real ID. Global after auto-join still ignores 임시 IDs. Run
+  check_temporary_allocation_join.py.
+
 - V173 (user: the popup after 「선택번호배정 저장」 should be a short
   저장하시겠습니까? 네/아니오; Enter or Space = 네): ManualAllocationReview
   (manual_allocation.py, used by the cable-window and map allocation apply)
