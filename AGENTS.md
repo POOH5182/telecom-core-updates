@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V172 (user: a 임시코어 path split by a rebuilt middle cable must show both
+  pieces, like equal real IDs): same_temporary_components (field_slots.py,
+  index cached in the audit as temp_by_id) adds every audit route carrying a
+  임시- ID found on the clicked routes. core_connection_highlight and
+  field_core_trace use it (real IDs then expand one level from all those
+  routes). Display only; no splice is added. Run
+  check_temporary_split_route.py and check_connection_highlight.py.
+
 - V171 (user: press a cable near an enclosure and drag that end onto another
   facility): App.click on a cable (select mode, no Ctrl/Shift) calls
   begin_cable_end_drag (nearest end to the press point); drag_cable_end draws

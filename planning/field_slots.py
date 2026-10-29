@@ -230,6 +230,25 @@ def field_slot_required(row):
     return bool((cid and not cid.startswith('임시-')) or str(row.get('detail') or '').strip() or row.get('signal')=='on')
 
 
+def same_temporary_components(audit,components):
+    """Other routes that carry the same 임시- ID as the given routes.
+
+    A cable rebuilt in the after drawing can split one 임시코어 path in two.
+    The pieces stay separate physical routes; this only finds them for display.
+    """
+    index=audit.get('temp_by_id')
+    if index is None:
+        index=defaultdict(dict)
+        for slot,comp in audit['by_slot'].items():
+            cid=str(audit['rows'].get(slot,{}).get('core_id') or '').strip()
+            if cid.startswith('임시-'):index[cid][comp['key']]=comp
+        audit['temp_by_id']=index
+    tokens={str(r.get('core_id') or '').strip() for c in components for r in c['records']}
+    found={}
+    for cid in sorted(t for t in tokens if t.startswith('임시-')):found.update(index.get(cid,{}))
+    return found
+
+
 def field_slot_audit(store):
     stamp=(store.data_revision(),store.conn.total_changes,getattr(store,'_view_generation',0))
     if getattr(store,'_field_slot_audit_stamp',None)==stamp:return store._field_slot_audit_value

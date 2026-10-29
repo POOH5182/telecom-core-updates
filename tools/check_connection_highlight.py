@@ -37,8 +37,11 @@ class HighlightTests(unittest.TestCase):
     def test_temporary_middle_shares_color_and_errors_keep_color(self):
         self.connect_all();self.set(1,1,'임시-중간')
         self.set(0,3,'임시-중간')
+        # V172: an unjoined number with the same 임시 ID is shown as its own piece.
+        model=self.model();self.assertEqual(len(model['groups']),2)
+        self.assertIn(self.slot(0,3),model['by_slot']);self.assertFalse(model['by_slot'][self.slot(0,3)]['selected'])
+        self.set(0,3,'')
         model=self.model();self.assertEqual(len(model['groups']),1);self.assertEqual(len(set(model['colors'].values())),1)
-        self.assertNotIn(self.slot(0,3),model['by_slot'])
         self.set(2,1,'OTHER-ID');model=self.model()
         self.assertEqual(len(set(model['colors'].values())),1);self.assertEqual(set(model['label_colors'].values()),{'#c62828'})
         self.assertIn('1 · OTHER-ID',model['labels'][self.cables[2]])

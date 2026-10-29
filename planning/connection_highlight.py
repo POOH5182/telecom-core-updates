@@ -142,9 +142,10 @@ def core_connection_highlight(store,slots):
     audit=field_slot_audit(store);net=audit['net'];seeds=set(map(tuple,slots))
     chosen={audit['by_slot'][s]['key']:audit['by_slot'][s] for s in seeds if s in audit['by_slot']}
     components=dict(chosen)
-    # Expand only real identities found on the selected physical components.
-    # Do not follow equal temporary tokens or recursively chase unrelated IDs.
-    identities={cid for c in chosen.values() for cid in c['real_ids']}
+    # Equal 임시 IDs split by a rebuilt cable are shown like equal real IDs.
+    components.update(same_temporary_components(audit,chosen.values()))
+    # Expand only real identities found on these components; never recurse.
+    identities={cid for c in components.values() for cid in c['real_ids']}
     for cid in identities:
         for c in audit['by_id'].get(cid,()):components[c['key']]=c
     groups=[];by_slot={};bands=defaultdict(list);free=defaultdict(list);label_colors={};cable_slots=defaultdict(set)

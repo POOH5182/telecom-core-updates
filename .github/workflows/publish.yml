@@ -71,6 +71,8 @@ jobs:
         run: python tools/check_field_route_identity.py --emit-screenshots
       - name: 연결된 임시코어 한쪽 ID·코어명 수정 시 경로 전체 반영 검증
         run: python tools/check_temporary_route_rename.py
+      - name: 같은 이름 임시코어 끊어진 구간 함께 경로 표시 검증
+        run: python tools/check_temporary_split_route.py
       - name: 케이블 코어 Shift·Ctrl 다중 선택 신호 일괄 변경·한번에 실행취소 검증
         run: python tools/check_signal_batch.py
       - name: 신호 섞임 케이블별 ON·OFF 표시·섞인 코어 목록·변경 전 경고·빈 코어 OFF 유지 검증

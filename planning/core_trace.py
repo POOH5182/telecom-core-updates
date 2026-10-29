@@ -52,6 +52,7 @@ def field_core_trace(store,core_id,context=None,slot=None):
     for start in starts:
         comp=audit['by_slot'].get(start)
         if comp:components[comp['key']]=comp
+    components.update(same_temporary_components(audit,list(components.values())))
     groups=[];rows=[];checks={};issues=[];mismatches=[];free=[];highlight=set()
     actual_ids=set();known_signals=set()
     real_query=query if query and not query.startswith('임시-') else ''
