@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V171 (user: press a cable near an enclosure and drag that end onto another
+  facility): App.click on a cable (select mode, no Ctrl/Shift) calls
+  begin_cable_end_drag (nearest end to the press point); drag_cable_end draws
+  an orange dashed canvas line tagged cable_end_drag after 8px; drop →
+  end_cable_end_drag → target node → finish_cable_end_move (same V170
+  confirm + Store.move_cable_end). Empty drop cancels; no movement = plain
+  click. set_mode clears the drag. Run check_cable_end_move.py.
+
 - V170 (user: re-attach a cable to another enclosure without losing its core
   내역): cable right-click cascade 「케이블 끝 옮기기 (코어내역 유지)」 (one entry
   per end, App._cable_end_menu) → App.start_cable_end_move sets

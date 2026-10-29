@@ -1,4 +1,4 @@
-"""V170: move one end of a cable to another facility while keeping its core IDs, details and signals."""
+"""V170/V171: move one end of a cable to another facility while keeping its core IDs, details and signals."""
 import os
 from pathlib import Path
 import sys
@@ -79,8 +79,31 @@ def windows_ui():
             assert '코어내역 유지' in app.status.get(),app.status.get()
             app.set_mode('select');assert app.cable_end_move is None
             app.undo();assert s.cable(cable)['n2id']==b
+            # V171: press near the MOVE B end, drag onto MOVE C, release.
+            app.view_scale=1.0;app.refresh();app.update()
+            def event(wx,wy,state=0):
+                class E:pass
+                ev=E();ev.x=int(wx-app.canvas.canvasx(0));ev.y=int(wy-app.canvas.canvasy(0));ev.state=state;return ev
+            def node_xy(nid):n=s.node(nid);return float(n['x']),float(n['y'])
+            ax,ay=node_xy(a);bx,by=node_xy(b);cx,cy=node_xy(c)
+            press=event(ax+(bx-ax)*0.8,ay+(by-ay)*0.8)
+            with patch.object(app,'target',return_value=('cable',cable)):app.click(press)
+            assert app.cable_end_drag['node']==b,app.cable_end_drag
+            app.drag(event(ax+(bx-ax)*0.8+40,ay+60));assert app.canvas.find_withtag('cable_end_drag')
+            with patch.object(code['messagebox'],'askyesno',return_value=True),patch.object(app,'target',return_value=('node',c)):app.drop(event(cx,cy))
+            app.update();assert s.cable(cable)['n2id']==c and s.core(cable,1)['detail']=='유지내역',s.cable(cable)['n2id']
+            assert not app.canvas.find_withtag('cable_end_drag') and 'cable_end_drag' not in app.__dict__
+            # Releasing on empty canvas cancels; a plain click (no movement) changes nothing.
+            press=event(ax+(cx-ax)*0.2,ay+(cy-ay)*0.2)
+            with patch.object(app,'target',return_value=('cable',cable)):app.click(press)
+            assert app.cable_end_drag['node']==a
+            app.drag(event(ax+(cx-ax)*0.2+50,ay+(cy-ay)*0.2+50))
+            with patch.object(app,'target',return_value=(None,None)):app.drop(event(ax+(cx-ax)*0.2+50,ay+(cy-ay)*0.2+50))
+            assert s.cable(cable)['n1id']==a and '취소' in app.status.get()
+            with patch.object(app,'target',return_value=('cable',cable)):app.click(press)
+            app.drop(press);assert s.cable(cable)['n1id']==a and s.cable(cable)['n2id']==c
             assert not errors,errors
-            print('PASS windows cable end move')
+            print('PASS windows cable end move (menu + drag)')
         finally:app.on_close()
 
 
