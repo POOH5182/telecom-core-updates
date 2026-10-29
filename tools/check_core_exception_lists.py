@@ -73,9 +73,22 @@ def windows_ui():
                 checks.tree.selection_set(checks.tree.get_children()[0]);checks.set_exception(False);app.update()
                 checks.kind.set('미완료코어');checks.reload();assert checks.rows
                 cable.reload();app.update();assert 'core_issue' in cable.tree.item('1','tags')
+                # V169: a click on any 코어확인/작업목록 row shows its path, also after the map was cleared.
+                case.set(1,2,'CORE-B','b','on');case.set(2,2,'CORE-B','b','off');case.s.set_cores_exception([case.slot(0)],True);app.refresh();app.update()
+                shown=0
+                for kind in checks.categories:
+                    checks.kind.set(kind);checks.reload();app.update()
+                    for iid in checks.tree.get_children()[:2]:
+                        if not checks.row_meta[iid][0] and not checks.row_meta[iid][1]:continue
+                        for _ in range(2):
+                            app.stop_highlight_blink(clear=True);app.update()
+                            checks.tree.selection_set(iid);checks.click_route();app.update()
+                            assert app.highlight_owner is checks and app.highlight_cables,(ascii(kind),iid)
+                        shown+=1
+                assert shown>=6,shown
                 assert not errors,errors;assert not error.called,error.call_args
             finally:app.on_close()
-        print('PASS Windows yellow cable rows, list mark-exception and unmark')
+        print('PASS Windows yellow cable rows, list mark-exception and unmark, worklist click shows path in every category')
     finally:case.tearDown()
 
 

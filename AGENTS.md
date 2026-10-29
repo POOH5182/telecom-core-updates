@@ -1,5 +1,12 @@
 # Telecom Core updater project
 
+- V169 (user: clicking any row in 코어확인/작업목록, e.g. 예외코어, must blink
+  its path on the drawing): CoreCheckDialog binds <ButtonRelease-1> on a row
+  to click_route (forget_route_choice + queue_route), and the category
+  combobox forgets the route choice before reload. The _route_choice guard
+  now only stops programmatic reselects from taking the map. Run
+  check_core_exception_lists.py (Windows UI part loops every category).
+
 - V168 (user: 함체 코어내역 signal column = one value per core; ON but not
   connected = yellow row): node_summary_rows uses core_signal_summary_label
   (connection_highlight.py) over core_id_overview of every ID in the row
