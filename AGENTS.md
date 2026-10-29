@@ -1,5 +1,16 @@
 # Telecom Core updater project
 
+- V170 (user: re-attach a cable to another enclosure without losing its core
+  내역): cable right-click cascade 「케이블 끝 옮기기 (코어내역 유지)」 (one entry
+  per end, App._cable_end_menu) → App.start_cable_end_move sets
+  cable_end_move=(cable, old node, store, generation); the next node click in
+  App.click calls finish_cable_end_move (askyesno with splice/core counts).
+  set_mode clears cable_end_move (Esc). Store.cable_end_move_preview/
+  move_cable_end (one "케이블 끝 옮기기 (코어내역 유지)" undo group) delete only
+  splices of that cable at the old node and UPDATE n1id/n2id; cores rows are
+  untouched; lock triggers still refuse locked enclosures. Run
+  check_cable_end_move.py.
+
 - V169 (user: clicking any row in 코어확인/작업목록, e.g. 예외코어, must blink
   its path on the drawing): CoreCheckDialog binds <ButtonRelease-1> on a row
   to click_route (forget_route_choice + queue_route), and the category
