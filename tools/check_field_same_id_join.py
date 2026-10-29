@@ -115,11 +115,39 @@ class FieldSameIdJoin(unittest.TestCase):
         wf.field_slot_write(self.s,(lone,1),('LONE-ID','',  'normal','','on'));self.s.conn.commit()
         with self.assertRaisesRegex(ValueError,'이미'):wf.field_route_identity_preview(self.s,c['one'],[(1,'LONE-ID','')])
 
+    def test_whole_drawing_list_joins_checked_at_once(self):
+        n,names=self.existing_split('g.sqlite3','');g=n[names[2]]
+        # A second split ID elsewhere, plus one that was disconnected by hand.
+        w=n[names[3]]
+        with self.s.action('합성 두번째'):
+            for cable in ('mid','far'):self.s.conn.execute("UPDATE cores SET core_id='SECOND',signal='on' WHERE cable_id=? AND core_index=5",(self.c[cable],))
+        self.s.set_auto_splice_exclusions(w,((self.c['mid'],5),));self.s.conn.commit()
+        rows,blocked=wf.field_same_id_join_rows(self.s)
+        self.assertEqual(sorted((r['node'],r['core_id'],r['checked']) for r in rows),[('JB1744G021',ID,True),('JB1744W391','SECOND',False)])
+        if wf.tk._default_root is None:
+            try:root=wf.tk.Tk()
+            except wf.tk.TclError:return
+        else:root=wf.tk._default_root
+        root.withdraw()
+        frame=wf.tk.Toplevel(root);frame.store=self.s;frame.refresh=lambda:None
+        dialog=wf.SameIdJoinDialog(frame)
+        try:
+            self.assertEqual(len(dialog.tree.get_children()),2);self.assertEqual(len(dialog.tree.selection()),1)
+            with patch.object(wf.messagebox,'askyesno',return_value=True):dialog.apply()
+            self.assertEqual(splice_at(self.s,g),1);self.assertEqual(splice_at(self.s,w),1)
+            self.one_route();self.assertEqual(len(dialog.tree.get_children()),1)
+            dialog.tree.selection_set(dialog.tree.get_children())
+            with patch.object(wf.messagebox,'askyesno',return_value=True):dialog.apply()
+            self.assertEqual(splice_at(self.s,w),2);self.assertFalse(dialog.tree.get_children())
+            self.s.undo();self.assertEqual(splice_at(self.s,w),1);self.s.undo();self.assertEqual(splice_at(self.s,g),0)
+        finally:dialog.destroy();frame.destroy();root.destroy()
+        print('PASS same id whole-drawing join list')
+
     def test_plain_drawing_unchanged(self):
         self.s,n,c,names=fixture(self.home/'f.sqlite3',field=False);self.c=c
         self.assertFalse(wf.field_slot_mode(self.s))
         self.assertEqual(wf.field_same_id_joins_for(self.s,{ID}),[])
-        self.assertFalse(wf.field_same_id_pairs(self.s))
+        self.assertFalse(wf.field_same_id_pairs(self.s));self.assertEqual(wf.field_same_id_join_rows(self.s),([],[]))
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V177 (user: already-drawn same-ID pieces shown in several colors — are
+  they bundled automatically? No → whole-drawing join): 코어·검사 도구
+  「같은 코어ID 한꺼번에 잇기」 → open_same_id_join → SameIdJoinDialog
+  (field_same_id_join.py). field_same_id_join_rows lists every
+  field_same_id_pairs meeting (respect_exclusions=False); rows blocked by an
+  explicit disconnect are listed but not pre-selected; blocked reasons in the
+  lower list. Apply: stale revision guard, askyesno, backup, one undo group
+  「같은 코어ID 한꺼번에 잇기」. Still never automatic. Run
+  check_field_same_id_join.py.
+
 - V176 (user: in a field drawing an orange new-cable piece and the purple
   1차 route carry the same real core ID 3061838318 but stayed two routes
   (신호 미입력 / ON) and 오류코어): cause = no splice at the meeting enclosure

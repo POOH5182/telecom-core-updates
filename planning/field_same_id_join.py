@@ -107,3 +107,83 @@ def offer_same_id_join(parent,store,core_ids):
     except ValueError as exc:
         messagebox.showerror('연결하지 않음',str(exc),parent=parent);return ''
     return '같은 코어ID 이어 연결: '+', '.join(dict.fromkeys(names))
+
+
+def field_same_id_join_rows(store):
+    """V177: every joinable same-ID meeting in the drawing, plus the blocked ones.
+
+    A pair whose number was disconnected by hand is listed but not pre-checked.
+    """
+    if not field_slot_mode(store):return [],[]
+    blocked=[];pairs=field_same_id_pairs(store,blocked=blocked,respect_exclusions=False)
+    safe=set(field_same_id_pairs(store))
+    rows=[]
+    for nid,a,b in pairs:
+        row=store.core(*a) or {};other=store.core(*b) or {}
+        names=' / '.join(dict.fromkeys(str(r['detail'] or '').strip() for r in (row,other) if r and str(r['detail'] or '').strip()))
+        rows.append(dict(pair=(nid,a,b),node=str(store.node(nid)['name']),core_id=_route_id_text(row['core_id'] if row else ''),name=names,
+                         slots=store._slot_title(*a)+' ↔ '+store._slot_title(*b),checked=(nid,a,b) in safe,
+                         note='' if (nid,a,b) in safe else '직접 연결 해제한 기록 있음 · 확인 후 선택'))
+    return rows,blocked
+
+
+class SameIdJoinDialog(RememberedToplevel):
+    """V177: find same-ID free ends across the whole field drawing and join the checked ones at once."""
+    def __init__(self,app):
+        super().__init__(app);self.app=app;self.store=app.store;self.rows=[];self.title('같은 코어ID 한꺼번에 잇기')
+        self.geometry('1100x600');self.minsize(760,380)
+        ttk.Label(self,text='같은 코어ID인데 함체에서 접속이 없어 따로(여러 색으로) 보이는 곳입니다. 확인한 줄만 선택된 채로 「선택한 곳 이어 연결」을 누르세요. 코어명·신호·상태는 번호별로 그대로이고 Ctrl+Z 한 번으로 모두 되돌립니다.',
+                  padding=10,wraplength=1040).pack(fill='x')
+        actions=ttk.Frame(self,padding=10);actions.pack(side='bottom',fill='x')
+        self.notice=tk.StringVar(value='');ttk.Label(actions,textvariable=self.notice).pack(side='left')
+        self.join_button=ttk.Button(actions,text='선택한 곳 이어 연결',command=self.apply);self.join_button.pack(side='right',padx=6)
+        ttk.Button(actions,text='닫기',command=self.destroy).pack(side='right')
+        ttk.Button(actions,text='모두 선택',command=lambda:self.tree.selection_set(self.tree.get_children())).pack(side='right',padx=6)
+        body=ttk.Panedwindow(self,orient='vertical');body.pack(fill='both',expand=True,padx=10,pady=4)
+        top=ttk.Frame(body);bottom=ttk.LabelFrame(body,text='이을 수 없는 곳 (이유)',padding=4);body.add(top,weight=3);body.add(bottom,weight=1)
+        cols=('node','core_id','name','slots','note')
+        self.tree=SortableTreeview(top,columns=cols,show='headings',selectmode='extended')
+        for col,label,width in zip(cols,('함체','코어ID','코어명','이어질 번호','비고'),(160,130,220,420,200)):
+            self.tree.heading(col,text=label);self.tree.column(col,width=width,minwidth=80)
+        y=ttk.Scrollbar(top,orient='vertical',command=self.tree.yview);self.tree.configure(yscrollcommand=y.set)
+        self.tree.pack(side='left',fill='both',expand=True);y.pack(side='right',fill='y')
+        self.blocked=tk.Listbox(bottom,height=5);self.blocked.pack(fill='both',expand=True)
+        self.tree.bind('<<TreeviewSelect>>',lambda e:self.count())
+        self.bind('<Escape>',lambda e:self.destroy());self.reload()
+
+    def reload(self):
+        self.rows,blocked=field_same_id_join_rows(self.store)
+        self.tree.delete(*self.tree.get_children());self.blocked.delete(0,'end')
+        for i,row in enumerate(self.rows):self.tree.insert('','end',iid=str(i),values=(row['node'],row['core_id'],row['name'],row['slots'],row['note']))
+        self.tree.selection_set([str(i) for i,row in enumerate(self.rows) if row['checked']])
+        for item in blocked:self.blocked.insert('end',item['reason'])
+        if not blocked:self.blocked.insert('end','없음')
+        self.revision=(self.store.data_revision(),getattr(self.store,'_view_generation',0));self.count()
+
+    def count(self):
+        chosen=len(self.tree.selection())
+        self.notice.set(f'이을 수 있는 곳 {len(self.rows)}개 · 선택 {chosen}개' if self.rows else '이을 같은 코어ID 끝이 없습니다.')
+        self.join_button.configure(state='normal' if chosen else 'disabled')
+
+    def apply(self):
+        pairs=[self.rows[int(i)]['pair'] for i in self.tree.selection()]
+        if not pairs:return
+        if self.revision!=(self.store.data_revision(),getattr(self.store,'_view_generation',0)):
+            messagebox.showwarning('새로고침','목록을 연 뒤 도면이 바뀌었습니다. 목록을 다시 불러왔으니 확인 후 다시 누르세요.',parent=self);self.reload();return
+        current={r['pair'] for r in field_same_id_join_rows(self.store)[0]}
+        if not set(pairs)<=current:self.reload();messagebox.showwarning('새로고침','일부 항목을 더 이상 이을 수 없습니다. 다시 확인하세요.',parent=self);return
+        if not messagebox.askyesno('같은 코어ID 한꺼번에 잇기',f'선택한 {len(pairs)}곳을 이어 연결할까요?\nCtrl+Z 한 번으로 모두 되돌릴 수 있습니다.',parent=self):return
+        try:
+            self.store.backup_to(self.store.path.parent/'backup'/('before_same_id_join_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.sqlite3'))
+            with self.store.action('같은 코어ID 한꺼번에 잇기'):field_same_id_join_apply(self.store,pairs)
+        except (ValueError,sqlite3.Error,OSError) as exc:
+            messagebox.showerror('연결하지 않음',str(exc),parent=self);return
+        try:self.app.refresh()
+        except (AttributeError,tk.TclError):pass
+        self.reload();self.notice.set(f'{len(pairs)}곳 이어 연결 완료 · Ctrl+Z로 되돌리기')
+
+
+def open_same_id_join(app):
+    if not field_slot_mode(app.store):
+        messagebox.showinfo('같은 코어ID 한꺼번에 잇기','현장반영 도면에서 사용하세요. 후도면은 같은 코어ID가 자동으로 이어집니다.',parent=app);return None
+    return SameIdJoinDialog(app)
