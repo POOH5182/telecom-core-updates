@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V173 (user: the popup after 「선택번호배정 저장」 should be a short
+  저장하시겠습니까? 네/아니오; Enter or Space = 네): ManualAllocationReview
+  (manual_allocation.py, used by the cable-window and map allocation apply)
+  is now a small dialog: 네 (yes_button, focused) / 아니오 (no_button) and a
+  「자세히 ▾」 toggle that shows the old review_text on demand. <Return>,
+  <KP_Enter>, <space> on the dialog and every button call confirm (so Space
+  never answers 아니오); Esc = 아니오. result/confirm()/destroy() unchanged
+  for the allocation checks. Run check_save_confirm.py.
+
 - V172 (user: a 임시코어 path split by a rebuilt middle cable must show both
   pieces, like equal real IDs): same_temporary_components (field_slots.py,
   index cached in the audit as temp_by_id) adds every audit route carrying a

@@ -363,15 +363,29 @@ class RNIncrementalCoreAllocator(IncrementalCoreAllocator):
 
 
 class ManualAllocationReview(RememberedToplevel):
+    """Short 저장하시겠습니까? 네/아니오 confirm; Enter or Space answers 네, Esc answers 아니오."""
     def __init__(self,parent,text):
-        super().__init__(parent);self.result=False;self.title('수동 코어분배 · 적용 전 확인');self.geometry('880x640');self.transient(parent);self.grab_set()
-        ttk.Label(self,text='선택한 번호에 코어를 배정합니다. 전체 연결이 미완료여도 저장할 수 있습니다.',padding=12).pack(fill='x')
-        footer=ttk.Frame(self,padding=12);footer.pack(side='bottom',fill='x')
-        ttk.Button(footer,text='배정·접속 적용',command=self.confirm).pack(side='right')
-        ttk.Button(footer,text='돌아가기',command=self.destroy).pack(side='right',padx=8)
-        field_set_text(field_readonly_text(self,18),text)
+        super().__init__(parent);self.result=False;self.detail_text=text;self.title('선택 번호 배정 저장');self.transient(parent);self.grab_set()
+        body=ttk.Frame(self,padding=(24,18,24,12));body.pack(fill='both',expand=True)
+        ttk.Label(body,text='저장하시겠습니까?',font=('Malgun Gothic',12,'bold')).pack(anchor='w')
+        ttk.Label(body,text='Enter·Space = 네   Esc = 아니오   (Ctrl+Z로 취소 가능)',foreground='#64748b').pack(anchor='w',pady=(6,0))
+        footer=ttk.Frame(self,padding=(12,0,12,12));footer.pack(side='bottom',fill='x')
+        self.yes_button=ttk.Button(footer,text='네',width=8,command=self.confirm,style='Primary.TButton');self.yes_button.pack(side='right')
+        self.no_button=ttk.Button(footer,text='아니오',width=8,command=self.destroy);self.no_button.pack(side='right',padx=8)
+        self.detail_button=ttk.Button(footer,text='자세히 ▾',takefocus=False,command=self.toggle_detail);self.detail_button.pack(side='left')
+        self.detail=None
+        for widget in (self,self.yes_button,self.no_button,self.detail_button):
+            for key in ('<Return>','<KP_Enter>','<space>'):widget.bind(key,lambda e:(self.confirm(),'break')[1])
         self.bind('<Escape>',lambda e:self.destroy())
-    def confirm(self):self.result=True;self.destroy()
+        self.yes_button.focus_set();self.after_idle(lambda:self.winfo_exists() and self.yes_button.focus_force())
+    def toggle_detail(self):
+        if self.detail is None:self.detail=field_readonly_text(self,14);field_set_text(self.detail,self.detail_text);self.detail.master.pack_configure(padx=12,pady=(0,8))
+        elif self.detail.master.winfo_ismapped():self.detail.master.pack_forget()
+        else:self.detail.master.pack(fill='both',expand=True,padx=12,pady=(0,8))
+        self.detail_button.configure(text='자세히 ▴' if self.detail.master.winfo_manager() else '자세히 ▾');self.yes_button.focus_set()
+    def confirm(self):
+        if not self.winfo_exists():return
+        self.result=True;self.destroy()
 
 
 class ManualAllocationActions:
