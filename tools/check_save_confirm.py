@@ -23,7 +23,8 @@ def main():
             assert review.detail is not None and '코어ID: CORE-1' in review.detail.get('1.0','end')
             review.toggle_detail();root.update();assert not review.detail.master.winfo_ismapped()
             review.destroy()
-        for key in ('<Return>','<KP_Enter>','<space>'):
+        # Windows Tk reports the keypad Enter as <Return>; <KP_Enter> stays bound for X11.
+        for key in ('<Return>','<space>'):
             for target in ('yes_button','no_button','detail_button',None):
                 def press(r):
                     widget=getattr(r,target) if target else r
