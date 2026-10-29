@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V179 (user: a real core 1231444 renamed to 임시코어123 ended up with a
+  different auto 임시 number; typing 임시코어N must use exactly N):
+  normalize_core_id_input accepts 임시코어N / 임시 코어 N / 임시N / 임시-N
+  (rn_identity_value too). apply_core_identity_changes no longer refuses a
+  real → 임시- rename in non-field drawings; update_core (real_to_temp)
+  renames the connected component carrying the old real ID to the typed
+  임시 ID (another real ID in the component is still refused). Field
+  drawings keep per-number edits. Store.temporary_identity_conflicts lists a
+  typed 임시 ID already on numbers outside the edited route;
+  confirm_temporary_identity asks once (identity tab apply, route review,
+  NodeSummary core edit). Never call next_temp_core_id for a typed ID. Run
+  check_temporary_typed_id.py.
+
 - V178 (user: a 확인필요-signal 임시코어 passes one enclosure and stops; other
   enclosures must not count its free end as NOT OK; hide NOT OK 0 badges):
   completion.temporary_signal_unconfirmed(row) = 임시- ID, signal not ON, not

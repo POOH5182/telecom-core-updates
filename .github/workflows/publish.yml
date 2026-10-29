@@ -81,6 +81,8 @@ jobs:
         run: python tools/check_field_same_id_join.py
       - name: 확인필요 임시코어 끝 함체 NOT OK 제외·NOT OK 0 숨김 검증
         run: python tools/check_temporary_not_ok.py
+      - name: 임시코어N 직접 입력 시 그 번호 그대로·중복 번호 안내 검증
+        run: python tools/check_temporary_typed_id.py
       - name: 선택번호배정 저장 확인창 네·아니오 Enter·Space 검증
         run: python tools/check_save_confirm.py
       - name: 케이블 코어 Shift·Ctrl 다중 선택 신호 일괄 변경·한번에 실행취소 검증

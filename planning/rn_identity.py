@@ -1,9 +1,10 @@
 """Local RN port identity drafts, independent of cable identity propagation."""
 
 def rn_identity_value(value):
-    value=str(value or '').strip()
-    if value.startswith('임시코어') and value[4:].strip().isdigit():return '임시-'+value[4:].strip()
-    return value
+    value=str(value or '').strip();compact=value.replace(' ','')
+    # V179: 임시코어123 / 임시 코어 123 / 임시123 / 임시-123 keep the typed number.
+    suffix=compact[4:] if compact.startswith('임시코어') else compact[2:].lstrip('-') if compact.startswith('임시') else ''
+    return '임시-'+suffix if suffix.isdigit() else value
 
 
 def rn_identity_rows(store,node_id):
