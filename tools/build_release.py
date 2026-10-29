@@ -91,6 +91,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM AFTER IDENTITY\n' + (ROOT / 'planning' / 'after_identity.py').read_text(encoding='utf-8')
         if version >= 95:
             baseline += '\n\n# BEGIN TELECOM AFTER AUTO CONNECT\n' + (ROOT / 'planning' / 'after_autoconnect.py').read_text(encoding='utf-8')
+        if version >= 176:
+            baseline += '\n\n# BEGIN TELECOM FIELD SAME ID JOIN\n' + (ROOT / 'planning' / 'field_same_id_join.py').read_text(encoding='utf-8')
         if version >= 104:
             baseline += '\n\n# BEGIN TELECOM CORE WORKLIST\n' + (ROOT / 'planning' / 'core_worklist.py').read_text(encoding='utf-8')
         if version >= 114:

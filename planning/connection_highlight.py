@@ -213,6 +213,17 @@ def core_connection_highlight(store,slots):
             text=(node.get('name') or nid)+' · '+title+'\n'+'\n'.join(e['text']+(' · OFF 배정 제외' if e['off'] else '') for e in ends)))
         reasons=list(dict.fromkeys([reason for e in ends for reason in net.bad.get(e['slot'],())]+blocked[nid]))
         if reasons:boundaries[-1]['text']+='\n'+'\n'.join(reasons)
+    # V176: say where two same-ID ends can simply be joined (field drawings).
+    if boundaries and identities and field_slot_mode(store):
+        stuck=[];joins=field_same_id_pairs(store,identities,{b['node_id'] for b in boundaries},blocked=stuck,respect_exclusions=False)
+        ready={nid for nid,_,_ in joins};why=defaultdict(list)
+        for item in stuck:why[item['node_id']].append(item['reason'])
+        for hint in boundaries:
+            nid=hint['node_id'];head=str(hint['name'])+' · '
+            if nid in ready:
+                hint.update(title='같은 코어ID · 이어 연결 가능',same_id=True,color='#a16207')
+                hint['text']=head+hint['title']+hint['text'][len(head)+len(hint['text'][len(head):].split('\n')[0]):]+'\n함체 우클릭 → 「같은 코어ID 끝 이어 연결」'
+            elif why.get(nid):hint['text']+='\n'+'\n'.join(why[nid])
     # Count distinct cable slots, not selections, port rows or geometric crossings.
     # One route may also traverse the same cable on different physical cores.
     overlaps={c for c,slots in cable_slots.items() if len(slots)>1}

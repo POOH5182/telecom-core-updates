@@ -1,5 +1,21 @@
 # Telecom Core updater project
 
+- V176 (user: in a field drawing an orange new-cable piece and the purple
+  1차 route carry the same real core ID 3061838318 but stayed two routes
+  (신호 미입력 / ON) and 오류코어): cause = no splice at the meeting enclosure
+  (split cause). planning/field_same_id_join.py: field_same_id_pairs (field
+  audit free ends, real IDs only, exactly 2 ends on different cables, no
+  ON/OFF clash, locks, after_auto_exclusions unless explicit) →
+  field_same_id_join_apply (field_slot_connect, inside caller's action).
+  The store never rewires on its own (field policy, check_core_trace);
+  offer_same_id_join asks after 케이블 창 적용 (apply_identity_changes) and
+  FieldRouteIdentityDialog; node right-click 「같은 코어ID 끝 이어 연결」
+  (App.join_same_id_ends). core_connection_highlight marks those boundaries
+  same_id=True (kind unchanged) or appends the block reason.
+  field_route_identity_preview allows an existing same-ID piece only when it
+  meets the route at a free end (field_route_meets). Run
+  check_field_same_id_join.py.
+
 - V175 (user: 도면에서 코어배정 on a core marked 예외 완료 only warned
   '예외 완료 처리된 코어입니다…' with no way forward): ManualCoreAllocator.load
   raises ExceptionCompleteCore (ValueError, carries core_id/store/app).

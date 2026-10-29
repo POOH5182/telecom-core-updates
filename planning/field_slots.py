@@ -914,7 +914,9 @@ def field_route_identity_preview(store,cable_id,changes):
         if edit_id and not new_id.startswith('임시-'):
             if new_id in assigned_ids and assigned_ids[new_id]!=members:raise ValueError('서로 다른 연결 구간에 같은 코어ID를 입력할 수 없습니다.')
             assigned_ids[new_id]=members
-            if any((r['cable_id'],int(r['core_index'])) not in members for r in store.all_core_rows(new_id)):
+            others={(r['cable_id'],int(r['core_index'])) for r in store.all_core_rows(new_id)}-members
+            # V176: a piece whose free end meets this route at a facility is joined on apply.
+            if others and not field_route_meets(store,members,others):
                 raise ValueError('코어ID '+new_id+'가 연결되지 않은 다른 구간에 이미 있습니다. 중복 ID를 만들지 않았습니다.')
     rows=[]
     for slot,item in sorted(proposed.items()):
@@ -938,7 +940,7 @@ def field_route_identity_commit(store,preview):
             if before[0]!=after[0]:renames.add((before[0],after[0]))
             changed+=1
         for old,new in sorted(renames):phase_promote_identity(store,old,new)
-    return dict(changed=changed,backup=backup)
+    return dict(changed=changed,backup=backup,ids=tuple(sorted({new for _,new in renames})))
 
 
 class FieldRouteIdentityDialog(RememberedToplevel):
@@ -975,5 +977,7 @@ class FieldRouteIdentityDialog(RememberedToplevel):
             self.notice.set(str(error));messagebox.showerror('반영하지 않음',str(error),parent=self);return
         selected=editor.identity_tree.selection();index=int(selected[0]) if selected else self.preview['changes'][-1][0]
         editor.reload_identity(index);editor.parent.refresh()
-        editor.info.set(f"연결 구간 {result['changed']}곳의 코어ID·내역 반영 완료 · Ctrl+Z로 실행취소")
+        joined=offer_same_id_join(self,self.store,result['ids'])
+        if joined:editor.reload_identity(index);editor.parent.refresh()
+        editor.info.set(f"연결 구간 {result['changed']}곳의 코어ID·내역 반영 완료"+(' · '+joined if joined else '')+" · Ctrl+Z로 실행취소")
         self.destroy()
