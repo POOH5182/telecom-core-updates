@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V175 (user: 도면에서 코어배정 on a core marked 예외 완료 only warned
+  '예외 완료 처리된 코어입니다…' with no way forward): ManualCoreAllocator.load
+  raises ExceptionCompleteCore (ValueError, carries core_id/store/app).
+  open_allowing_excluded (cable window, map, RN) asks once 「예외를 해제하고
+  바로 배정할까요?」; yes → release_exception_core (Store.set_cores_exception
+  False for that ID, one undo step, app.refresh) → parent
+  after_exception_release() hook (CableDialog reloads) → retry; an excluded
+  core after release still gets the V146 question. No → nothing changes.
+  Run check_exception_release_allocation.py.
+
 - V174 (user: 임시코어78 assigned via 도면에서 코어배정 still showed as
   separate 구간 pieces with 연결 후보 boxes): after_auto_groups/
   after_auto_pairs take temporary_ids; only named 임시- IDs become join

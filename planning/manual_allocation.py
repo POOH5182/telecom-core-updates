@@ -12,16 +12,49 @@ class ExcludedAllocationCore(ValueError):
 EXCLUDED_ALLOCATION_TEXT='이 코어는 후도면 배정 대상에서 제외된 상태입니다. 신호·상태를 확인하세요.'
 
 
+class ExceptionCompleteCore(ValueError):
+    """V175: the core is marked 예외코어 (counted complete); the user may release it here."""
+
+
+EXCEPTION_COMPLETE_TEXT='예외 완료 처리된 코어입니다. 상태를 먼저 확인하세요.'
+
+
+def release_exception_core(app,store,core_id):
+    """V175: remove 예외코어 from every slot of one core ID (one undo step)."""
+    slots=store.core_id_slots([core_id]) if core_id else []
+    changed=store.set_cores_exception(slots,False) if slots else []
+    if not changed:raise ValueError('예외코어 표시가 없는데도 예외 완료로 처리된 코어입니다.\n'
+                                   '코어확인/작업목록에서 이 코어의 처리 상태(누락 처리 등)를 먼저 확인하세요.')
+    refresh=getattr(app,'refresh',None)
+    if callable(refresh):refresh()
+    return changed
+
+
 def open_allowing_excluded(parent,title,factory):
     """Open an allocation window; an excluded core (e.g. a temporary core without
-    signal) is assigned only after the user explicitly says yes once."""
-    try:return factory(False)
-    except ExcludedAllocationCore as error:
-        reason=getattr(error,'reason','')
-        text=('배정 대상에서 제외된 코어입니다'+(' ('+reason+')' if reason else '')+'.\n'
-              '배정하지 않아도 미완료로 세지 않습니다.\n\n그래도 이 코어를 배정할까요?')
-        if not messagebox.askyesno(title,text,parent=parent):return None
-        return factory(True)
+    signal) is assigned only after the user explicitly says yes once. V175: an
+    예외코어 is offered 「예외 해제 후 배정」 instead of a dead-end warning."""
+    allow=False;released=False
+    while True:
+        try:return factory(allow)
+        except ExceptionCompleteCore as error:
+            if released:raise
+            name=getattr(error,'core_id','') or ''
+            text=('예외 완료 처리된 코어입니다'+(' ('+name+')' if name else '')+'.\n'
+                  '지금은 예외코어로 완료 집계되어 배정할 수 없습니다.\n\n'
+                  '예외를 해제하고 바로 배정할까요?\n'
+                  '(신호·접속은 그대로이고, 실제 연결 상태로 다시 계산합니다. Ctrl+Z로 되돌릴 수 있습니다.)')
+            if not messagebox.askyesno(title+' · 예외 해제 후 배정',text,parent=parent):return None
+            release_exception_core(error.app,error.store,name);released=True
+            hook=getattr(parent,'after_exception_release',None)
+            if callable(hook):hook()
+        except ExcludedAllocationCore as error:
+            if allow:raise
+            reason=getattr(error,'reason','')
+            text=('배정 대상에서 제외된 코어입니다'+(' ('+reason+')' if reason else '')+'.\n'
+                  '배정하지 않아도 미완료로 세지 않습니다.\n\n그래도 이 코어를 배정할까요?')
+            if not messagebox.askyesno(title,text,parent=parent):return None
+            allow=True
 
 
 class ManualCoreAllocator(AfterAllocator):
@@ -60,7 +93,9 @@ class ManualCoreAllocator(AfterAllocator):
                 raise error
             self.ctx=self.route_context(self.route_service)
         self.problem=self.route_service.problem(self.key,self.ctx)
-        if self.problem['entry'].get('exception_complete'):raise ValueError('예외 완료 처리된 코어입니다. 상태를 먼저 확인하세요.')
+        if self.problem['entry'].get('exception_complete'):
+            error=ExceptionCompleteCore(EXCEPTION_COMPLETE_TEXT);error.core_id=self.core_id;error.store=self.store;error.app=self.app
+            raise error
         self.existing={}
         for part in self.problem['components']:
             for cable,index in part['slots']:
