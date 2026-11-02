@@ -111,7 +111,7 @@ class TemporarySplitIncomplete(unittest.TestCase):
             self.assertEqual(wf.temporary_auto_activate(self.s),3);self.assertEqual(splices(self.s),3);self.auto(c)
             self.s.undo();self.assertEqual(splices(self.s),0)
             self.assertEqual(wf.temporary_auto_activate(self.s),0);self.assertEqual(splices(self.s),0)
-        print('PASS V182 saved 임시코어 pieces join on open once')
+        print('PASS V182 saved temporary pieces join on open once')
 
     def test_v182_after_open_joins(self):
         app=LocalApp(self.temp.name);self.s=app.store
@@ -127,7 +127,7 @@ class TemporarySplitIncomplete(unittest.TestCase):
         with self.s.action('코어 정보 변경'):self.s.conn.execute("UPDATE cores SET core_id=?,detail='모바일 신규코어',signal='on' WHERE cable_id=? AND core_index=37",(TEMP,c[3]))
         self.assertEqual(splices(self.s),3);self.auto(c)
         self.s.undo();self.assertEqual(splices(self.s),2)
-        print('PASS V182 same 임시코어 joins automatically on edit')
+        print('PASS V182 same temporary core joins automatically on edit')
 
     def test_v182_hand_disconnect_is_kept(self):
         self.s,n,c=field_drawing(self.home/'d.sqlite3')
