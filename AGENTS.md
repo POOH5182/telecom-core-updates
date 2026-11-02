@@ -1,5 +1,16 @@
 # Telecom Core updater project
 
+- V193 (user: 후도면 54447717(절단) 9번 · 9220085 not assigned yet but
+  「9 · 연결완료」 and 118/118): Network(active_only) drops cut cables, so the
+  live remainder of the ID could be a complete route that no longer reaches
+  the MDF. completion.after_cut_terminal_notes: for a complete, non-exception
+  after entry, every retired (절단/철거) cable slot of the ID (not OFF/exempt,
+  not in active_slots) whose cable end is a sub or terminal_marked node,
+  unspliced there, and not among the live route ends → note 「... 새 경로
+  미접속」 (cause unconnected), entry incomplete, route_by_slot notes
+  replaced. Plain degree-1 enclosures are not end facilities here. Run
+  check_cut_terminal_route.py.
+
 - V192 (user: copy only the selected rows' numbers, no 방향 name, pasted as
   1,2,3,4): node_pair_numbers_text(rows); NodePairSummaryDialog tree is
   selectmode extended, 「선택 행 숫자 복사 (1,2,3)」 and Ctrl+C = copy_numbers

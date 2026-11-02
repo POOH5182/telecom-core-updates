@@ -100,6 +100,27 @@ def stored_completion_route(net,core_id,seeds,options):
     return dict(slots=sorted(members),**route)
 
 
+def after_cut_terminal_notes(store,net,stored_net,entry,route_by_slot,off_slots,source_rows):
+    """Cut-cable pieces of one ID whose end facility the live route misses."""
+    cid=entry['core_id'];retired=[s for s in entry['all_slots'] if s in net.retired_slots and not s[0].startswith('PORT:')]
+    if not retired:return []
+    reached={end[1] for s in entry['active_slots'] for end in (route_by_slot.get(s) or {}).get('ends',())}
+    if stored_net is None:stored_net=Network(store.conn,resolve_rn_ports=True)
+    notes=[]
+    for slot in retired:
+        row=source_rows.get(slot)
+        if slot in off_slots or core_connection_exempt(row) or slot in entry['active_slots']:continue
+        cable=stored_net.cables.get(slot[0])
+        if not cable:continue
+        for nid in (cable['n1id'],cable['n2id']):
+            node=stored_net.nodes.get(nid)
+            if not node or nid in reached or not (node['type']=='sub' or terminal_marked(node)):continue
+            if any(n==nid for n,_ in stored_net.links.get(slot,())):continue
+            name=node.get('name') or nid;owner=str(cable.get('cable_id') or cable.get('spec') or slot[0])
+            notes.append(f'{owner} {slot[1]}번(절단·철거)이 가던 끝단 {name}까지 새 경로 미접속: 새 케이블로 {name}까지 이어 주세요.')
+    return notes
+
+
 def completion_report(store,kind=None):
     if field_slot_mode(store,kind):return field_slot_completion(store)
     kind=kind or completion_kind(store);key=(kind,store.data_revision(),store.conn.total_changes)
@@ -200,6 +221,18 @@ def completion_report(store,kind=None):
                    complete=False,reason=reason,reason_items=(reason,),causes=frozenset({'identity'}),pending_nodes=tuple(dict.fromkeys(item['node_id'] for item in items)),**policy)
         by_id[cid]=entry;(targets if policy['required'] else excluded).append(entry)
         if policy['exception_complete']:entry.update(complete=True,physical_complete=False,reason='예외 처리로 완료',reason_items=(),causes=frozenset())
+    if kind=='after':
+        # V193: a cut/removed cable that still carries this ID to an end
+        # facility (MDF·가입자·끝단) is not finished until the live route
+        # reaches that facility too.
+        for entry in targets:
+            if not entry['complete'] or entry['exception_complete'] or not entry['core_id']:continue
+            notes=after_cut_terminal_notes(store,net,stored_net,entry,route_by_slot,off_slots,source_rows)
+            if not notes:continue
+            notes=list(dict.fromkeys(list(entry['reason_items'])+notes))
+            entry.update(complete=False,reason=' / '.join(notes),reason_items=tuple(notes),causes=frozenset(entry['causes'])|completion_causes(notes))
+            for slot in entry['active_slots']:
+                if slot in route_by_slot:route_by_slot[slot]=dict(route_by_slot[slot],complete=False,notes=notes)
     if kind=='after':offmap_mark_report(store,by_id)
     if kind=='after':
         # V180: say why an assigned 임시코어 is still 미완료 when its pieces only

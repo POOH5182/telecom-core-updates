@@ -89,6 +89,8 @@ jobs:
         run: python tools/check_after_cut_cable_note.py
       - name: 후도면 도면 밖 연결 표시·불일치 다시 경고 검증
         run: python tools/check_offmap_links.py
+      - name: 후도면 절단 케이블이 가던 끝단(MDF) 미도달 시 미완료 검증
+        run: python tools/check_cut_terminal_route.py
       - name: 후도면 코어배정 자동배정·틀어도 되는 함체·같은 번호 우선 검증
         run: python tools/check_core_auto_assign.py
       - name: 선택번호배정 저장 확인창 네·아니오 Enter·Space 검증
