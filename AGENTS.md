@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V185 (V183/V184 Windows gate check_field_work_endpoints failed):
+  cable_core_warning_summary must never call core_completion_brief (it calls
+  completed_temporary_slots → cable_core_warning_summary → RecursionError).
+  The cut-cable count reads completion['by_slot'] directly (required, not
+  complete, not off, not a completed 임시 slot).
+
 - V184 (user: wants to press 자동배정 core by core; their order is the
   priority; they pick enclosures where cores may turn; elsewhere keep the
   same number): planning/core_auto_assign.py, bundled before
