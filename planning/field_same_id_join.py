@@ -232,3 +232,79 @@ def open_same_id_join(app):
     if not same_id_join_mode(app.store):
         messagebox.showinfo('같은 코어ID 한꺼번에 잇기','현장반영 도면 또는 후도면에서 사용하세요. 후도면은 실제 코어ID가 자동으로 이어지고, 임시코어 구간은 여기서 잇습니다.',parent=app);return None
     return SameIdJoinDialog(app)
+
+
+TEMPORARY_AUTO_POLICY='temporary_auto_join_v181'
+TEMPORARY_AUTO_SKIP=('코어 연결 해제','같은 임시코어 자동 이어 연결','같은 코어ID 끝 이어 연결','같은 코어ID 한꺼번에 잇기')
+
+
+def drawing_temporary_ids(store):
+    ids=set()
+    for table in ('cores','ports'):
+        for row in store.conn.execute(f"SELECT DISTINCT TRIM(core_id) AS cid FROM {table} WHERE TRIM(COALESCE(core_id,'')) LIKE '임시-%'"):ids.add(row['cid'])
+    return ids
+
+
+def temporary_auto_pairs(store,core_ids=None):
+    """V181: pieces of one 임시코어 are one core, so safe meetings join by
+    themselves (field and after drawings). Hand-disconnected numbers, locks,
+    signal clashes and 3+ ends are never guessed (same rules as V176/V180)."""
+    if not same_id_join_mode(store):return []
+    ids=drawing_temporary_ids(store) if core_ids is None else {str(c or '').strip() for c in core_ids}
+    ids={c for c in ids if c.startswith('임시-')}
+    if not ids:return []
+    pairs=field_same_id_pairs(store,ids,respect_exclusions=True)
+    # Only live (signal ON) 임시코어 must run end to end; 확인필요/OFF 임시
+    # pieces may stop anywhere (V178) and are left for the manual join.
+    return [p for p in pairs if slot_core_id(store,p[1]).startswith('임시-') and slot_core_id(store,p[1])==slot_core_id(store,p[2])
+            and temporary_auto_slot_ok(store,p[1]) and temporary_auto_slot_ok(store,p[2])]
+
+
+def temporary_auto_slot_ok(store,slot):
+    """Signal ON and not marked 끊김/오류/해지/예외 (those stay a manual decision)."""
+    owner,index=slot
+    if str(owner).startswith('PORT:'):row=store.conn.execute('SELECT * FROM ports WHERE node_id=? AND port_index=?',(owner[5:],index)).fetchone()
+    else:row=store.conn.execute('SELECT * FROM cores WHERE cable_id=? AND core_index=?',(owner,index)).fetchone()
+    if not row or str(row['signal'] or '').strip().lower()!='on':return False
+    flags={''.join(str(s).split()) for s in statuses(dict(row))}
+    return not flags&{'broken','끊김','끊킴','끊김코어','끊킴코어','error','오류','오류코어','cancel','해지','해지코어','exception','예외','예외코어'}
+
+
+def temporary_auto_changed(store):
+    """Run at the end of an outer edit (same transaction and undo group)."""
+    if getattr(store,'_history_label','') in TEMPORARY_AUTO_SKIP or getattr(store,'_temporary_auto_running',False):return 0
+    ids=set()
+    for event in store.conn.execute("SELECT table_name,old_json,new_json FROM history_events WHERE group_id=? AND table_name IN ('cores','ports','splices','cables')",(store._history_group,)):
+        for raw in (event['old_json'],event['new_json']):
+            record=json.loads(raw) if raw else {}
+            if event['table_name'] in ('cores','ports'):
+                cid=str(record.get('core_id') or '').strip()
+                if cid.startswith('임시-'):ids.add(cid)
+            elif event['table_name']=='cables' and record.get('id'):
+                for row in store.conn.execute("SELECT DISTINCT TRIM(core_id) AS cid FROM cores WHERE cable_id=? AND TRIM(COALESCE(core_id,'')) LIKE '임시-%'",(record['id'],)):ids.add(row['cid'])
+    if not ids:return 0
+    store._temporary_auto_running=True
+    try:
+        pairs=temporary_auto_pairs(store,ids)
+        if pairs:field_same_id_join_apply(store,pairs)
+    finally:store._temporary_auto_running=False
+    return len(pairs)
+
+
+def temporary_auto_activate(store):
+    """Once per drawing: join 임시코어 pieces saved before V181 (one undo step).
+    The marker survives undo, so reopening never redoes an explicit undo."""
+    try:
+        if not same_id_join_mode(store) or locked(store):return 0
+        if store.conn.execute('SELECT 1 FROM meta WHERE key=?',(TEMPORARY_AUTO_POLICY,)).fetchone():return 0
+        pairs=temporary_auto_pairs(store)
+        if pairs:
+            store.backup_to(store.path.parent/'backup'/('before_temporary_join_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.sqlite3'))
+            store._temporary_auto_running=True
+            try:
+                with store.action('같은 임시코어 자동 이어 연결'):field_same_id_join_apply(store,temporary_auto_pairs(store))
+            finally:store._temporary_auto_running=False
+        store.conn.execute('INSERT OR REPLACE INTO meta VALUES(?,?)',(TEMPORARY_AUTO_POLICY,'1'));store.conn.commit()
+        return len(pairs)
+    except (ValueError,sqlite3.Error,OSError):
+        return 0

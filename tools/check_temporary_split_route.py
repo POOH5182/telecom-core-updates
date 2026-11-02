@@ -14,10 +14,12 @@ def fixture(path,field,scenario='before'):
     # A-B are still spliced; C was rebuilt, so node 2 has no splice to it.
     c=[s.add_cable(n[i],n[i+1],chr(65+i),'6C','기설') for i in range(3)]
     other=s.add_cable(n[3],n[4],'D','6C','기설')
+    s._temporary_auto_running=True # V182: build the split on purpose (auto join is checked elsewhere)
     with s.action('합성 끊어진 임시코어'):
         for x in c:s.conn.execute("UPDATE cores SET core_id='임시-15',detail='임시 내역',signal='on' WHERE cable_id=? AND core_index=1",(x,))
         s.conn.execute("UPDATE cores SET core_id='임시-16',detail='다른 임시',signal='on' WHERE cable_id=? AND core_index=1",(other,))
         a,b=sorted(((c[0],1),(c[1],1)));s.conn.execute('INSERT INTO splices VALUES(?,?,?,?,?)',(n[1],*a,*b))
+    s._temporary_auto_running=False
     return s,c,other
 
 

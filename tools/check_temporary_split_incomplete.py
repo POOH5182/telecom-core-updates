@@ -20,7 +20,9 @@ def after_drawing(app):
     n=[s.add_node('함체 '+str(i),i*200,100) for i in range(5)]
     s.backup_to(app.scenario_path('before'))
     c=[s.add_cable(n[i],n[i+1],'NEW'+str(i+1),'72C','신설') for i in range(4)]
+    s._temporary_auto_running=True # build pieces saved by an older version
     for cable,number in zip(c,(5,5,37,37)):update(s,cable,number,dict(core_id=TEMP,detail='모바일 신규코어',signal='on'))
+    s._temporary_auto_running=False
     return n,c
 
 
@@ -33,9 +35,11 @@ def field_drawing(path):
     c=[s.add_cable(n[i],n[i+1],'NEW'+str(i+1),'72C','신설') for i in range(4)]
     # Side cables so the middle enclosures are not route ends.
     for i in (1,2,3):s.add_cable(n[i],s.add_node('옆 '+str(i),i*200,300),'X'+str(i),'12C','기설')
+    s._temporary_auto_running=True # build pieces saved by an older version
     with s.action('합성 임시코어'):
         for cable,number in zip(c,(5,5,37,37)):
             s.conn.execute("UPDATE cores SET core_id=?,detail='모바일 신규코어',signal='on' WHERE cable_id=? AND core_index=?",(TEMP,cable,number))
+    s._temporary_auto_running=False
     return s,n,c
 
 
@@ -93,6 +97,47 @@ class TemporarySplitIncomplete(unittest.TestCase):
         self.s,n,c=field_drawing(self.home/'h.sqlite3')
         with patch.object(wf.messagebox,'askyesno',return_value=True):note=wf.offer_same_id_join(None,self.s,{TEMP})
         self.assertTrue(note);self.assertEqual(splices(self.s),3)
+
+    def auto(self,c):
+        first=(c[0],5)
+        self.assertEqual(len(wf.core_connection_highlight(self.s,[first])['groups']),1)
+        self.assertTrue(self.entry(first)['complete'],self.entry(first)['reason'])
+        warn=wf.field_slot_warning_summary(self.s) if wf.field_slot_mode(self.s) else None
+        if warn:self.assertFalse(any(warn[x]['unassigned'] for x in c),warn)
+
+    def test_v182_open_joins_saved_pieces_once(self):
+        for name,maker in (('field',lambda:field_drawing(self.home/'o.sqlite3')),):
+            self.s,n,c=maker()
+            self.assertEqual(wf.temporary_auto_activate(self.s),3);self.assertEqual(splices(self.s),3);self.auto(c)
+            self.s.undo();self.assertEqual(splices(self.s),0)
+            self.assertEqual(wf.temporary_auto_activate(self.s),0);self.assertEqual(splices(self.s),0)
+        print('PASS V182 saved 임시코어 pieces join on open once')
+
+    def test_v182_after_open_joins(self):
+        app=LocalApp(self.temp.name);self.s=app.store
+        n,c=after_drawing(app)
+        self.assertEqual(wf.temporary_auto_activate(self.s),3);self.auto(c)
+
+    def test_v182_assigning_joins_automatically(self):
+        self.s,n,c=field_drawing(self.home/'a.sqlite3')
+        with self.s.action('합성 지우기'):self.s.conn.execute("UPDATE cores SET core_id='',detail='',signal='' WHERE cable_id=? AND core_index=37",(c[3],))
+        # The other three pieces were already joined by that edit.
+        self.assertEqual(splices(self.s),2)
+        # Typing the 임시 ID on the last cable joins every same-ID meeting.
+        with self.s.action('코어 정보 변경'):self.s.conn.execute("UPDATE cores SET core_id=?,detail='모바일 신규코어',signal='on' WHERE cable_id=? AND core_index=37",(TEMP,c[3]))
+        self.assertEqual(splices(self.s),3);self.auto(c)
+        self.s.undo();self.assertEqual(splices(self.s),2)
+        print('PASS V182 same 임시코어 joins automatically on edit')
+
+    def test_v182_hand_disconnect_is_kept(self):
+        self.s,n,c=field_drawing(self.home/'d.sqlite3')
+        wf.temporary_auto_activate(self.s)
+        row=self.s.conn.execute('SELECT * FROM splices WHERE node_id=?',(n[2],)).fetchone()
+        self.s.disconnect(n[2],row['cable1_id'],row['core1_index'])
+        self.assertEqual(splices(self.s),2)
+        # A later edit of the same 임시코어 must not undo the hand disconnect.
+        with self.s.action('코어 정보 변경'):self.s.conn.execute("UPDATE cores SET detail='바뀐 이름' WHERE cable_id=? AND core_index=5",(c[0],))
+        self.assertEqual(splices(self.s),2)
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

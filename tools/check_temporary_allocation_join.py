@@ -22,6 +22,8 @@ def splice_count(s):return s.conn.execute('SELECT COUNT(*) FROM splices').fetcho
 class TemporaryAllocationJoin(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.app=LocalApp(self.temp.name);self.s=self.app.store
+        # V182 would join same 임시 pieces on every edit; these checks build splits on purpose.
+        self.s._temporary_auto_running=True
         self.n,self.c=drawing(self.app)
     def tearDown(self):self.s.close();self.temp.cleanup()
 

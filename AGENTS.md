@@ -1,5 +1,17 @@
 # Telecom Core updater project
 
+- V182 (user: same 임시코어 ID still shown as separate colored pieces and
+  미배정코어 after V180; must link by itself): 임시 IDs are now an exception
+  to the field "never auto-splice" rule (user request 2026-11-02).
+  temporary_auto_pairs (field_same_id_join.py) = field_same_id_pairs with
+  respect_exclusions=True limited to equal 임시 IDs. Store.action end calls
+  temporary_auto_changed (IDs from this group's cores/ports/cables events;
+  skips labels in TEMPORARY_AUTO_SKIP and while _temporary_auto_running).
+  temporary_auto_activate runs with after_auto_activate (open, scenario
+  switch, initialize): once per drawing (meta temporary_auto_join_v181,
+  survives undo), backup, one undo step 「같은 임시코어 자동 이어 연결」.
+  Checks that need split 임시 pieces set store._temporary_auto_running=True
+  while building them. Run check_temporary_split_incomplete.py.
 - V181 (user: a cable newly drawn in 후도면 (NEW10, 36C) shows [미완료코어]
   rows in its window but no 미완료/미배정 badge on the map): its status was
   절단. In after drawings Network(active_only) drops 절단/철거 cables, so an

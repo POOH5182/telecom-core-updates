@@ -17,7 +17,11 @@ class TemporaryFieldTests(unittest.TestCase):
     snapshot=SlotFieldTests.snapshot
 
     def temporary(self,signal='on'):
-        for i in range(3):self.set(i,1,'임시-86','임시 내역',signal)
+        # V182 joins equal ON 임시 pieces by itself; these view rules are about unjoined pieces.
+        self.s._temporary_auto_running=True
+        try:
+            for i in range(3):self.set(i,1,'임시-86','임시 내역',signal)
+        finally:self.s._temporary_auto_running=False
 
     def assert_no_enclosure_allocation(self):
         for nid in self.nodes:
