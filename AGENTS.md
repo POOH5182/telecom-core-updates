@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V196 (user: 임시코어134 connected by hand at 1744W562 still showed 3
+  colors, 미배정코어 3, 배정필요 2, 연결대기 2): temporary_auto_changed now
+  also takes 임시 IDs from splices events (a hand connect joins the rest),
+  and after_auto_groups keeps 임시 ends on 절단 cables (철거 cables/
+  facilities still never). Policy key temporary_auto_join_v194 reruns the
+  open-time join once. Run check_temporary_split_incomplete.py.
 - V195 (user: after V193 many ON cores on 절단 cable 54303403 (5,6,7,10,12)
   turned 미완료코어): after_cut_terminal_notes now skips a retired slot that
   is in the saved-splice component (stored_net.links) of the finished

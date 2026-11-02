@@ -234,7 +234,7 @@ def open_same_id_join(app):
     return SameIdJoinDialog(app)
 
 
-TEMPORARY_AUTO_POLICY='temporary_auto_join_v186' # V186: rerun once (확인필요 pieces of an ON 임시코어)
+TEMPORARY_AUTO_POLICY='temporary_auto_join_v194' # rerun once per fix (V186 확인필요 pieces, V196 절단-cable pieces)
 TEMPORARY_AUTO_SKIP=('코어 연결 해제','같은 임시코어 자동 이어 연결','같은 코어ID 끝 이어 연결','같은 코어ID 한꺼번에 잇기')
 
 
@@ -290,6 +290,11 @@ def temporary_auto_changed(store):
             if event['table_name'] in ('cores','ports'):
                 cid=str(record.get('core_id') or '').strip()
                 if cid.startswith('임시-'):ids.add(cid)
+            elif event['table_name']=='splices' and record.get('node_id'):
+                # V196: a hand connection of one piece must also join the rest.
+                for i in (1,2):
+                    cid=slot_core_id(store,(record.get(f'cable{i}_id'),record.get(f'core{i}_index')))
+                    if cid.startswith('임시-'):ids.add(cid)
             elif event['table_name']=='cables' and record.get('id'):
                 for row in store.conn.execute("SELECT DISTINCT TRIM(core_id) AS cid FROM cores WHERE cable_id=? AND TRIM(COALESCE(core_id,'')) LIKE '임시-%'",(record['id'],)):ids.add(row['cid'])
     if not ids:return 0

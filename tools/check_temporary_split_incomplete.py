@@ -134,6 +134,29 @@ class TemporarySplitIncomplete(unittest.TestCase):
         self.assertEqual(wf.temporary_auto_activate(self.s),0);self.assertEqual(splices(self.s),0)
         print('PASS V186 unknown-signal piece of a live temporary core joins')
 
+    def test_v196_cut_cable_piece_and_hand_connection_join_rest(self):
+        # User case 임시코어134: ON on a 절단 12C cable, ON on two new 144C,
+        # 미입력 on the last 12C. Connecting one meeting by hand joins the rest.
+        (self.home/'cut').mkdir();app=LocalApp(str(self.home/'cut'));self.s=s=app.store
+        n=[s.add_node('함체 '+str(i),i*200,100) for i in range(5)]
+        s.backup_to(app.scenario_path('before'))
+        s._temporary_auto_running=True
+        c=[s.add_cable(n[0],n[1],'54447717','12C','절단'),s.add_cable(n[1],n[2],'NEW5','144C','신설'),
+           s.add_cable(n[2],n[3],'NEW6','144C','신설'),s.add_cable(n[3],n[4],'C9','12C','기설')]
+        for cable,number,signal in zip(c,(4,123,123,9),('on','on','on','')):update(s,cable,number,dict(core_id='임시-134',signal=signal))
+        s._temporary_auto_running=False
+        self.assertEqual(len(wf.temporary_auto_pairs(s,{'임시-134'})),3)
+        wf.reconnect_selected(s,n[1],(c[0],4),(c[1],123),False)
+        self.assertEqual(splices(s),3)
+        model=wf.core_connection_highlight(s,[(c[1],123)])
+        self.assertEqual(len(model['groups']),1);self.assertFalse(model['boundaries'])
+        warn=s.cable_core_warning_summary()
+        self.assertFalse(any(warn[x]['unassigned'] or warn[x]['incomplete_badge'] for x in c),warn)
+        # 철거 cables never take part.
+        with s.action('합성 철거'):s.conn.execute("UPDATE cables SET status='철거' WHERE id=?",(c[0],))
+        self.assertNotIn(c[0],{a[0] for _,a,b in wf.temporary_auto_pairs(s,{'임시-134'})}|{b[0] for _,a,b in wf.temporary_auto_pairs(s,{'임시-134'})})
+        print('PASS V196 hand connection and cut-cable piece join the whole temporary core')
+
     def test_v182_after_open_joins(self):
         app=LocalApp(self.temp.name);self.s=app.store
         n,c=after_drawing(app)

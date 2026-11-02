@@ -22,7 +22,9 @@ def after_auto_groups(net,node_ids=None,store=None,temporary_ids=()):
         cid=str(row.get('core_id') or '').strip()
         if not cid or (cid.startswith('임시-') and cid not in temporary_ids):continue
         cable=net.cables.get(slot[0])
-        if cid.startswith('임시-') and marked(cable):continue
+        # V196: a 임시코어 still in service on a 절단 cable joins (the user keeps
+        # 절단 cables live in 후도면, V183); 철거 cables/facilities never do.
+        if cid.startswith('임시-') and marked(cable) and not (cable and cable.get('status') in ('절단','cut') and not any(net.nodes.get(n,{}).get('status') in ('철거','remove') for n in (cable['n1id'],cable['n2id']))):continue
         if cable and str(cable.get('spec') or '').strip()=='드랍':continue
         for nid in ((cable['n1id'],cable['n2id']) if cable else (slot[0][5:],)):
             if net.nodes.get(nid,{}).get('type') not in ('hamche','rn'):continue

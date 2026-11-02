@@ -94,7 +94,11 @@ class EndpointTests(unittest.TestCase):
             self.s.conn.execute('DELETE FROM splices WHERE node_id=?',(self.nodes[2],))
             self.s.conn.execute("UPDATE cores SET signal='on' WHERE cable_id=? AND core_index=5",(self.cables[2],))
             self.s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.cables[2],))
+        # V196 would join equal 임시 pieces (also on 절단 cables) by itself; this
+        # check keeps the halves apart on purpose and joins them by hand below.
+        self.s._temporary_auto_running=True
         self.assertEqual(len(self.rows()),2);self.baseline();self.rename()
+        self.s._temporary_auto_running=False
         self.assertEqual(len(self.rows()),2);self.assertTrue(all(not r['complete'] for r in self.rows()))
         self.s.connect(self.nodes[2],(self.cables[1],4),(self.cables[2],5))
         self.assertEqual(len(self.rows()),1);self.assertTrue(self.rows()[0]['complete'])
