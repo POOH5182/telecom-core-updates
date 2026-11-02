@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V197 (user choice after V196 under-counted: 절단 cable ON core is complete
+  only when both ends are spliced at the enclosure or are 끝단):
+  after_cut_terminal_notes: for a finished after entry, each retired slot
+  with its own signal ON (not OFF/exempt) on a 절단 cable whose end is
+  neither spliced (stored links) nor cable_terminal(net.degree) → note
+  「CABLE N번(절단): NODE에서 미접속」 (cause unconnected). The V193 end
+  facility rule stays for pieces not joined to the route (V195). A core
+  moved fully off the cut cable needs that old slot set OFF. 철거 cables
+  only get the end facility rule. check_cut_terminal_route.py updated.
+
 - V196 (user: 임시코어134 connected by hand at 1744W562 still showed 3
   colors, 미배정코어 3, 배정필요 2, 연결대기 2): temporary_auto_changed now
   also takes 임시 IDs from splices events (a hand connect joins the rest),

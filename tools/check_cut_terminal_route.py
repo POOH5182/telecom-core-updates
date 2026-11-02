@@ -44,10 +44,28 @@ class CutTerminalRoute(unittest.TestCase):
 
     def test_replaced_route_complete(self):
         feed,old,new=self.build(True)
+        # V197 (user choice): the old 절단 slot still ON and unspliced at 함체A
+        # keeps the core 미완료 until it is reconnected or turned OFF.
+        entry=wf.completion_report(self.s)['by_id'][ID]
+        self.assertFalse(entry['complete'],entry)
+        self.assertEqual(wf.core_completion_brief(self.s,(old,9))[0],'미완료')
+        update(self.s,old,9,dict(signal='off'));self.s.conn.commit()
         entry=wf.completion_report(self.s)['by_id'][ID]
         self.assertTrue(entry['complete'],entry)
-        self.assertEqual(wf.core_completion_brief(self.s,(old,9))[0],'연결완료')
-        print('PASS rerouted core reaching the same end facility stays complete')
+        print('PASS rerouted core is complete once the old cut slot is OFF')
+
+    def test_cut_slot_unspliced_middle(self):
+        # V197: a 절단 slot spliced on one side but open at a middle 함체.
+        self.temp=tempfile.TemporaryDirectory();app=LocalApp(self.temp.name);s=self.s=app.store
+        o=s.add_node('국사',0,0,'sub');a=s.add_node('A',100,0);b=s.add_node('B',200,0);m=s.add_node('MDF',300,0,'sub');z=s.add_node('Z',100,100)
+        c1=s.add_cable(o,a,'C1','12C','기설');cut=s.add_cable(a,b,'CUT','12C','기설');c3=s.add_cable(a,m,'C3','12C','신설');c4=s.add_cable(b,z,'C4','12C','기설')
+        for c in (c1,cut,c3):update(s,c,1,dict(core_id='77',detail='d',signal='on'))
+        s.backup_to(app.scenario_path('before'))
+        s.connect(a,(c1,1),(c3,1));s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(cut,));s.conn.commit()
+        entry=wf.completion_report(s)['by_id']['77']
+        self.assertFalse(entry['complete'],entry)
+        self.assertEqual(wf.core_completion_brief(s,(cut,1))[0],'미완료')
+        print('PASS cut slot open at both enclosures is incomplete')
 
     def test_cut_piece_spliced_to_route(self):
         # V195 (user 54303403 5/6/7/10/12): a cut slot still spliced to the

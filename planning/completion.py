@@ -101,13 +101,12 @@ def stored_completion_route(net,core_id,seeds,options):
 
 
 def after_cut_terminal_notes(store,net,stored_net,entry,route_by_slot,off_slots,source_rows):
-    """Cut-cable pieces of one ID whose end facility the live route misses."""
+    """Cut-cable cores of a finished ID that are still not reconnected."""
     cid=entry['core_id'];retired=[s for s in entry['all_slots'] if s in net.retired_slots and not s[0].startswith('PORT:')]
     if not retired:return []
     reached={end[1] for s in entry['active_slots'] for end in (route_by_slot.get(s) or {}).get('ends',())}
     if stored_net is None:stored_net=Network(store.conn,resolve_rn_ports=True)
-    # V195: only a separate cut piece counts. A cut slot still spliced (in the
-    # saved data) to the finished route belongs to it, whatever its status.
+    # V195: a cut slot spliced (saved data) into the finished route shares its ends.
     joined=set();stack=list(entry['active_slots'])
     while stack:
         slot=stack.pop()
@@ -116,16 +115,24 @@ def after_cut_terminal_notes(store,net,stored_net,entry,route_by_slot,off_slots,
     notes=[]
     for slot in retired:
         row=source_rows.get(slot)
-        if slot in off_slots or core_connection_exempt(row) or slot in entry['active_slots'] or slot in joined:continue
+        if slot in off_slots or core_connection_exempt(row):continue
         if not str((row or {}).get('signal') or '').strip().lower()=='on':continue
         cable=stored_net.cables.get(slot[0])
         if not cable:continue
+        owner=str(cable.get('cable_id') or cable.get('spec') or slot[0])
+        cut=cable.get('status') in ('절단','cut')
         for nid in (cable['n1id'],cable['n2id']):
             node=stored_net.nodes.get(nid)
-            if not node or nid in reached or not (node['type']=='sub' or terminal_marked(node)):continue
-            if any(n==nid for n,_ in stored_net.links.get(slot,())):continue
-            name=node.get('name') or nid;owner=str(cable.get('cable_id') or cable.get('spec') or slot[0])
-            notes.append(f'{owner} {slot[1]}번(절단·철거)이 가던 끝단 {name}까지 새 경로 미접속: 새 케이블로 {name}까지 이어 주세요.')
+            if not node or any(n==nid for n,_ in stored_net.links.get(slot,())):continue
+            name=node.get('name') or nid
+            if cable_terminal(node,net.degree.get(nid,0)):
+                # V193: an end facility the finished route no longer reaches.
+                if slot not in joined and nid not in reached and (node['type']=='sub' or terminal_marked(node)):
+                    notes.append(f'{owner} {slot[1]}번(절단·철거)이 가던 끝단 {name}까지 새 경로 미접속: 새 케이블로 {name}까지 이어 주세요.')
+                continue
+            # V197 (user choice): a 절단 cable core with signal ON is finished
+            # only when both ends are spliced at the enclosure or are 끝단.
+            if cut:notes.append(f'{owner} {slot[1]}번(절단): {name}에서 미접속 · 새 케이블과 접속해 주세요.')
     return notes
 
 
