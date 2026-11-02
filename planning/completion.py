@@ -347,6 +347,21 @@ def core_check_info(store,core_id,slot=None,fallback_signal=''):
                 warning=warning,counts=counts,names=list(group['names']) if group else [],current=bool(group))
 
 
+def core_copy_signal_label(store,row):
+    """V198: signal written by 「코어내역 전체복사」 (copy output only, nothing saved).
+
+    Read over every saved position of the same core ID (임시코어 too): any ON
+    there -> ON even when this cable says 확인필요. Otherwise one entered
+    signal -> that signal; different non-ON signals or none -> this row's own.
+    A row without a core ID keeps its own signal.
+    """
+    row=dict(row or {});local=core_signal_code(row.get('signal'));cid=str(row.get('core_id') or '').strip()
+    counts=core_id_overview(store).get(cid,{}).get('counts',{}) if cid else {}
+    known={code for code,count in counts.items() if count}-{'unknown'}
+    code='on' if 'on' in known else next(iter(known)) if len(known)==1 else local
+    return CORE_SIGNAL_NAMES.get(code,str(row.get('signal') or '') if code==local else code)
+
+
 def core_id_signal_summary(store,slot):
     """Read stored signals for this exact ID across the current drawing.
 

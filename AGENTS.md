@@ -1,5 +1,12 @@
 # Telecom Core updater project
 
+- V198 (user: 코어내역 복사 should write the core's overall signal, ON if
+  the same core is ON elsewhere): completion.core_copy_signal_label(store,row)
+  reads core_id_overview counts for the row's ID (임시 too): any ON -> ON,
+  one entered signal -> it, else the row's own. Used by copy_details in both
+  CableDialog and _LegacyCableDialog. Copy output only, nothing saved. Run
+  check_copy_overall_signal.py.
+
 - V197 (user choice after V196 under-counted: 절단 cable ON core is complete
   only when both ends are spliced at the enclosure or are 끝단):
   after_cut_terminal_notes: for a finished after entry, each retired slot

@@ -91,6 +91,8 @@ jobs:
         run: python tools/check_offmap_links.py
       - name: 후도면 절단 케이블이 가던 끝단(MDF) 미도달 시 미완료 검증
         run: python tools/check_cut_terminal_route.py
+      - name: 코어내역 전체복사 신호를 같은 코어 전체 신호(ON 우선)로 출력 검증
+        run: python tools/check_copy_overall_signal.py
       - name: 후도면 지웠다 다시 배정한 코어 양옆 자동 재연결 검증
         run: python tools/check_reassign_rejoin.py
       - name: 후도면 코어배정 자동배정·틀어도 되는 함체·같은 번호 우선 검증
