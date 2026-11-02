@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V189 (user: 함체 직결 only part of the numbers, e.g. 1~30 or 6~30):
+  NodeDialog 「번호 범위 직결」 (full_splice_range → ask_splice_range →
+  SpliceRangeDialog start/end + 「빈 번호도 임시코어로 직결」). Store.
+  range_splice_plan(node,left,right,start,end,include_empty) returns
+  (targets, skipped): skips numbers spliced at this node (이미 직결됨 /
+  다른 번호와 연결), cancel/broken (해지·끊김), empty if not included.
+  Store.full_splice gained start/end/include_empty (same 'full_splice'
+  run_bulk method, one undo step). Different real IDs stay connect()
+  errors. Run check_range_splice.py.
+
 - V188 (user: in the 여러 케이블 비교 panel, NEW3 16번 is used by another core
   (3060512707) and they want this core on 16 like the other cables):
   IncrementalCoreAllocator.release_other_preview/release_other empty one
