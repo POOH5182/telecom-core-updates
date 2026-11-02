@@ -113,6 +113,27 @@ class TemporarySplitIncomplete(unittest.TestCase):
             self.assertEqual(wf.temporary_auto_activate(self.s),0);self.assertEqual(splices(self.s),0)
         print('PASS V182 saved temporary pieces join on open once')
 
+    def test_v186_unknown_piece_of_live_temporary_joins(self):
+        # User case: 임시코어46 ON on two cables, 확인필요 on NEW8 -> still one core.
+        for mode in ('after','field'):
+            with self.subTest(mode=mode):
+                if mode=='after':
+                    (self.home/mode).mkdir();app=LocalApp(str(self.home/mode));self.s=app.store;n,c=after_drawing(app)
+                else:
+                    self.s,n,c=field_drawing(self.home/'u.sqlite3')
+                self.s._temporary_auto_running=True
+                with self.s.action('합성 확인필요'):self.s.conn.execute("UPDATE cores SET signal='' WHERE cable_id=? AND core_index=5",(c[1],))
+                self.s._temporary_auto_running=False
+                self.assertEqual(wf.temporary_auto_activate(self.s),3);self.auto(c)
+                self.s.close()
+        # No ON anywhere on the ID: left alone (V178 확인필요 임시코어 may stop anywhere).
+        self.s,n,c=field_drawing(self.home/'z.sqlite3')
+        self.s._temporary_auto_running=True
+        with self.s.action('합성 전체 확인필요'):self.s.conn.execute("UPDATE cores SET signal='' WHERE core_id=?",(TEMP,))
+        self.s._temporary_auto_running=False
+        self.assertEqual(wf.temporary_auto_activate(self.s),0);self.assertEqual(splices(self.s),0)
+        print('PASS V186 unknown-signal piece of a live temporary core joins')
+
     def test_v182_after_open_joins(self):
         app=LocalApp(self.temp.name);self.s=app.store
         n,c=after_drawing(app)

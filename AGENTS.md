@@ -1,5 +1,13 @@
 # Telecom Core updater project
 
+- V186 (user: 임시코어46 ON on two cables but 확인필요 on NEW8/8 still showed
+  「같은 코어ID 경로가 2개로 끊어짐 / 끝단 조건 미충족」): V182 auto join needed
+  ON on both ends. temporary_auto_pairs now requires the 임시 ID to be ON
+  somewhere (temporary_live_ids); each end only must not be OFF/error/
+  exception or marked 끊김/오류/해지/예외. Policy key bumped to
+  temporary_auto_join_v186 so saved drawings join once more on open. Run
+  check_temporary_split_incomplete.py.
+
 - V185 (V183/V184 Windows gate check_field_work_endpoints failed):
   cable_core_warning_summary must never call core_completion_brief (it calls
   completed_temporary_slots → cable_core_warning_summary → RecursionError).

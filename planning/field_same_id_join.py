@@ -234,7 +234,7 @@ def open_same_id_join(app):
     return SameIdJoinDialog(app)
 
 
-TEMPORARY_AUTO_POLICY='temporary_auto_join_v181'
+TEMPORARY_AUTO_POLICY='temporary_auto_join_v186' # V186: rerun once (확인필요 pieces of an ON 임시코어)
 TEMPORARY_AUTO_SKIP=('코어 연결 해제','같은 임시코어 자동 이어 연결','같은 코어ID 끝 이어 연결','같은 코어ID 한꺼번에 잇기')
 
 
@@ -254,18 +254,28 @@ def temporary_auto_pairs(store,core_ids=None):
     ids={c for c in ids if c.startswith('임시-')}
     if not ids:return []
     pairs=field_same_id_pairs(store,ids,respect_exclusions=True)
-    # Only live (signal ON) 임시코어 must run end to end; 확인필요/OFF 임시
-    # pieces may stop anywhere (V178) and are left for the manual join.
-    return [p for p in pairs if slot_core_id(store,p[1]).startswith('임시-') and slot_core_id(store,p[1])==slot_core_id(store,p[2])
+    # Only a live 임시코어 (ON somewhere on that ID) must run end to end. A
+    # 확인필요 (unknown) number of that ID is neutral and joins too (V186);
+    # OFF numbers and IDs with no ON anywhere are left for the manual join.
+    live=temporary_live_ids(store,ids)
+    return [p for p in pairs if slot_core_id(store,p[1]) in live and slot_core_id(store,p[1])==slot_core_id(store,p[2])
             and temporary_auto_slot_ok(store,p[1]) and temporary_auto_slot_ok(store,p[2])]
 
 
+def temporary_live_ids(store,ids):
+    live=set()
+    for table in ('cores','ports'):
+        for row in store.conn.execute(f"SELECT DISTINCT TRIM(core_id) AS cid FROM {table} WHERE TRIM(COALESCE(core_id,'')) LIKE '임시-%' AND LOWER(TRIM(COALESCE(signal,'')))='on'"):
+            if row['cid'] in ids:live.add(row['cid'])
+    return live
+
+
 def temporary_auto_slot_ok(store,slot):
-    """Signal ON and not marked 끊김/오류/해지/예외 (those stay a manual decision)."""
+    """Not OFF and not marked 끊김/오류/해지/예외 (those stay a manual decision)."""
     owner,index=slot
     if str(owner).startswith('PORT:'):row=store.conn.execute('SELECT * FROM ports WHERE node_id=? AND port_index=?',(owner[5:],index)).fetchone()
     else:row=store.conn.execute('SELECT * FROM cores WHERE cable_id=? AND core_index=?',(owner,index)).fetchone()
-    if not row or str(row['signal'] or '').strip().lower()!='on':return False
+    if not row or str(row['signal'] or '').strip().lower() in ('off','error','exception'):return False
     flags={''.join(str(s).split()) for s in statuses(dict(row))}
     return not flags&{'broken','끊김','끊킴','끊김코어','끊킴코어','error','오류','오류코어','cancel','해지','해지코어','exception','예외','예외코어'}
 
