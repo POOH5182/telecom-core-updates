@@ -1,5 +1,19 @@
 # Telecom Core updater project
 
+- V184 (user: wants to press 자동배정 core by core; their order is the
+  priority; they pick enclosures where cores may turn; elsewhere keep the
+  same number): planning/core_auto_assign.py, bundled before
+  manual_allocation. MapCoreAllocationPanel gets 「자동배정」 and 「틀어도 되는
+  함체」 (CoreAutoAssignActions mixin). Allowed enclosures are per drawing in
+  after_plan['turn_nodes'] (turn_nodes/save_turn_nodes, one undo step).
+  core_auto_route: clicked active cables, else the confirmed route, else
+  AfterRoutePlanner.recommend; cut/removed cables never take part.
+  core_auto_numbers is a chain DP: fewest turns at not-allowed enclosures,
+  then fewest turns, then low numbers; existing and user-drafted numbers are
+  fixed. A forced turn asks yes/no first. The plan becomes the normal orange
+  draft and saves only through apply()/ManualAllocationReview. Branches and
+  loops are refused; RN ports stay manual. Run check_core_auto_assign.py.
+
 - V183 (user chose: also show 미완료코어 on 절단/철거 cables in 후도면, e.g.
   NEW10 drawn there as 절단): cable_core_warning_summary adds, for after
   drawings, every slot of a CUT_CABLE_STATUSES cable whose

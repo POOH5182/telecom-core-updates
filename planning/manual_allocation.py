@@ -915,7 +915,7 @@ class AllocationMatrixView:
         return 'break'
 
 
-class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Toplevel):
+class MapCoreAllocationPanel(CoreAutoAssignActions,AllocationMatrixView,ManualAllocationActions,tk.Toplevel):
     """Keep the main map interactive while one core's explicit draft is open."""
     GRID_H=48
 
@@ -940,6 +940,8 @@ class MapCoreAllocationPanel(AllocationMatrixView,ManualAllocationActions,tk.Top
         toolbar=FlowToolbar(self);toolbar.pack(fill='x')
         toolbar.add(ttk.Label(toolbar,text='코어배정 중 · '+service.core_id,font=('Malgun Gothic',10,'bold')))
         self.apply_button=toolbar.add(ttk.Button(toolbar,text='선택 번호 배정·저장',command=lambda:self.run(self.apply),style='Primary.TButton'))
+        self.auto_button=toolbar.add(ttk.Button(toolbar,text='자동배정',command=lambda:self.run(self.auto_assign)))
+        self.turn_button=toolbar.add(ttk.Button(toolbar,text='틀어도 되는 함체',command=lambda:self.run(self.choose_turn_nodes)))
         toolbar.add(ttk.Button(toolbar,text='전체도면 맞춤',command=app.fit_view))
         toolbar.add(ttk.Button(toolbar,text='배정안 초기화',command=lambda:self.run(self.reload)))
         toolbar.add(ttk.Button(toolbar,text='코어 선택으로 돌아가기',command=self.close_requested))

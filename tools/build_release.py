@@ -85,6 +85,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM DRAWING TOOLS\n' + (ROOT / 'planning' / 'drawing_tools.py').read_text(encoding='utf-8')
         if version >= 90:
             baseline += '\n\n# BEGIN TELECOM AUTO ALLOCATION\n' + (ROOT / 'planning' / 'auto_allocation.py').read_text(encoding='utf-8')
+        if version >= 183:
+            baseline += '\n\n# BEGIN TELECOM CORE AUTO ASSIGN\n' + (ROOT / 'planning' / 'core_auto_assign.py').read_text(encoding='utf-8')
         if version >= 92:
             baseline += '\n\n# BEGIN TELECOM MANUAL ALLOCATION\n' + (ROOT / 'planning' / 'manual_allocation.py').read_text(encoding='utf-8')
         if version >= 93:
