@@ -1,5 +1,10 @@
 # Telecom Core updater project
 
+- V192 (user: copy only the selected rows' numbers, no 방향 name, pasted as
+  1,2,3,4): node_pair_numbers_text(rows); NodePairSummaryDialog tree is
+  selectmode extended, 「선택 행 숫자 복사 (1,2,3)」 and Ctrl+C = copy_numbers
+  (one line per row). Note: Excel may read e.g. 1,234 as a number.
+
 - V191 (user on V190 V2: name each direction once, one line per direction,
   and use the enclosure on that side instead of the cable ID): labels =
   store.opposite_name (duplicates get (N번선)); node_pair_grid per_row 0

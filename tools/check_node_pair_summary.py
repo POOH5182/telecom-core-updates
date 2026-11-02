@@ -42,6 +42,9 @@ class NodePairSummaryTests(unittest.TestCase):
         lines=tsv.split('\n')
         self.assertEqual(lines[0],'A 방향\t1\t2\t3\t4\t5\t6\t7');self.assertEqual(lines[2],'');self.assertEqual(lines[3],'C 방향\t13\t14\t16\t17\t22\t23')
         self.assertEqual(code['node_pair_grid']([]),[])
+        rows=code['node_pair_grid'](groups)
+        self.assertEqual(code['node_pair_numbers_text']([rows[0]]),'1,2,3,4,5,6,7')
+        self.assertEqual(code['node_pair_numbers_text']([rows[2]]),'')
 
     def test_dialog(self):
         try:root=tk.Tk()
@@ -59,11 +62,16 @@ class NodePairSummaryTests(unittest.TestCase):
             self.assertTrue(text.startswith('A 방향\t1\t2\t3\t4\t5\t6\t7\nB 방향\t7'),text)
             dialog.tree.selection_set(kids[3]);dialog.copy_selected()
             self.assertTrue(dialog.clipboard_get().startswith('C 방향\t13'))
+            # V192: numbers only, comma joined, one line per selected row
+            dialog.tree.selection_set((kids[0],kids[1]));dialog.copy_numbers()
+            self.assertEqual(dialog.clipboard_get(),'1,2,3,4,5,6,7\n7,8,9,10,11,12,13')
+            dialog.tree.selection_set((kids[3],));dialog.copy_numbers()
+            self.assertEqual(dialog.clipboard_get(),'13,14,16,17,22,23')
             dialog.destroy();parent.destroy()
         finally:root.destroy()
 
 
 if __name__=='__main__':
     result=unittest.main(exit=False,verbosity=1).result
-    if result.wasSuccessful():print('PASS node pair summary V2 (V191)')
+    if result.wasSuccessful():print('PASS node pair summary V2 (V192)')
     else:print('::error::node pair summary V2 check failed');raise SystemExit(1)
