@@ -45,4 +45,10 @@ class AfterCutCableNote(unittest.TestCase):
         print('PASS 신설 cable in after drawing shows badge')
 
 
-if __name__=='__main__':unittest.main()
+if __name__=='__main__':
+    import sys
+    import io
+    stream=io.TextIOWrapper(sys.stderr.buffer,encoding='ascii',errors='backslashreplace',line_buffering=True)
+    result=unittest.TextTestRunner(stream=stream,verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(AfterCutCableNote))
+    for test,trace in result.failures+result.errors:print('::error::'+ascii(str(test)+' '+trace.strip().splitlines()[-1]))
+    sys.exit(0 if result.wasSuccessful() else 1)
