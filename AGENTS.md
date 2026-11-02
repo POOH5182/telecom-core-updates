@@ -1,5 +1,12 @@
 # Telecom Core updater project
 
+- V195 (user: after V193 many ON cores on 절단 cable 54303403 (5,6,7,10,12)
+  turned 미완료코어): after_cut_terminal_notes now skips a retired slot that
+  is in the saved-splice component (stored_net.links) of the finished
+  route's active_slots, and retired slots whose own signal is not ON. Only a
+  separate dangling cut piece triggers the note. check_cut_terminal_route.py
+  test_cut_piece_spliced_to_route (끝단-marked enclosures).
+
 - V194 (user: 후도면 3062483833 62/111/10번 in three colors, W643#2
   「배정필요 2 · 연결대기 2개」 after deleting 111번 in the cable and assigning
   it again): exclude_deleted_core_from_auto marks the deleted slot and its

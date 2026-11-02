@@ -106,10 +106,18 @@ def after_cut_terminal_notes(store,net,stored_net,entry,route_by_slot,off_slots,
     if not retired:return []
     reached={end[1] for s in entry['active_slots'] for end in (route_by_slot.get(s) or {}).get('ends',())}
     if stored_net is None:stored_net=Network(store.conn,resolve_rn_ports=True)
+    # V195: only a separate cut piece counts. A cut slot still spliced (in the
+    # saved data) to the finished route belongs to it, whatever its status.
+    joined=set();stack=list(entry['active_slots'])
+    while stack:
+        slot=stack.pop()
+        if slot in joined:continue
+        joined.add(slot);stack.extend(peer for _,peer in stored_net.links.get(slot,()) if peer not in joined)
     notes=[]
     for slot in retired:
         row=source_rows.get(slot)
-        if slot in off_slots or core_connection_exempt(row) or slot in entry['active_slots']:continue
+        if slot in off_slots or core_connection_exempt(row) or slot in entry['active_slots'] or slot in joined:continue
+        if not str((row or {}).get('signal') or '').strip().lower()=='on':continue
         cable=stored_net.cables.get(slot[0])
         if not cable:continue
         for nid in (cable['n1id'],cable['n2id']):

@@ -49,6 +49,21 @@ class CutTerminalRoute(unittest.TestCase):
         self.assertEqual(wf.core_completion_brief(self.s,(old,9))[0],'연결완료')
         print('PASS rerouted core reaching the same end facility stays complete')
 
+    def test_cut_piece_spliced_to_route(self):
+        # V195 (user 54303403 5/6/7/10/12): a cut slot still spliced to the
+        # finished route is part of it, even if both enclosures are 끝단.
+        self.temp=tempfile.TemporaryDirectory();app=LocalApp(self.temp.name);s=self.s=app.store
+        hub=s.add_node('1744W742#3',0,0);s1=s.add_node('S1',100,-100);x=s.add_node('X513',200,0);w=s.add_node('W643',-200,0)
+        cut=s.add_cable(hub,s1,'54303403','12C','기설');f=s.add_cable(hub,x,'144','144C','기설');s.add_cable(w,hub,'144b','144C','기설')
+        update(s,cut,5,dict(core_id='10083276',detail='d',signal='on'));update(s,f,93,dict(core_id='10083276',detail='d',signal='on'))
+        s.connect(hub,(cut,5),(f,93));s.backup_to(app.scenario_path('before'))
+        s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(cut,))
+        s.conn.execute("UPDATE nodes SET extra_json='{\"terminal\": true}' WHERE id IN (?,?)",(hub,s1));s.conn.commit()
+        entry=wf.completion_report(self.s)['by_id']['10083276']
+        self.assertTrue(entry['complete'],entry)
+        self.assertEqual(wf.core_completion_brief(self.s,(cut,5))[0],'연결완료')
+        print('PASS cut slot spliced to the finished route stays complete')
+
 
 if __name__=='__main__':
     import sys
