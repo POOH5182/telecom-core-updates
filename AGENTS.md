@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V181 (user: a cable newly drawn in 후도면 (NEW10, 36C) shows [미완료코어]
+  rows in its window but no 미완료/미배정 badge on the map): its status was
+  절단. In after drawings Network(active_only) drops 절단/철거 cables, so an
+  ID that also lives on active cables keeps only active_slots and the cut
+  cable gets no badge (intended display limit, V103). completion.
+  after_cut_cable_note(store,cable_key) explains this and says to switch to
+  신설; CableDialog.refresh_completion_reason appends it for 미완료/연결 오류.
+  Counting rules unchanged. Run check_after_cut_cable_note.py.
+
 - V180 (user: 임시코어 assigned on every cable still counted 미완료코어 N):
   cause = the 임시 pieces have no splice at the meeting enclosures (구간 1..4).
   field audit components carry temp_ids; pieces of one 임시 ID (no real ID)

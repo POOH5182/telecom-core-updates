@@ -351,6 +351,23 @@ def core_completion_brief(store,slot):
     return '연결 오류' if not entry['required'] and (entry.get('error') or entry.get('holds')) else '미완료',' · '.join(reasons) or '연결 상태 확인 필요'
 
 
+CUT_CABLE_STATUSES=('절단','철거','cut','remove')
+
+
+def after_cut_cable_note(store,cable_key):
+    """V181: in an after drawing a 절단/철거 cable is a retired work marker, so
+    its cores are left out of the map's 미완료코어/미배정코어 counts. Say so in
+    the cable window instead of leaving the badge silently missing."""
+    if completion_kind(store)!='after':return ''
+    row=store.conn.execute('SELECT status FROM cables WHERE id=?',(cable_key,)).fetchone()
+    status=str(row[0] or '').strip() if row else ''
+    if status not in CUT_CABLE_STATUSES:return ''
+    label={'cut':'절단','remove':'철거'}.get(status,status)
+    return (f'이 케이블은 「{label}」 상태라 후도면에서는 잘려 나가는 구간으로 봅니다. '
+            '그래서 도면의 「미완료코어·미배정코어」 수에 넣지 않습니다. '
+            '새로 까는 케이블이면 케이블 상태를 「신설」로 바꾸세요.')
+
+
 def core_completion_locations(store,slot):
     """Exact saved-state reason and endpoints for the selected physical route."""
     slot=tuple(slot);report=completion_report(store);entry=report['by_slot'].get(slot,{})
