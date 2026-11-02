@@ -42,7 +42,7 @@ class AfterCutCableNote(unittest.TestCase):
         new=self.build('신설')
         self.assertEqual(wf.after_cut_cable_note(self.s,new),'')
         self.assertGreater(self.badge(new),0)
-        print('PASS 신설 cable in after drawing shows badge')
+        print('PASS new (sinseol) cable in after drawing shows badge')
 
 
 if __name__=='__main__':
