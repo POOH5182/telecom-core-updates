@@ -113,6 +113,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM REFERENCE DETAILS\n' + (ROOT / 'planning' / 'reference_details.py').read_text(encoding='utf-8')
         if version >= 118:
             baseline += '\n\n# BEGIN TELECOM REFERENCE DRAWING\n' + (ROOT / 'planning' / 'reference_drawing.py').read_text(encoding='utf-8')
+        if version >= 187:
+            baseline += '\n\n# BEGIN TELECOM OFFMAP LINKS\n' + (ROOT / 'planning' / 'offmap_links.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()

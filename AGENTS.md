@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V187 (user: NEW1 81번 looks split because only part of the route is drawn;
+  wants it not counted as an error but still checked if one side is wrong):
+  planning/offmap_links.py (bundled last). Marks live in workflow_state
+  project['offmap_links'] (a/na/b/nb/core_id/memo; write_state = one undo
+  step), after drawings only. offmap_evaluate re-checks every pass (same
+  non-empty ID, live cable at the marked node, not OFF/error/cut, not
+  spliced there; both spliced = unused). completion_report attaches ok
+  marks as virtual Network.links (net and stored_net) and adds
+  「도면 밖 연결 불일치」 (cause 'offmap') to problem marks;
+  Store.cable_core_warning_summary does the same with its own adjacency.
+  No splice rows are written. CableDialog button, 코어 도구 「도면 밖 연결
+  목록」, dashed map hint. Run check_offmap_links.py.
+
 - V186 (user: 임시코어46 ON on two cables but 확인필요 on NEW8/8 still showed
   「같은 코어ID 경로가 2개로 끊어짐 / 끝단 조건 미충족」): V182 auto join needed
   ON on both ends. temporary_auto_pairs now requires the 임시 ID to be ON

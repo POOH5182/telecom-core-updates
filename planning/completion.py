@@ -76,7 +76,8 @@ def completion_causes(notes):
         for fragments,cause in ((('미접속','찾지 못함'),'unconnected'),(('경로가','끊어짐'),'split'),
                                 (('조건 미충족',),'endpoints'),(('분기','중복'),'branch'),
                                 (('다른 코어ID','빈 코어','코어ID 없음'),'identity'),(('오류 상태',),'marked'),
-                                (('내부 포트','포트 미접속'),'port'),(('시설과 맞지','없는 경로'),'invalid')):
+                                (('내부 포트','포트 미접속'),'port'),(('시설과 맞지','없는 경로'),'invalid'),
+                                (('도면 밖 연결 불일치',),'offmap')):
             if any(fragment in note for fragment in fragments):result.add(cause)
     return frozenset(result)
 
@@ -116,6 +117,10 @@ def completion_report(store,kind=None):
             for nid in (a,b):net.degree[nid]+=1
     for nid,others in neighbors.items():net.degree[nid]=max(net.degree[nid],len(others))
     stored_net=Network(store.conn,resolve_rn_ports=True) if kind=='after' and len(source_cables)!=len(net.cables) else None
+    if kind=='after':
+        # V187: 「도면 밖 연결」 marks act as checked virtual splices.
+        offmap_attach(store,net)
+        if stored_net is not None:offmap_attach(store,stored_net)
     if stored_net is not None:stored_net.degree=net.degree.copy()
     port_identities={**(stored_net.rn_port_identities if stored_net else {}),**net.rn_port_identities}
     grouped={};source_rows={}
@@ -159,7 +164,7 @@ def completion_report(store,kind=None):
             route=net.inspect(cid,options) if cid else {'complete':False,'notes':['코어ID 없음: 신호·해지예상 코어의 ID를 배정하고 경로를 연결하세요.']}
             if kind=='after' and cid and not route['complete']:
                 if stored_net is None:
-                    stored_net=Network(store.conn,resolve_rn_ports=True);stored_net.degree=net.degree.copy()
+                    stored_net=Network(store.conn,resolve_rn_ports=True);stored_net.degree=net.degree.copy();offmap_attach(store,stored_net)
                 saved=stored_completion_route(stored_net,cid,active_slots,options)
                 route=saved
                 if saved['complete']:
@@ -195,6 +200,7 @@ def completion_report(store,kind=None):
                    complete=False,reason=reason,reason_items=(reason,),causes=frozenset({'identity'}),pending_nodes=tuple(dict.fromkeys(item['node_id'] for item in items)),**policy)
         by_id[cid]=entry;(targets if policy['required'] else excluded).append(entry)
         if policy['exception_complete']:entry.update(complete=True,physical_complete=False,reason='예외 처리로 완료',reason_items=(),causes=frozenset())
+    if kind=='after':offmap_mark_report(store,by_id)
     if kind=='after':
         # V180: say why an assigned 임시코어 is still 미완료 when its pieces only
         # need a splice at the enclosure where they meet.
@@ -334,14 +340,14 @@ def core_completion_brief(store,slot):
             if actual and (actual['error'] or actual['holds']):entry=actual
     if temporary and slot in completed_temporary_slots(store):return '연결완료임시코어',''
     # OFF exempts allocation, not real faults on an existing connection.
-    if exempt and not entry.get('error') and not entry.get('holds') and not entry['causes']&{'identity','signal','split','branch','invalid','marked','field'}:
+    if exempt and not entry.get('error') and not entry.get('holds') and not entry['causes']&{'identity','signal','split','branch','invalid','marked','field','offmap'}:
         return '집계 제외',exempt
-    if entry['complete']:return '연결완료',''
+    if entry['complete']:return '연결완료','도면 밖 연결 포함 (그리지 않은 구간)' if entry.get('offmap') else ''
     if not entry['required'] and not (entry.get('error') or entry.get('holds')):return '필수 연결 대상 아님',''
     causes=set(entry['causes']);reasons=[]
     for keys,label in (({'unconnected','endpoints'} if 'port' not in causes else set(),'코어연결 미완료'),({'port'},'RN 내부포트 접속 확인'),
                        ({'identity'},'코어ID 다름'),({'signal'},'신호 불일치'),({'split'},'코어경로 분리'),
-                       ({'branch'},'중복·분기 연결'),({'invalid'},'접속정보 오류'),({'marked'},'오류 상태 표시')):
+                       ({'branch'},'중복·분기 연결'),({'invalid'},'접속정보 오류'),({'marked'},'오류 상태 표시'),({'offmap'},'도면 밖 연결 불일치')):
         if causes&keys:reasons.append(label)
     if 'identity' in causes and not str(store.core(*slot)['core_id'] or '').strip() and not field_slot_mode(store):
         reasons[reasons.index('코어ID 다름')]='코어ID 없음'
@@ -361,9 +367,11 @@ def core_completion_locations(store,slot):
     route=report.get('route_by_slot',{}).get(slot)
     if route:
         notes=route['notes']
-        if route['complete']:
+        if 'offmap' in entry.get('causes',()):notes=list(entry.get('reason_items',()))
+        elif route['complete']:
             text=' ↔ '.join(route.get('end_names',()))+' · 실제 접속 완료'
             if entry.get('connection_basis'):text+='\n'+entry['connection_basis']
+            for item in entry.get('offmap',()):text+='\n도면 밖 연결: '+item
             return text
     else:notes=entry.get('reason_items',())
     notes=list(notes)
