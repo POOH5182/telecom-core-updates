@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V190 (user: 함체 코어내역 V2 like their Excel capture - connected cable
+  pairs as two lines, 6 numbers per line, easy copy into Excel): module
+  functions node_pair_groups(store,node) (splices at the node grouped by
+  cable pair in node_cables order, PORT first for rn/sub; label = cable ID
+  or opposite name), node_pair_grid(groups,per_row,swapped,sort_bottom)
+  (top line sorted unless sort_bottom; blank line between blocks) and
+  node_pair_tsv. NodePairSummaryDialog is view only (swap/sort are dialog
+  state, nothing saved). Buttons: NodeDialog 「함체 코어내역 V2」 and
+  NodeSummaryDialog 「V2 보기 (두 줄 쌍)」. Run check_node_pair_summary.py.
+
 - V189 (user: 함체 직결 only part of the numbers, e.g. 1~30 or 6~30):
   NodeDialog 「번호 범위 직결」 (full_splice_range → ask_splice_range →
   SpliceRangeDialog start/end + 「빈 번호도 임시코어로 직결」). Store.
