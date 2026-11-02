@@ -85,6 +85,61 @@ def after_auto_exclusions(store,nid,node):
     return excluded-store._after_deletion_exclusions.get(nid,set())
 
 
+def after_reassign_exclusion_keys(store,slot,core_id):
+    """V194: keys a re-assigned number releases, per facility.
+
+    Deleting a number also marks its old splice partners 「자동접속 제외」.
+    History relaxes that only while the deletion is still in the undo list,
+    so after reopen/import the re-assigned number stayed cut off. Giving an
+    empty number a core ID again is the user's choice to join it: release its
+    own key and the free (unspliced) same-ID numbers at its two ends whose
+    exclusion is marked 「autoSameNumberDeleted」 (made by a deletion).
+    """
+    owner,index=str(slot[0]),int(slot[1]);core_id=str(core_id or '').strip();result={}
+    if not core_id:return result
+    if owner.startswith('PORT:'):nodes=(owner[5:],)
+    else:
+        cable=store.conn.execute('SELECT n1id,n2id FROM cables WHERE id=?',(owner,)).fetchone()
+        if not cable:return result
+        nodes=tuple(dict.fromkeys((cable['n1id'],cable['n2id'])))
+    for nid in nodes:
+        keys={f'{owner}::{index}'}
+        linked=set()
+        for sp in store.conn.execute('SELECT * FROM splices WHERE node_id=?',(nid,)):
+            linked.update(((sp['cable1_id'],int(sp['core1_index'])),(sp['cable2_id'],int(sp['core2_index']))))
+        rows=list(store.conn.execute("SELECT c.cable_id,c.core_index FROM cores c JOIN cables k ON k.id=c.cable_id WHERE (k.n1id=? OR k.n2id=?) AND TRIM(COALESCE(c.core_id,''))=?",(nid,nid,core_id)))
+        rows+=[('PORT:'+nid,r[0]) for r in store.conn.execute("SELECT port_index FROM ports WHERE node_id=? AND TRIM(COALESCE(core_id,''))=?",(nid,core_id))]
+        node=store.conn.execute('SELECT extra_json FROM nodes WHERE id=?',(nid,)).fetchone()
+        deleted=set(json.loads((node['extra_json'] if node else '') or '{}').get('autoSameNumberDeleted') or ())
+        for cid,idx in rows:
+            other=(cid,int(idx))
+            if other==(owner,index) or other in linked:continue
+            # Only partners marked by a deletion; an explicit disconnect stays.
+            if f'{cid}::{int(idx)}' in deleted:keys.add(f'{cid}::{int(idx)}')
+        result[nid]=keys
+    return result
+
+
+def after_reassign_release(store,slot,core_id):
+    """Store side of V194 (typed ID in an after drawing); one undo step."""
+    if completion_kind(store)!='after':return 0
+    released=0
+    for nid,keys in after_reassign_exclusion_keys(store,slot,core_id).items():
+        row=store.conn.execute('SELECT extra_json FROM nodes WHERE id=?',(nid,)).fetchone()
+        if not row:continue
+        extra=json.loads(row['extra_json'] or '{}');values=extra.get('autoSameNumberExcluded')
+        if not isinstance(values,list) or not set(values)&keys:continue
+        if node_locked(store,nid):continue
+        kept=[k for k in values if k not in keys];released+=len(values)-len(kept)
+        if kept:extra['autoSameNumberExcluded']=kept
+        else:extra.pop('autoSameNumberExcluded',None)
+        marks=[k for k in extra.get('autoSameNumberDeleted') or () if k in kept]
+        if marks:extra['autoSameNumberDeleted']=marks
+        else:extra.pop('autoSameNumberDeleted',None)
+        store.conn.execute('UPDATE nodes SET extra_json=? WHERE id=?',(json.dumps(extra,ensure_ascii=False),nid))
+    return released
+
+
 def after_auto_pairs(store,node_ids=None,net=None,touched_slots=None,blocked=None,temporary_ids=()):
     if completion_kind(store)!='after' or (locked(store) and blocked is None):return []
     if net is None:net=Network(store.conn,resolve_rn_ports=True)

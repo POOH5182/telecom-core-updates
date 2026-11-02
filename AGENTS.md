@@ -1,5 +1,21 @@
 # Telecom Core updater project
 
+- V194 (user: 후도면 3062483833 62/111/10번 in three colors, W643#2
+  「배정필요 2 · 연결대기 2개」 after deleting 111번 in the cable and assigning
+  it again): exclude_deleted_core_from_auto marks the deleted slot and its
+  splice partners autoSameNumberExcluded; after_auto_exclusions relaxes them
+  only via history (lost after reopen/import/100 groups). Now
+  set_auto_splice_exclusions(deleted=True) also records the new keys in
+  extra_json 「autoSameNumberDeleted」 (explicit exclude removes the mark,
+  marks ⊆ excluded). after_reassign_exclusion_keys/after_reassign_release
+  (after_autoconnect.py): giving an empty number an ID releases its own key
+  and its free same-ID partners at its cable ends that carry the deleted
+  mark; locked facilities untouched. Used by Store.update_core (old ID empty,
+  after only) and IncrementalCoreAllocator.exclusion_changes. Its node
+  snapshot check now sorts expected rows like plan_snapshot. Legacy drawings
+  without the mark need one manual 「자동연결 보류 확인」. Run
+  check_reassign_rejoin.py.
+
 - V193 (user: 후도면 54447717(절단) 9번 · 9220085 not assigned yet but
   「9 · 연결완료」 and 118/118): Network(active_only) drops cut cables, so the
   live remainder of the ID could be a complete route that no longer reaches

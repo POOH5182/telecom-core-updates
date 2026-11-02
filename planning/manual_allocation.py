@@ -269,15 +269,27 @@ class IncrementalCoreAllocator(ManualCoreAllocator):
     def exclusion_changes(self,slots):
         """Only an explicitly selected empty number supersedes its old exclusions."""
         keys={f'{c}::{n}' for c,n in slots};changes=[]
+        # V194: also the free same-ID partners at the new number's ends,
+        # whose 「자동접속 제외」 came from deleting this number earlier.
+        partners=defaultdict(set)
+        for slot in slots:
+            for nid,found in after_reassign_exclusion_keys(self.store,slot,self.core_id).items():partners[nid]|=found
         for node in self.snapshot['nodes']:
             extra=json.loads(node.get('extra_json') or '{}');removed=[]
+            # A locked facility keeps its partners' records (old behaviour).
+            released=keys if node_locked(self.store,node['id']) else keys|partners.get(node['id'],set())
             for field in ('autoSameNumberExcluded','assignmentExceptions'):
                 values=extra.get(field)
                 if not isinstance(values,(list,dict)):continue
-                matching=set(values)&keys
+                matching=set(values)&(released if field=='autoSameNumberExcluded' else keys)
                 if not matching:continue
                 removed.extend((field,key) for key in sorted(matching))
                 extra[field]=[key for key in values if key not in matching] if isinstance(values,list) else {key:value for key,value in values.items() if key not in matching}
+            if removed and isinstance(extra.get('autoSameNumberDeleted'),list):
+                kept=set(extra.get('autoSameNumberExcluded') or ())
+                marks=[k for k in extra['autoSameNumberDeleted'] if k in kept]
+                if marks:extra['autoSameNumberDeleted']=marks
+                else:extra.pop('autoSameNumberDeleted',None)
             if removed:
                 if node_locked(self.store,node['id']):raise ValueError(node['name']+': 배정 제외 기록이 있는 함체 잠금')
                 changes.append(dict(node_id=node['id'],before=node['extra_json'],after=json.dumps(extra,ensure_ascii=False),removed=removed))
@@ -330,7 +342,7 @@ class IncrementalCoreAllocator(ManualCoreAllocator):
                 raise ValueError('코어내역 검사가 실패하여 배정을 취소했습니다.')
             changed_extras={change['node_id']:change['after'] for change in p['exclusion_changes']}
             expected_nodes=[dict(row,extra_json=changed_extras[row['id']]) if row['id'] in changed_extras else row for row in self.snapshot['nodes']]
-            if actual['nodes']!=expected_nodes:raise ValueError('선택 번호의 제외 기록 보존 검사가 실패하여 배정을 취소했습니다.')
+            if actual['nodes']!=sorted(expected_nodes,key=lambda r:json.dumps(r,sort_keys=True)):raise ValueError('선택 번호의 제외 기록 보존 검사가 실패하여 배정을 취소했습니다.')
             expected_ports=[dict(r,**dict(zip(PLAN_FIELDS,p['new'].get(('PORT:'+r['node_id'],r['port_index']),tuple(r[f] for f in PLAN_FIELDS))))) for r in self.snapshot['ports']]
             if actual['ports']!=sorted(expected_ports,key=lambda r:json.dumps(r,sort_keys=True)):raise ValueError('RN 포트 보존 검사가 실패하여 배정을 취소했습니다.')
             for table in ('cables','core_annotations','survey_rows'):
