@@ -1,5 +1,11 @@
 # Telecom Core updater project
 
+- V191 (user on V190 V2: name each direction once, one line per direction,
+  and use the enclosure on that side instead of the cable ID): labels =
+  store.opposite_name (duplicates get (N번선)); node_pair_grid per_row 0
+  (default) = no split; the dialog's 「한 줄 개수」 spinbox is gone.
+  check_node_pair_summary.py updated.
+
 - V190 (user: 함체 코어내역 V2 like their Excel capture - connected cable
   pairs as two lines, 6 numbers per line, easy copy into Excel): module
   functions node_pair_groups(store,node) (splices at the node grouped by
