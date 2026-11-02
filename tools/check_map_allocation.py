@@ -89,8 +89,9 @@ def windows_ui():
             assert panel.sheet.itemcget(reserved,'fill')==wf.ALLOCATION_CELL_COLORS['blocked'][0]
             click_number(68);assert i['direct'] not in panel.selected
             assert '실제 예비번호' in panel.details.get('1.0','end')
-            click_number(2)
-            assert i['direct'] not in panel.selected and i['detour1'] in panel.inspect_cables
+            # V188: a used number asks whether to empty it; 아니오 keeps inspection only.
+            with patch.object(code['messagebox'],'askyesno',return_value=False) as ask:click_number(2)
+            assert ask.call_count==1 and i['direct'] not in panel.selected and i['detour1'] in panel.inspect_cables
             assert '다른 회선' in panel.details.get('1.0','end')
             assert wf.plan_snapshot(s.conn)==original and s.history_rows()==history
             # Filtering must preserve physical numbers, even on the last row.
@@ -101,8 +102,9 @@ def windows_ui():
             panel.capacity_filter.set('전체 번호');panel.filter_capacity();app.update()
             panel.capacity_tabs.select(1);app.update();panel.capacity_table.see('2');app.update()
             x,y,w,h=panel.capacity_table.bbox('2')
-            panel.capacity_table.event_generate('<Button-1>',x=x+20,y=y+h//2)
-            panel.capacity_table.event_generate('<ButtonRelease-1>',x=x+20,y=y+h//2);app.update()
+            with patch.object(code['messagebox'],'askyesno',return_value=False):
+                panel.capacity_table.event_generate('<Button-1>',x=x+20,y=y+h//2)
+                panel.capacity_table.event_generate('<ButtonRelease-1>',x=x+20,y=y+h//2);app.update()
             assert i['direct'] not in panel.selected and i['detour1'] in panel.inspect_cables
             panel.capacity_table.selection_set('74');panel.capacity_table.focus_force()
             panel.capacity_table.event_generate('<Return>');app.update();assert panel.selected[i['direct']]==74

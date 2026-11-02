@@ -353,10 +353,37 @@ class IncrementalCoreAllocator(ManualCoreAllocator):
         return dict(slot=slot,core_id=self.core_id,token=self.stamp,splices=splices)
 
     def unassign(self,slot):
-        p=self.unassign_preview(slot);slot=p['slot']
-        backup=self.store.path.parent/'backups'/('before_core_unassign_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.sqlite3')
+        return self._clear_slot(self.unassign_preview(slot),'before_core_unassign_','코어 배정취소')
+
+    def release_other_preview(self,slot):
+        """V188: a number another core uses (gray 사용 중) in a cable this core has
+        no number on yet is emptied so this core can take it. Only that one number
+        and its splices change; the other core keeps its other numbers."""
+        self.fresh();slot=(str(slot[0]),int(slot[1]))
+        if slot not in self.rows:raise ValueError('없는 번호입니다.')
+        if slot[0] in self.existing:raise ValueError('이 케이블은 이 코어의 기존 선번 '+str(self.existing[slot[0]])+'번을 유지합니다. 그 번호를 먼저 배정취소하세요.')
+        if self.drawing_locked:raise ValueError('전도면 편집 잠금 중에는 번호를 비울 수 없습니다.')
+        if slot in self.fixed:raise ValueError('고정·예약 번호입니다. 후도면 작업실에서 고정 해제 후 다시 하세요.')
+        row=self.rows[slot]
+        if slot not in self.occupied and not plan_used(row):raise ValueError('이미 빈 번호입니다.')
+        other=str(row.get('core_id') or '').strip()
+        if other and other==self.core_id:raise ValueError('같은 코어ID가 이미 쓰는 번호입니다.')
+        c=self.net.cables.get(slot[0]);owners={c['n1id'],c['n2id']} if c else {slot[0][5:]}
+        splices=[r for r in self.snapshot['splices'] if (r['cable1_id'],int(r['core1_index']))==slot or (r['cable2_id'],int(r['core2_index']))==slot]
+        locked_nodes=(owners|{r['node_id'] for r in splices})&self.locked_nodes
+        if locked_nodes:raise ValueError('함체·케이블 잠금: '+', '.join(sorted(self.net.nodes.get(n,{}).get('name',n) for n in locked_nodes)))
+        peers=[plan_number_label(self.net,p) for _,p in self.net.links.get(slot,()) if p!=slot]
+        return dict(slot=slot,core_id=self.core_id,other_id=other,detail=str(row.get('detail') or ''),
+                    token=self.stamp,splices=splices,peers=peers)
+
+    def release_other(self,slot):
+        return self._clear_slot(self.release_other_preview(slot),'before_core_release_','다른 코어 번호 비우기')
+
+    def _clear_slot(self,p,prefix,label):
+        slot=p['slot']
+        backup=self.store.path.parent/'backups'/(prefix+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.sqlite3')
         self.store.backup_to(backup)
-        with self.store.action('코어 배정취소'):
+        with self.store.action(label):
             self.store._write_core(*slot,('',)*len(PLAN_FIELDS))
             for r in p['splices']:
                 self.store.conn.execute('DELETE FROM splices WHERE node_id=? AND cable1_id=? AND core1_index=? AND cable2_id=? AND core2_index=?',
@@ -497,6 +524,7 @@ class ManualAllocationActions:
             if slot[0] in self.service.net.cables:self.inspect_cables.add(slot[0])
             stack.extend(other for _,other in self.service.net.links[slot] if other not in seen)
         if self.offer_unassign(cid,index):return
+        if self.offer_release(cid,index):return
         allowed,reason=self.service.availability(cid,index)
         if allowed:
             if self.selected.get(cid)==index:self.selected.pop(cid);self.message.set('배정안에서 '+str(index)+'번 선택을 해제했습니다.')
@@ -520,6 +548,40 @@ class ManualAllocationActions:
         self.selected.update({c:n for c,n in drafts.items() if c in self.columns and s.availability(c,n)[0]})
         self.active_cable=cid;self.inspected=None;self.inspect_cables=set();self.render()
         self.message.set(label+' 배정취소 완료 · 이 케이블은 미배정(빨강)입니다. 빈 번호를 눌러 다시 배정하세요. Ctrl+Z로 되돌릴 수 있습니다.')
+        return True
+
+    RELEASE_REASONS=('기존 접속 사용 중','기존 코어ID·내역·신호·상태 사용 중')
+
+    def offer_release(self,cid,index):
+        """V188: a gray 사용 중 number of another core can be emptied (one yes/no)
+        and becomes this core's orange draft number right away."""
+        s=self.service
+        if not isinstance(s,IncrementalCoreAllocator) or cid in s.existing:return False
+        allowed,reason=s.availability(cid,index)
+        if allowed or reason not in self.RELEASE_REASONS:return False
+        try:p=s.release_other_preview((cid,index))
+        except ValueError:return False
+        self.render()
+        label=plan_number_label(s.net,(cid,index));other=p['other_id'] or '(ID 없음)'
+        text=(label+'\n이 번호는 다른 코어 '+other+(' / '+p['detail'] if p['detail'] else '')+' 이(가) 쓰고 있습니다.\n'
+              +('양쪽 접속: '+' / '.join(p['peers'])+'\n' if p['peers'] else '')
+              +'\n이 번호에서 '+other+' 을(를) 빼고, 지금 코어 '+s.core_id+' 배정안으로 넣을까요?\n\n'
+              '· '+other+' 의 다른 번호는 그대로이고, 이 케이블에서만 미배정이 됩니다.\n'
+              '  (그 코어 화면에서 다른 번호로 다시 배정하세요.)\n'
+              '· 백업이 만들어지고 Ctrl+Z로 되돌릴 수 있습니다.')
+        if not messagebox.askyesno('사용 중 번호 비우기',text,parent=self.winfo_toplevel()):
+            self.message.set(label+' · 그대로 유지합니다. (다른 코어 '+other+' 사용 중)');return True
+        drafts={c:n for c,n in self.selected.items() if c not in s.existing};columns=list(self.columns)
+        s.release_other((cid,index))
+        refresh=getattr(self.app,'refresh',None)
+        if callable(refresh):refresh()
+        self.reload()
+        for c in columns:
+            if c not in self.columns and (c in s.net.cables or c.startswith('PORT:')):self.columns.append(c)
+        self.selected.update({c:n for c,n in drafts.items() if c in self.columns and s.availability(c,n)[0]})
+        if s.availability(cid,index)[0]:self.selected[cid]=index
+        self.active_cable=cid;self.inspected=(cid,index);self.inspect_cables=set();self.render()
+        self.message.set(label+' 비우기 완료 · '+other+' 을(를) 뺐습니다. 이 번호는 배정안(주황)입니다. 「선택 번호 배정·저장」을 누르세요. Ctrl+Z로 되돌릴 수 있습니다.')
         return True
 
     def remove_cable(self,cid):
@@ -882,6 +944,7 @@ class AllocationMatrixView:
                 self.matrix.create_text(x+6,y+11,anchor='w',text=label+' · '+state+(' ★' if common else ''),font=('Malgun Gothic',9,'bold'),fill=ink,tags=(tag,))
                 detail=str(row['core_id'] or ('다시 클릭하면 선택 해제' if kind=='draft' else row['reason'])).replace('\n',' ')
                 if existing and (cid,index)!=s.source:detail+=' · 클릭: 배정취소'
+                elif kind=='used' and cid not in s.existing and row['reason'] in self.RELEASE_REASONS:detail+=' · 클릭: 비우기'
                 self.matrix.create_text(x+6,y+31,anchor='w',text=detail[:25]+('…' if len(detail)>25 else ''),font=('Malgun Gothic',8),fill=sub,tags=(tag,))
 
     def matrix_slot(self,event):

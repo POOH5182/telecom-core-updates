@@ -135,7 +135,9 @@ def windows_ui():
             def cell_kind(cid,index):
                 return next(tag[5:] for tag in panel.matrix.gettags(panel.matrix.find_withtag('matrix:'+cid+':'+str(index))[0]) if tag.startswith('cell:'))
             assert cell_kind(A,1)=='existing' and cell_kind(B,4)=='used' and cell_kind(B,2)=='empty' and cell_kind(A,2)=='blocked',[cell_kind(A,1),cell_kind(B,4),cell_kind(B,2),cell_kind(A,2)]
-            cell(B,4);assert B not in panel.selected # Used is inspection only.
+            # V188: a used number asks once whether to empty it; 아니오 keeps it (inspection only).
+            with patch.object(code['messagebox'],'askyesno',return_value=False) as ask:cell(B,4)
+            assert ask.call_count==1 and B not in panel.selected and cell_kind(B,4)=='used'
             cell(C,4);assert C not in panel.selected # Reserved is inspection only.
             cell(B,2);cell(C,3);chosen=dict(panel.selected)
             assert cell_kind(B,2)=='draft' and cell_kind(C,3)=='draft'

@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V188 (user: in the 여러 케이블 비교 panel, NEW3 16번 is used by another core
+  (3060512707) and they want this core on 16 like the other cables):
+  IncrementalCoreAllocator.release_other_preview/release_other empty one
+  gray 사용 중 number (reason 기존 접속 사용 중 or 기존 코어ID·내역·신호·상태
+  사용 중) on a cable where this core has no saved number yet: blank
+  PLAN_FIELDS, delete splices touching it (one undo step, backup
+  before_core_release_*). Refused: cable already in existing, drawing/node
+  lock, fixed/reserved, already empty. unassign shares _clear_slot.
+  ManualAllocationActions.offer_release (choose_slot, after offer_unassign)
+  asks yes/no; yes drafts the number (orange), no = inspection only. Checks
+  that click used numbers with a global askyesno=True must patch it False.
+  Run check_release_other_number.py.
+
 - V187 (user: NEW1 81번 looks split because only part of the route is drawn;
   wants it not counted as an error but still checked if one side is wrong):
   planning/offmap_links.py (bundled last). Marks live in workflow_state
