@@ -230,6 +230,15 @@ def field_slot_required(row):
     return bool((cid and not cid.startswith('임시-')) or str(row.get('detail') or '').strip() or row.get('signal')=='on')
 
 
+def temporary_split_note(core_id,pieces):
+    """V180: why an assigned 임시코어 is still 미완료 (its pieces are not spliced)."""
+    suffix=str(core_id).split('-',1)[1] if '-' in str(core_id) else ''
+    name='임시코어'+suffix if suffix.isdigit() else str(core_id)
+    count=f'{pieces}개 구간으로' if pieces else '여러 구간으로'
+    return (f'{name}가 {count} 나뉘어 있음: 함체에서 구간끼리 접속(이어 연결)이 없어 미완료입니다. '
+            '함체 우클릭 「같은 코어ID 끝 이어 연결」 또는 코어·검사 도구 「같은 코어ID 한꺼번에 잇기」')
+
+
 def same_temporary_components(audit,components):
     """Other routes that carry the same 임시- ID as the given routes.
 
@@ -306,7 +315,8 @@ def field_slot_audit(store):
         edge_count=sum(len(net.links.get(s,())) for s in slots)//2
         if edge_count>=len(slots):fail('순환 경로: 연결이 되돌아와 끝점을 확인할 수 없음','branch')
         if len(ends)!=2 or (len(ends)==2 and ends[0][0]==ends[1][0]):fail('서로 다른 두 끝단까지 연결해야 합니다. RN은 내부 포트 접속이 필요합니다.','endpoints')
-        component=dict(key=('route',first),slots=sorted(slots),real_ids=real_ids,signals=signals,required=required,off_only=all(core_signal_off(r) for r in records),
+        temp_ids=sorted({str(r.get('core_id') or '').strip() for r in records if str(r.get('core_id') or '').strip().startswith('임시-')})
+        component=dict(key=('route',first),slots=sorted(slots),real_ids=real_ids,temp_ids=temp_ids,signals=signals,required=required,off_only=all(core_signal_off(r) for r in records),
                        exempt_only=all(core_connection_exempt(r) for r in records),
                        notes=notes,causes=causes,ends=ends,free=free,holds=[],blocking=[],records=records,
                        placed=bool(edge_count) or not bool(causes&{'unconnected','endpoints','port','branch','invalid'}))
@@ -317,6 +327,15 @@ def field_slot_audit(store):
         placed=[g for g in groups if g['placed'] and not g['exempt_only']]
         if len(placed)>1:
             for group in placed:group['notes'].append(f'같은 코어ID {cid}가 {len(placed)}개 배정 경로로 끊어짐');group['causes'].add('split')
+    # V180: one 임시코어 assigned cable by cable is one core. Pieces that are
+    # not spliced at their meeting enclosure say so (incomplete, not an error).
+    temp_pieces=defaultdict(list)
+    for group in components:
+        if not group['real_ids'] and len(group['temp_ids'])==1 and group['required'] and not group['exempt_only']:temp_pieces[group['temp_ids'][0]].append(group)
+    for cid,groups in temp_pieces.items():
+        if len(groups)<2:continue
+        for group in groups:
+            if group['free']:group['notes'].append(temporary_split_note(cid,len(groups)))
     # Review holds and saved-but-unapplied field evidence also prevent 100%.
     # Parse only; calling FieldSurvey.report here would recurse into this audit.
     observed_slots=set()

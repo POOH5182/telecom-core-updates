@@ -1,5 +1,20 @@
 # Telecom Core updater project
 
+- V180 (user: 임시코어 assigned on every cable still counted 미완료코어 N):
+  cause = the 임시 pieces have no splice at the meeting enclosures (구간 1..4).
+  field audit components carry temp_ids; pieces of one 임시 ID (no real ID)
+  get temporary_split_note (no 'split' cause, stays 미완료 not 오류). After
+  completion_report appends the same note when after_temporary_join_pairs
+  finds a join. same_id_join_mode = field | after; field_same_id_pairs joins
+  single-임시 pieces in field drawings and uses after_auto_pairs with
+  temporary_ids in after drawings (only 임시 pairs; global after auto-join
+  still ignores 임시). used is per (enclosure, number) and joins are
+  union-found so a chain of pieces joins in one pass without loops.
+  Right-click, 한꺼번에 잇기, connection hint and offer_same_id_join work in
+  both modes. Double-clicking a 미배정/미완료코어 badge (tag incomplete_badge)
+  opens IncompleteCoresDialog for that cable. Run
+  check_temporary_split_incomplete.py.
+
 - V179 (user: a real core 1231444 renamed to 임시코어123 ended up with a
   different auto 임시 number; typing 임시코어N must use exactly N):
   normalize_core_id_input accepts 임시코어N / 임시 코어 N / 임시N / 임시-N

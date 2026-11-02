@@ -2,25 +2,69 @@
 facility are one core. Join them (one splice) instead of leaving two
 「같은 코어ID가 2개 배정 경로로 끊어짐」 error routes.
 
-Only real IDs choose a partner; 임시/blank IDs never do. Exactly two free ends
-of different cables must meet. Names, signals and statuses stay per number.
+Only real IDs choose a partner; blank IDs never do. V180: a piece carrying
+only one 임시 ID joins the other pieces of that same 임시 ID, and after drawings
+use the same tools for 임시코어 pieces. Exactly two free ends of different
+cables must meet. Names, signals and statuses stay per number.
 """
+
+
+def same_id_join_mode(store):
+    """V180: 'field' (현장반영), 'after' (후도면, 임시코어 only) or ''."""
+    if field_slot_mode(store):return 'field'
+    return 'after' if completion_kind(store)=='after' else ''
+
+
+def slot_core_id(store,slot):
+    owner,index=slot
+    if str(owner).startswith('PORT:'):row=store.conn.execute('SELECT core_id FROM ports WHERE node_id=? AND port_index=?',(owner[5:],index)).fetchone()
+    else:row=store.conn.execute('SELECT core_id FROM cores WHERE cable_id=? AND core_index=?',(owner,index)).fetchone()
+    return str(row['core_id'] or '').strip() if row else ''
+
+
+def after_temporary_joinable_ids(store,core_ids):
+    """임시 IDs (of core_ids) that have at least one free piece-to-piece join."""
+    return {slot_core_id(store,a) for _,a,_ in after_temporary_join_pairs(store,core_ids)}
+
+
+def after_temporary_join_pairs(store,core_ids=None,node_ids=None,blocked=None):
+    """V180: after drawings auto-join real IDs already; a 임시코어 split into
+    pieces (assigned cable by cable, or saved by an older version) joins on
+    request with the same rules as V174 allocation joins."""
+    wanted=None if core_ids is None else {str(c or '').strip() for c in core_ids}-{''}
+    temps=set()
+    for table in ('cores','ports'):
+        for row in store.conn.execute(f"SELECT DISTINCT TRIM(core_id) AS cid FROM {table} WHERE TRIM(COALESCE(core_id,'')) LIKE '임시-%'"):
+            if wanted is None or row['cid'] in wanted:temps.add(row['cid'])
+    if not temps:return []
+    stuck=[]
+    pairs=after_auto_pairs(store,node_ids=node_ids,blocked=stuck,temporary_ids=temps)
+    result=[(nid,a,b) for nid,a,b in pairs if slot_core_id(store,a) in temps or slot_core_id(store,b) in temps]
+    if blocked is not None:blocked.extend(item for item in stuck if item['core_id'] in temps)
+    return result
 
 
 def field_same_id_pairs(store,core_ids=None,node_ids=None,blocked=None,respect_exclusions=True):
     """Read-only (nid,a,b) joins. blocked collects why a meeting was not joined."""
-    if not field_slot_mode(store):return []
+    mode=same_id_join_mode(store)
+    if mode=='after':return after_temporary_join_pairs(store,core_ids,node_ids,blocked)
+    if mode!='field':return []
     audit=field_slot_audit(store);net=audit['net']
     wanted=None if core_ids is None else {str(c or '').strip() for c in core_ids}-{''}
     meets=defaultdict(list)
     for comp in audit['components']:
-        if len(comp['real_ids'])!=1:continue
-        cid=comp['real_ids'][0]
+        # V180: a piece with no real ID and exactly one 임시 ID joins its own 임시 pieces.
+        if len(comp['real_ids'])==1:cid=comp['real_ids'][0]
+        elif not comp['real_ids'] and len(comp.get('temp_ids',()))==1:cid=comp['temp_ids'][0]
+        else:continue
         if wanted is not None and cid not in wanted:continue
         for nid,slot in comp['free']:
             if slot[0].startswith('PORT:') or (node_ids is not None and nid not in node_ids):continue
             meets[nid,cid].append((slot,comp))
-    result=[];used=set()
+    result=[];used=set();joined={}
+    def root(k):
+        while joined.get(k,k)!=k:k=joined[k]
+        return k
     for (nid,cid),items in sorted(meets.items(),key=lambda v:(str(net.nodes.get(v[0][0],{}).get('name') or ''),v[0])):
         node=net.nodes.get(nid) or {}
         if node.get('type') not in ('hamche','rn'):continue
@@ -31,9 +75,10 @@ def field_same_id_pairs(store,core_ids=None,node_ids=None,blocked=None,respect_e
             if len(items)>2:reject(f'같은 코어ID 끝이 {len(items)}개라 연결 상대를 정할 수 없습니다. 직접 연결하세요.')
             continue
         (a,ca),(b,cb)=sorted(items,key=lambda v:v[0])
-        if ca['key']==cb['key']:reject('이미 같은 경로라 이으면 순환됩니다.');continue
+        if root(ca['key'])==root(cb['key']):reject('이미 같은 경로라 이으면 순환됩니다.');continue
         if a[0]==b[0]:reject('같은 케이블의 두 번호입니다.');continue
-        if {a,b}&used:continue
+        # A cable number has an end at each enclosure: track (enclosure, number).
+        if {(nid,a),(nid,b)}&used:continue
         if any(net.bad.get(s) for s in (a,b)) or (ca['causes']|cb['causes'])&{'identity','branch','invalid'}:
             reject('기존 경로에 ID·중복·접속정보 오류가 있어 먼저 확인이 필요합니다.');continue
         signals=set(ca['signals'])|set(cb['signals'])
@@ -46,7 +91,7 @@ def field_same_id_pairs(store,core_ids=None,node_ids=None,blocked=None,respect_e
             excluded=after_auto_exclusions(store,nid,node)
             if any(f'{s[0]}::{s[1]}' in excluded for s in (a,b)):
                 reject('직접 연결 해제한 기록이 있어 자동으로 잇지 않았습니다. 함체 우클릭 「같은 코어ID 끝 이어 연결」로 이을 수 있습니다.');continue
-        result.append((nid,a,b));used.update((a,b))
+        result.append((nid,a,b));used.update(((nid,a),(nid,b)));joined[root(cb['key'])]=root(ca['key'])
     return result
 
 
@@ -77,9 +122,10 @@ def field_route_meets(store,members,others):
 
 def field_same_id_join_apply(store,pairs):
     """Inside the caller's action (one undo step)."""
-    names=[]
+    names=[];after=same_id_join_mode(store)=='after'
     for nid,a,b in pairs:
-        field_slot_connect(store,nid,a,b)
+        if after:after_auto_apply(store,[(nid,a,b)])
+        else:field_slot_connect(store,nid,a,b)
         names.append(str((store.node(nid) or {})['name'] if store.node(nid) else nid))
     return names
 
@@ -87,8 +133,7 @@ def field_same_id_join_apply(store,pairs):
 def field_same_id_joins_for(store,core_ids):
     """Joins (respecting explicit disconnect records) for IDs the user just entered."""
     ids={str(c or '').strip() for c in core_ids or ()}-{''}
-    ids={c for c in ids if not c.startswith('임시-')}
-    if not ids or not field_slot_mode(store):return []
+    if not ids or not same_id_join_mode(store):return []
     nodes=set()
     for cid in ids:nodes|=field_same_id_nearby(store,cid)
     return field_same_id_pairs(store,ids,nodes) if nodes else []
@@ -114,7 +159,7 @@ def field_same_id_join_rows(store):
 
     A pair whose number was disconnected by hand is listed but not pre-checked.
     """
-    if not field_slot_mode(store):return [],[]
+    if not same_id_join_mode(store):return [],[]
     blocked=[];pairs=field_same_id_pairs(store,blocked=blocked,respect_exclusions=False)
     safe=set(field_same_id_pairs(store))
     rows=[]
@@ -184,6 +229,6 @@ class SameIdJoinDialog(RememberedToplevel):
 
 
 def open_same_id_join(app):
-    if not field_slot_mode(app.store):
-        messagebox.showinfo('같은 코어ID 한꺼번에 잇기','현장반영 도면에서 사용하세요. 후도면은 같은 코어ID가 자동으로 이어집니다.',parent=app);return None
+    if not same_id_join_mode(app.store):
+        messagebox.showinfo('같은 코어ID 한꺼번에 잇기','현장반영 도면 또는 후도면에서 사용하세요. 후도면은 실제 코어ID가 자동으로 이어지고, 임시코어 구간은 여기서 잇습니다.',parent=app);return None
     return SameIdJoinDialog(app)

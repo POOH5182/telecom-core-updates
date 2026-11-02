@@ -214,8 +214,10 @@ def core_connection_highlight(store,slots):
         reasons=list(dict.fromkeys([reason for e in ends for reason in net.bad.get(e['slot'],())]+blocked[nid]))
         if reasons:boundaries[-1]['text']+='\n'+'\n'.join(reasons)
     # V176: say where two same-ID ends can simply be joined (field drawings).
-    if boundaries and identities and field_slot_mode(store):
-        stuck=[];joins=field_same_id_pairs(store,identities,{b['node_id'] for b in boundaries},blocked=stuck,respect_exclusions=False)
+    # V180: 임시코어 pieces of the clicked route are offered the same join.
+    join_ids=identities|{cid for c in components.values() if not c['real_ids'] for cid in c.get('temp_ids',())}
+    if boundaries and join_ids and same_id_join_mode(store):
+        stuck=[];joins=field_same_id_pairs(store,join_ids,{b['node_id'] for b in boundaries},blocked=stuck,respect_exclusions=False)
         ready={nid for nid,_,_ in joins};why=defaultdict(list)
         for item in stuck:why[item['node_id']].append(item['reason'])
         for hint in boundaries:

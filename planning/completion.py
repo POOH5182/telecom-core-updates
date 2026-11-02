@@ -195,6 +195,15 @@ def completion_report(store,kind=None):
                    complete=False,reason=reason,reason_items=(reason,),causes=frozenset({'identity'}),pending_nodes=tuple(dict.fromkeys(item['node_id'] for item in items)),**policy)
         by_id[cid]=entry;(targets if policy['required'] else excluded).append(entry)
         if policy['exception_complete']:entry.update(complete=True,physical_complete=False,reason='예외 처리로 완료',reason_items=(),causes=frozenset())
+    if kind=='after':
+        # V180: say why an assigned 임시코어 is still 미완료 when its pieces only
+        # need a splice at the enclosure where they meet.
+        waiting={e['core_id'] for e in targets if not e['complete'] and e['core_id'].startswith('임시-')}
+        joinable=after_temporary_joinable_ids(store,waiting) if waiting else set()
+        for entry in targets:
+            if entry['core_id'] in joinable:
+                notes=list(dict.fromkeys(list(entry['reason_items'])+[temporary_split_note(entry['core_id'],0)]))
+                entry.update(reason=' / '.join(notes),reason_items=tuple(notes))
     targets.sort(key=lambda r:(r['core_id'],str(r['key'])));excluded.sort(key=lambda r:(r['excluded_reason'],r['core_id']))
     # Local assignment must use the same active topology as completion. Raw
     # historical splices can otherwise make an already connected after slot
