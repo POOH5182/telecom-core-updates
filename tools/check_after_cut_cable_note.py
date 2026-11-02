@@ -1,7 +1,6 @@
-"""V181: a cable newly drawn in 후도면 but left in 「절단」 status is a retired
-work marker, so its cores that share IDs with live cables are not counted on
-the map's 미완료코어/미배정코어 badge. The cable window now explains why and
-tells the user to switch it to 「신설」; as 신설 the badge appears."""
+"""V183: a 절단 cable in 후도면 (e.g. NEW10 drawn there) shows 「미완료코어 N」
+on the map for the same rows its cable window marks [미완료코어], even when
+the ID also lives on active cables. 신설 cables keep their badge."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -28,19 +27,18 @@ class AfterCutCableNote(unittest.TestCase):
         w=self.s.cable_core_warning_summary()[cid]
         return w['unassigned']+w['incomplete_badge']
 
-    def test_cut_cable_explained(self):
+    def test_cut_cable_counts(self):
         new=self.build('절단')
         self.assertEqual(wf.completion_kind(self.s),'after')
         status,_=wf.core_completion_brief(self.s,(new,1))
         self.assertEqual(status,'미완료')
-        self.assertEqual(self.badge(new),0)
-        note=wf.after_cut_cable_note(self.s,new)
-        self.assertIn('절단',note);self.assertIn('신설',note)
-        print('PASS cut cable in after drawing explains missing badge')
+        w=self.s.cable_core_warning_summary()[new]
+        self.assertEqual(w['incomplete_badge'],1,w)
+        self.assertTrue(any(e.get('slot')==(new,1) for e in self.s._incomplete_entries))
+        print('PASS cut cable in after drawing shows its incomplete cores')
 
     def test_new_cable_counts(self):
         new=self.build('신설')
-        self.assertEqual(wf.after_cut_cable_note(self.s,new),'')
         self.assertGreater(self.badge(new),0)
         print('PASS new (sinseol) cable in after drawing shows badge')
 

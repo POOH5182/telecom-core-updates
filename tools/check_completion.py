@@ -46,7 +46,8 @@ class CompletionTests(unittest.TestCase):
         s=self.store;nodes,cables=status_row_fixture(s);slot=(cables[2],3)
         view=SimpleNamespace(store=s);text=lambda:code['CableDialog'].status_annotation(view,s.core(*slot))
         self.assertEqual(wf.core_completion_brief(s,slot)[0],'미완료')
-        self.assertNotIn(3,s.cable_core_warning_summary()[cables[2]]['incomplete_indices'])
+        # V183: the user asked for 절단 cables in 후도면 to show 미완료코어 too.
+        self.assertIn(3,s.cable_core_warning_summary()[cables[2]]['incomplete_indices'])
         before=self.snapshot();self.assertIn('[미완료코어]',text());self.assertEqual(self.snapshot(),before)
         join_status_fixture(s,nodes,cables);self.assertNotIn('[미완료코어]',text())
         self.assertTrue(wf.completion_report(s)['by_id']['SYNTH-ROW']['complete'])

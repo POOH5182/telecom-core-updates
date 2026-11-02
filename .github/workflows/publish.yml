@@ -85,7 +85,7 @@ jobs:
         run: python tools/check_temporary_typed_id.py
       - name: 임시코어 구간 미완료 안내·같은 임시코어 자동 이어 연결 검증
         run: python tools/check_temporary_split_incomplete.py
-      - name: 후도면 절단 케이블 미완료코어 표시 제외 안내 검증
+      - name: 후도면 절단 케이블 미완료코어 표시 검증
         run: python tools/check_after_cut_cable_note.py
       - name: 선택번호배정 저장 확인창 네·아니오 Enter·Space 검증
         run: python tools/check_save_confirm.py

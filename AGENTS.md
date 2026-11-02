@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V183 (user chose: also show 미완료코어 on 절단/철거 cables in 후도면, e.g.
+  NEW10 drawn there as 절단): cable_core_warning_summary adds, for after
+  drawings, every slot of a CUT_CABLE_STATUSES cable whose
+  core_completion_brief is 미완료 (not error_slots/exempt) to incomplete, skips
+  the end_indices filter for those cables, and adds matching
+  _incomplete_entries for the double-click list. Completion rate unchanged.
+  V181's after_cut_cable_note (switch to 신설) was removed.
+  check_completion test_cut_core3 now expects index 3 in incomplete_indices.
+  Run check_after_cut_cable_note.py.
+
 - V182 (user: same 임시코어 ID still shown as separate colored pieces and
   미배정코어 after V180; must link by itself): 임시 IDs are now an exception
   to the field "never auto-splice" rule (user request 2026-11-02).
