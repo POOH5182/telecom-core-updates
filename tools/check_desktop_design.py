@@ -92,6 +92,7 @@ def main():
          patch.object(code['messagebox'],'showinfo'),patch.object(code['messagebox'],'askyesno',return_value=True), \
          patch.object(code['messagebox'],'askyesnocancel',return_value=True),patch.object(code['messagebox'],'showerror') as error:
         app=code['App']();errors=[];app.report_callback_exception=lambda *a:errors.append(str(a))
+        app.dashboard_mode='drawing'  # V200: old 도면현황 assertions below
         try:
             print('DESIGN: initial controls',flush=True)
             nodes,cables=synthetic_drawing(app.store);assert app.load_scenario('before');s=app.store
@@ -101,7 +102,7 @@ def main():
             assert app.all_lock_button.cget('image')
             assert float(app.completion_bar.cget('value'))==wf.completion_report(s)['rate']
             assert app.work_progress_incomplete.cget('fg')=='#c62828'
-            inspect_layout(app);app.geometry('1450x900+0+0');app.update();app.fit_view();app.update()
+            inspect_layout(app);app.set_dashboard_mode('work');inspect_layout(app);app.set_dashboard_mode('drawing');app.geometry('1450x900+0+0');app.update();app.fit_view();app.update()
             app.metrics_details_button.invoke();app.update();assert app.work_progress_note.winfo_ismapped()
             app.metrics_details_button.invoke();app.update();assert not app.work_progress_note.winfo_ismapped()
             app.mode_buttons['hamche'].invoke();assert app.mode=='hamche';assert app.mode_buttons['hamche'].cget('style')=='Active.Tool.TButton'
