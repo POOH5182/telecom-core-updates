@@ -260,7 +260,7 @@ def windows_ui():
              patch.object(code['messagebox'],'showinfo',return_value=None), \
              patch.object(code['messagebox'],'askyesnocancel',return_value=True), \
              patch.object(code['messagebox'],'askyesno',return_value=True):
-            app=code['App']();app.report_callback_exception=lambda *args:errors.append(str(args))
+            app=code['App']();app.report_callback_exception=lambda *args:errors.append(str(args));app.dashboard_mode='drawing'
             try:
                 s=app.store;a=s.add_node('왼쪽',200,400);h=s.add_node('중간',500,400);b=s.add_node('오른쪽',800,400)
                 left=s.add_cable(a,h,'LEFT','12C','기설');right=s.add_cable(h,b,'RIGHT','12C','기설')

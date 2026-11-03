@@ -1,5 +1,16 @@
 # Telecom Core updater project
 
+- V200 (user: the drawing's 도면현황 should become 작업코어현황 = all cores
+  connected to 절단/철거 cables and 철거 함체/RN): completion.work_core_report(
+  store,kind) picks slots on 절단/철거 cables, on cables touching a 철거 node,
+  and 철거 RN ports, and dedupes their completion_report by_slot entries
+  (required -> total/done, else excluded). App dashboard defaults to
+  dashboard_mode 'work' (refresh_work_core_metrics); header button
+  toggle_dashboard_mode / set_dashboard_mode('drawing') restores the old
+  필수 코어 view. GUI checks that assert the old rate set
+  app.dashboard_mode='drawing'. Reference window adds one 작업코어 line.
+  Run check_work_core_status.py.
+
 - V199 (user: clicking a cable should show where all its cores go; picking
   one core in the cable window keeps the one-core path; only show how many
   cores arrive at each end): planning/cable_route_overview.py

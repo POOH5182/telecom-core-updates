@@ -135,7 +135,7 @@ def windows_ui():
     try:
         (case.home/'ui').mkdir()
         with patch.dict(os.environ,{'TELECOM_APP_HOME':str(case.home/'ui')}),patch.object(code['messagebox'],'showerror') as error:
-            app=code['App']();app.store.close();app.store=case.s;errors=[];app.report_callback_exception=lambda *a:errors.append(str(a))
+            app=code['App']();app.store.close();app.store=case.s;errors=[];app.report_callback_exception=lambda *a:errors.append(str(a));app.dashboard_mode='drawing'
             try:
                 app.refresh();cable=code['open_detail_dialog'](app,case.s,'cable',case.cables[0]);cable.focus_core(1)
                 node=code['open_detail_dialog'](app,case.s,'node',case.nodes[1])

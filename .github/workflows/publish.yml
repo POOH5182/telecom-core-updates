@@ -95,6 +95,8 @@ jobs:
         run: python tools/check_copy_overall_signal.py
       - name: 케이블 클릭 시 모든 코어 경로·말단별 도착 코어 수 표시 검증
         run: python tools/check_cable_route_overview.py
+      - name: 작업코어 현황(절단·철거 케이블, 철거 함체·RN 코어) 집계·도면현황 전환 검증
+        run: python tools/check_work_core_status.py
       - name: 후도면 지웠다 다시 배정한 코어 양옆 자동 재연결 검증
         run: python tools/check_reassign_rejoin.py
       - name: 후도면 코어배정 자동배정·틀어도 되는 함체·같은 번호 우선 검증

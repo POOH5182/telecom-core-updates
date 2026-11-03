@@ -244,7 +244,7 @@ def windows_ui():
              patch.object(code['messagebox'],'showinfo',return_value=None), \
              patch.object(code['messagebox'],'askyesno',return_value=True), \
              patch.object(code['messagebox'],'askyesnocancel',return_value=True):
-            app=code['App']();app.report_callback_exception=lambda *a:errors.append(str(a))
+            app=code['App']();app.report_callback_exception=lambda *a:errors.append(str(a));app.dashboard_mode='drawing'
             try:
                 app.replace_current_from(case.path);app.deiconify();app.update();s=app.store
                 node=code['NodeDialog'](app,s,case.nodes[1]);node.left_var.set(next(k for k,v in node.by_label.items() if v==case.cables[0]));node.reload_all();app.update()

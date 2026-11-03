@@ -421,6 +421,42 @@ def core_completion_brief(store,slot):
 
 
 CUT_CABLE_STATUSES=('절단','철거','cut','remove')
+WORK_NODE_STATUSES=('철거','remove')
+
+
+def work_core_report(store,kind=None):
+    """V200 작업코어현황: every core on a 절단/철거 cable, on a cable that
+    touches a 철거 함체/RN, or on a 철거 RN's port. Same completion entries as
+    the drawing progress (same 코어ID counts once); read-only."""
+    report=completion_report(store,kind)
+    key=(report['kind'],store.data_revision(),store.conn.total_changes)
+    cached=getattr(store,'_work_core_cache',None)
+    if cached and cached[0]==key and cached[1] is report:return cached[2]
+    nodes={n['id']:n for n in store.nodes()};cables={c['id']:c for c in store.cables()}
+    def status(row):return str(row['status'] or '').strip()
+    removed_nodes={nid for nid,n in nodes.items() if status(n) in WORK_NODE_STATUSES}
+    cut_cables={cid for cid,c in cables.items() if status(c) in ('절단','cut')}
+    removed_cables={cid for cid,c in cables.items() if status(c) in ('철거','remove')}
+    work_cables=cut_cables|removed_cables|{cid for cid,c in cables.items() if c['n1id'] in removed_nodes or c['n2id'] in removed_nodes}
+    entries={}
+    for row in store.all_core_rows():
+        cid=str(row['cable_id']);slot=(cid,int(row['core_index']))
+        if cid not in work_cables and not (cid.startswith('PORT:') and cid[5:] in removed_nodes):continue
+        entry=report['by_slot'].get(slot)
+        if entry is not None:entries.setdefault(id(entry),entry)
+    targets=[e for e in entries.values() if e.get('required')]
+    excluded=[e for e in entries.values() if not e.get('required')]
+    done=sum(bool(e['complete']) for e in targets);total=len(targets)
+    counts={}
+    for entry in excluded:
+        reason=str(entry.get('excluded_reason') or '기타');counts[reason]=counts.get(reason,0)+1
+    result={'kind':report['kind'],'total':total,'done':done,'rate':100.0*done/total if total else None,
+            'rows':sorted(targets,key=lambda r:(str(r['core_id']),str(r['key']))),'excluded':len(excluded),
+            'excluded_rows':excluded,'excluded_counts':dict(sorted(counts.items())),'all':len(entries),
+            'cut_cables':len(cut_cables),'removed_cables':len(removed_cables),'removed_nodes':len(removed_nodes),
+            'work_cables':len(work_cables)}
+    store._work_core_cache=(key,report,result)
+    return result
 
 
 
