@@ -460,6 +460,33 @@ def work_core_report(store,kind=None):
 
 
 
+def work_core_list_report(store,work):
+    """V202: 작업코어현황 counts exactly the rows of 코어확인/작업목록
+    「작업필요코어(전체)」 (work = Workflow.report()). Rows set aside by a
+    disposition, or that need no connection here (OFF·해지·끊김 등), are
+    shown as 집계 제외; the rest are 연결대상. 후도면 uses the work row's own
+    complete flag, other stages the drawing completion of that core."""
+    rows=list(work.get('rows') or ());kind=work.get('kind') or completion_kind(store)
+    report=completion_report(store);targets=[];done=0;counts={}
+    def skip(reason):counts[reason]=counts.get(reason,0)+1
+    for row in rows:
+        if row.get('excluded'):skip(str(row.get('result') or row.get('disposition') or '제외'));continue
+        if kind=='after':ok=bool(row.get('complete'))
+        else:
+            entry=report['by_id'].get(str(row.get('core_id') or '').strip())
+            if entry is None:
+                entry=next((report['by_slot'][tuple(s)] for s in row.get('source_slots') or () if tuple(s) in report['by_slot']),None)
+            if entry is None or not entry.get('required'):
+                skip(str((entry or {}).get('excluded_reason') or '연결 불필요'));continue
+            ok=bool(entry.get('complete'))
+        targets.append(row);done+=ok
+    total=len(targets)
+    return {'kind':kind,'all':len(rows),'total':total,'done':done,'rate':100.0*done/total if total else None,
+            'excluded':len(rows)-total,'excluded_counts':dict(sorted(counts.items())),
+            'cut':sum(r.get('method')=='절단절체' for r in rows),'transfer':sum(r.get('method')=='코어절체' for r in rows),
+            'missing_before':bool(work.get('missing_before'))}
+
+
 def core_completion_locations(store,slot):
     """Exact saved-state reason and endpoints for the selected physical route."""
     slot=tuple(slot);report=completion_report(store);entry=report['by_slot'].get(slot,{})

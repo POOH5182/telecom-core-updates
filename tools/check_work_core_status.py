@@ -1,4 +1,4 @@
-"""V200 (user): the drawing dashboard shows 작업코어현황 - every core on a
+"""V200/V202 (user): the drawing dashboard shows 작업코어현황 - every core on a
 절단/철거 cable or at a 철거 함체/RN - instead of all signal cores.
 도면현황 stays available with one button."""
 import os
@@ -46,6 +46,36 @@ class WorkCoreStatus(unittest.TestCase):
         self.assertLessEqual(work['done'],work['total'])
         print('PASS work cores = cores on cut cable and removed RN only')
 
+    def mark_before(self):
+        s=self.s
+        s.conn.execute("UPDATE cables SET status='절단' WHERE id=?",(self.cut,))
+        s.conn.execute("UPDATE nodes SET status='철거' WHERE id=?",(self.rn,));s.conn.commit()
+        s.backup_to(self.app.scenario_path('before'))
+
+    def test_matches_work_list_after(self):
+        # V202 (user: dashboard 35 but 작업필요코어(전체) 49): the dashboard
+        # counts exactly the work list rows, OFF cores included in 작업코어.
+        self.mark_before()
+        work=wf.Workflow(self.app).report()
+        ids={r['core_id'] for r in work['rows']}
+        self.assertEqual(ids,{'11','22','55'},ids)
+        result=wf.work_core_list_report(self.s,work)
+        self.assertEqual(result['all'],len(work['rows']))
+        self.assertEqual(result['total']+result['excluded'],result['all'])
+        self.assertEqual(result['cut'],2,result)
+        print('PASS after dashboard work cores equal the work list rows')
+
+    def test_matches_work_list_before(self):
+        self.mark_before();self.app.scenario_kind=lambda:'before'
+        self.s.conn.execute("UPDATE meta SET value='before' WHERE key='active_scenario'");self.s.conn.commit()
+        work=wf.Workflow(self.app).report()
+        self.assertEqual({r['core_id'] for r in work['rows']},{'11','22','55'})
+        result=wf.work_core_list_report(self.s,work)
+        self.assertEqual(result['all'],3,result)
+        # OFF 55 needs no connection: it stays a work core but leaves the rate.
+        self.assertEqual((result['total'],result['excluded']),(2,1),result)
+        print('PASS before dashboard work cores equal the work list, OFF set aside')
+
     def test_removed_cable(self):
         s=self.s;s.conn.execute("UPDATE cables SET status='철거' WHERE id=?",(self.other,));s.conn.commit()
         work=wf.work_core_report(s)
@@ -71,14 +101,14 @@ def check_ui():
             app.refresh();app.update()
             assert app.dashboard_mode=='work',app.dashboard_mode
             assert app.dashboard_title_label.cget('text')=='작업코어 현황'
-            assert '작업코어' in app.work_progress_text.cget('text')
-            assert '전체 1 ' in app.work_progress_completed.cget('text'),app.work_progress_completed.cget('text')
+            rows=app.work_report()['rows']
+            assert f'작업코어 {len(rows)}개' in app.work_progress_text.cget('text'),(app.work_progress_text.cget('text'),len(rows))
             app.toggle_dashboard_mode();app.update()
             assert app.dashboard_mode=='drawing' and app.dashboard_title_label.cget('text')=='도면 현황'
             assert '필수 코어' in app.work_progress_text.cget('text')
             assert '전체 2 ' in app.work_progress_completed.cget('text'),app.work_progress_completed.cget('text')
             app.toggle_metric_details();app.toggle_dashboard_mode();app.update()
-            assert '작업코어' in app.work_progress_text.cget('text') and '절단 케이블 1' in app.work_progress_note.cget('text')
+            assert '작업코어' in app.work_progress_text.cget('text') and '작업필요코어(전체)' in app.work_progress_note.cget('text')
             assert not errors,errors
             print('PASS dashboard shows work cores and toggles to drawing status')
         finally:app.on_close()

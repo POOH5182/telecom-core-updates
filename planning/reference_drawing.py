@@ -198,9 +198,7 @@ class ReferenceDrawingDialog(RememberedToplevel):
             self.metrics_text.set('저장 도면이 없습니다.');self.metrics_rate.set('—');self.completion_bar['value']=0;return
         nodes=self.store.nodes();cables=self.store.cables();report=completion_report(self.store,self.source_kind)
         total=report['total'];done=report['done'];rate=report['rate']
-        work=work_core_report(self.store,self.source_kind)
-        self.metrics_text.set(f"{STAGE_WINDOW_NAMES[self.source_kind]}\n시설 {len(nodes)}개 · 케이블 {len(cables)}개\n연결 대상 {total}개 · 완료 {done}개 · 미완료 {total-done}개"
-                              f"\n작업코어(절단·철거) {work['total']}개 · 완료 {work['done']}개 · 미완료 {work['total']-work['done']}개")
+        self.metrics_text.set(f"{STAGE_WINDOW_NAMES[self.source_kind]}\n시설 {len(nodes)}개 · 케이블 {len(cables)}개\n연결 대상 {total}개 · 완료 {done}개 · 미완료 {total-done}개")
         self.metrics_rate.set(f'{rate:.1f}%' if rate is not None else '대상 없음');self.completion_bar['value']=rate or 0
 
     def toggle_dashboard(self):

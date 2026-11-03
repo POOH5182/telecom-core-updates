@@ -1,5 +1,14 @@
 # Telecom Core updater project
 
+- V202 (user: dashboard 35 vs 작업필요코어(전체) 40/49): dashboard work mode
+  now uses completion.work_core_list_report(store,app.work_report()) = the
+  exact CoreCheckDialog 'work' rows (all). Disposition-excluded rows and,
+  outside 후도면, rows whose completion entry is not required (OFF etc.) go
+  to 연결검사 제외; 후도면 uses each work row's complete flag. The work list
+  count line adds 「구분없음(-) N」 when rows are neither 절단절체 nor 코어절체.
+  The store-only work_core_report (V200) stays but no longer drives the UI;
+  the reference window line was removed. check_work_core_status.py.
+
 - V201 (user: clicking 「N코어 도착」 should list which cores arrived):
   cable_route_overview ends[i]['cores'] (number of the clicked cable, core_id,
   detail, signal, state 도착/미접속, end = net.title of the arriving slot via
