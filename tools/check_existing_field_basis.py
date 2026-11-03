@@ -140,7 +140,7 @@ def windows_ui():
              patch.object(code['messagebox'],'showinfo'), \
              patch.object(code['messagebox'],'askyesno',return_value=True), \
              patch.object(code['messagebox'],'askyesnocancel',return_value=True):
-            app=code['App']();app.report_callback_exception=lambda *a:errors.append(str(a))
+            app=code['App']();app.report_callback_exception=lambda *a:errors.append(str(a));app.dashboard_mode='drawing'
             try:
                 print('UI V88: initial copy',flush=True)
                 nodes,cables=route(app.store);assert app.load_scenario('before');s=app.store

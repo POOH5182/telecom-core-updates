@@ -265,7 +265,7 @@ def windows_ui():
              patch.object(code['messagebox'],'showinfo',return_value=None), \
              patch.object(code['messagebox'],'askyesno',return_value=True), \
              patch.object(code['messagebox'],'askyesnocancel',return_value=True):
-            app=code['App']();app.report_callback_exception=lambda *args:errors.append(str(args))
+            app=code['App']();app.report_callback_exception=lambda *args:errors.append(str(args));app.dashboard_mode='drawing'
             try:
                 s=app.store;a=s.add_node('끝 A',0,0);h=s.add_node('현장 함체',240,0);b=s.add_node('끝 B',480,0)
                 left=s.add_cable(a,h,'L','6C','기설');right=s.add_cable(h,b,'R','6C','기설')
@@ -328,7 +328,7 @@ def windows_recopy_ui():
              patch.object(code['messagebox'],'showinfo',side_effect=lambda *a,**k:notices.append(str(a))), \
              patch.object(code['messagebox'],'askyesno',return_value=True), \
              patch.object(code['messagebox'],'askyesnocancel',return_value=True):
-            app=code['App']();app.report_callback_exception=lambda *args:errors.append(str(args))
+            app=code['App']();app.report_callback_exception=lambda *args:errors.append(str(args));app.dashboard_mode='drawing'
             try:
                 s=app.store;a=s.add_node('끝 A',0,0);h=s.add_node('조사 함체',240,0);b=s.add_node('끝 B',480,0)
                 left=s.add_cable(a,h,'L','6C','기설');right=s.add_cable(h,b,'R','6C','기설')

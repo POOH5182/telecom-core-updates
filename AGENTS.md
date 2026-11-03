@@ -14,7 +14,9 @@
   (required -> total/done, else excluded). App dashboard defaults to
   dashboard_mode 'work' (refresh_work_core_metrics); header button
   toggle_dashboard_mode / set_dashboard_mode('drawing') restores the old
-  필수 코어 view. GUI checks that assert the old rate set
+  필수 코어 view. GUI checks that assert the old rate (completion,
+  core_trace, disconnected, desktop_design, field_slots,
+  existing_field_basis) set
   app.dashboard_mode='drawing'. Reference window adds one 작업코어 line.
   Run check_work_core_status.py.
 
