@@ -50,6 +50,11 @@ class CableRouteOverview(unittest.TestCase):
         self.assertIn('미접속 1코어',x['text']);self.assertEqual(x['color'],wf.CABLE_OVERVIEW_STOP_COLOR)
         self.assertIn('4코어 도착',next(e['text'] for e in model['ends'] if e['name']=='MDF'))
         self.assertEqual(self.s.data_revision(),before)
+        s1=next(e for e in model['ends'] if e['name']=='가입자1')
+        self.assertEqual([(c['number'],c['core_id'],c['state']) for c in s1['cores']],[(1,'CORE-1','도착'),(3,'CORE-3','도착')])
+        self.assertTrue(all('D1' in c['end'] for c in s1['cores']),s1['cores'])
+        self.assertEqual([(c['number'],c['state']) for c in x['cores']],[(4,'미접속')])
+        print('PASS end lists which cores arrive (V201)')
         model,ends=self.ends(self.d1)
         self.assertEqual(ends,{'MDF':(2,0),'가입자1':(2,0)},ends)
         self.assertEqual(set(model['colors']),{self.f,self.d1})
@@ -102,6 +107,19 @@ def windows_ui():
             assert any('OV S1' in t and '2' in t for t in texts),texts
             assert not app.canvas.find_withtag('core_path_number'),'per-core labels must not be drawn'
             assert '3' in app.status.get(),app.status.get()
+            # V201: clicking the 「N코어 도착」 label lists the arrived cores.
+            item=next(i for i in app.canvas.find_withtag('cable_overview_end') if app.canvas.type(i)=='text' and 'OV S1' in app.canvas.itemcget(i,'text'))
+            bx=app.canvas.bbox(item);app.canvas.xview_moveto(0);app.canvas.yview_moveto(0);app.update()
+            class L:state=0
+            L.x=int((bx[0]+bx[2])/2-app.canvas.canvasx(0));L.y=int((bx[1]+bx[3])/2-app.canvas.canvasy(0))
+            assert app.click(L())=='break'
+            found=[w for w in app.winfo_children() if isinstance(w,code['OverviewEndCoresDialog'])]
+            assert len(found)==1,found
+            values=[found[0].tree.item(i,'values') for i in found[0].tree.get_children()]
+            assert [(v[0],v[1],v[4]) for v in values]==[('1','OV-1','도착'),('3','OV-3','도착')],values
+            assert app.highlight_owner=='cable_overview','label click keeps the overview'
+            found[0].copy_rows();assert 'OV-3' in app.clipboard_get()
+            found[0].destroy();app.update()
             # Inside the cable window, one core row shows only that core again.
             dialog=code['CableDialog'](app,s,cable_id=d2);app.update()
             dialog.notebook.select(dialog.identity_tab);app.update()

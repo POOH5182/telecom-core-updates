@@ -1,5 +1,12 @@
 # Telecom Core updater project
 
+- V201 (user: clicking 「N코어 도착」 should list which cores arrived):
+  cable_route_overview ends[i]['cores'] (number of the clicked cable, core_id,
+  detail, signal, state 도착/미접속, end = net.title of the arriving slot via
+  _overview_end_title). End labels carry tag cable_overview_end; App.click
+  on it opens OverviewEndCoresDialog (read-only, 목록 복사) and keeps the
+  overview; double_click there does nothing. check_cable_route_overview.py.
+
 - V200 (user: the drawing's 도면현황 should become 작업코어현황 = all cores
   connected to 절단/철거 cables and 철거 함체/RN): completion.work_core_report(
   store,kind) picks slots on 절단/철거 cables, on cables touching a 철거 node,
