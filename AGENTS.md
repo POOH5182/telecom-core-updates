@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V199 (user: clicking a cable should show where all its cores go; picking
+  one core in the cable window keeps the one-core path; only show how many
+  cores arrive at each end): planning/cable_route_overview.py
+  cable_route_overview(store,cable_id) (read-only, field_slot_audit): each
+  used slot of the cable + same real/임시 ID pieces; counts per node from
+  comp['ends'] (arrive) and comp['free'] (미접속, exempt non-OFF skipped).
+  App.show_cable_overview on a plain select-mode cable click (owner
+  'cable_overview', state _cable_overview, recomputed in
+  refresh_connection_highlight on data change); node/empty/modifier clicks
+  call clear_cable_overview; start_highlight_blink resets it. End labels are
+  drawn as core_path_port items, no per-core cable labels. Run
+  check_cable_route_overview.py.
+
 - V198 (user: 코어내역 복사 should write the core's overall signal, ON if
   the same core is ON elsewhere): completion.core_copy_signal_label(store,row)
   reads core_id_overview counts for the row's ID (임시 too): any ON -> ON,
