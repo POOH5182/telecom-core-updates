@@ -1,5 +1,16 @@
 # Telecom Core updater project
 
+- V203 (user: click two cables and see the cores both carry, with each
+  cable's number): planning/cable_common_cores.py cable_common_cores(store,
+  a,b) (read-only) matches non-empty core IDs (strip+casefold, 임시-N only
+  with the same N) and returns one row per number pair (a_number/b_number +
+  details). App.click: Ctrl+click on a cable in select mode calls
+  open_common_cores(); it only acts when exactly two cables are selected
+  (A = the other one, B = the one just clicked) and reuses one
+  CommonCoresDialog (show(a,b), A·B 바꾸기, 목록 복사 Excel). Cable right-click
+  menu with two cables adds 「두 케이블 겹치는 코어 보기…」. Plain click overview
+  (V199) is unchanged. check_cable_common_cores.py.
+
 - V202 (user: dashboard 35 vs 작업필요코어(전체) 40/49): dashboard work mode
   now uses completion.work_core_list_report(store,app.work_report()) = the
   exact CoreCheckDialog 'work' rows (all). Disposition-excluded rows and,
