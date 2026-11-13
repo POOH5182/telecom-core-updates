@@ -23,6 +23,9 @@ class CableDisplayTests(unittest.TestCase):
         row['extra_json']='{"lotNo": null}';self.assertEqual(missing(row),('ID','LOT'))
         row['cable_id']='123/12C';row['extra_json']='{"lotNo":" 00001 "}'
         self.assertEqual(missing(row),());self.assertIn('=00001=',label(row,defaults,True))
+        fresh=dict(spec='12C',size=12,cable_id='',status='신설',extra_json='{}')
+        self.assertEqual(missing(fresh),());self.assertNotIn('미입력',label(fresh,defaults,True))
+        self.assertEqual(missing(dict(fresh,status='기설')),('ID','LOT'))
 
     def test_default_and_explicit_preferences_survive_restart(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -52,7 +55,8 @@ def windows_ui():
         try:
             s=app.store;a=s.add_node('합성 시작',380,220);b=s.add_node('합성 끝',900,220)
             full=s.add_cable(a,b,'100001584485','12C','기설',lot_no='9340')
-            no_lot=s.add_cable(a,b,'LOT-EMPTY','36C','신설');empty=s.add_cable(a,b,'','72C','기설')
+            no_lot=s.add_cable(a,b,'LOT-EMPTY','36C','기설');empty=s.add_cable(a,b,'','72C','기설')
+            fresh=s.add_cable(a,b,'','144C','신설')  # V204: 신설 has no yellow rim
             app.refresh();app.update()
             before=wf.plan_snapshot(s.conn);history=s.history_rows()
             def label(view,cid):return next(e for e in view.current_label_layout if e['id']==cid)['parts'][0]
@@ -62,7 +66,7 @@ def windows_ui():
             line=app.cable_line_items[no_lot]
             assert app.canvas.coords(item)==app.canvas.coords(line)
             assert float(app.canvas.itemcget(item,'width'))>15
-            assert app.canvas.itemcget(line,'dash'), 'new cable inner dash lost'
+            assert app.canvas.itemcget(app.cable_line_items[fresh],'dash'), 'new cable inner dash lost'
             def click(cid):
                 p=label(app,cid);x=int(p['x']-app.canvas.canvasx(0));y=int(p['y']-app.canvas.canvasy(0))
                 app.canvas.event_generate('<ButtonPress-1>',x=x,y=y);app.canvas.event_generate('<ButtonRelease-1>',x=x,y=y);app.update()

@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V204 (user: 신설 cables should not turn yellow for missing LOT/ID; cable
+  dialog 상태/규격 as two vertical columns of click buttons): app
+  cable_missing_fields() returns () when cable['status']=='신설' (rows without
+  status are still checked). CableDialog uses cable_choice_columns(): tk.Button
+  toggles (takefocus=0, selected = CHOICE_ON blue) for STATUS_VALUES (left) and
+  CABLE_SIZE_CHOICES + 기타 (right; 기타 entry = other_size_var -> size_var).
+  refresh_lock_state disables these buttons when locked (set_controls_locked
+  only handles ttk). Create dialog 800x560, edit 1240x900.
+  check_cable_choice_buttons.py (UI part runs on win32 or TELECOM_CHECK_UI=1).
+
 - V203 (user: click two cables and see the cores both carry, with each
   cable's number): planning/cable_common_cores.py cable_common_cores(store,
   a,b) (read-only) matches non-empty core IDs (strip+casefold, 임시-N only
