@@ -7,7 +7,11 @@
   toggles (takefocus=0, selected = CHOICE_ON blue) for STATUS_VALUES (left) and
   CABLE_SIZE_CHOICES + 기타 (right; 기타 entry = other_size_var -> size_var).
   refresh_lock_state disables these buttons when locked (set_controls_locked
-  only handles ttk). Create dialog 800x560, edit 1240x900.
+  only handles ttk). Create dialog 800x560 (vertical columns). Edit dialog
+  keeps 1240x840 and uses compact=True (same buttons, 상태 2 per row, 규격 4
+  per row) so the core table keeps its height: the first V204 push with
+  vertical columns in the edit dialog failed check_signal_batch on Windows
+  (tree too short, bbox empty).
   check_cable_choice_buttons.py (UI part runs on win32 or TELECOM_CHECK_UI=1).
 
 - V203 (user: click two cables and see the cores both carry, with each
