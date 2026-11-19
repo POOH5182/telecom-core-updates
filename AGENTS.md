@@ -1,5 +1,23 @@
 # Telecom Core updater project
 
+- V206 (user: work phase 차수 on cables and cores; cable phase marks all its
+  cores, single cores can differ, a core's phase shows along its whole path):
+  reuses state(store)['phases'] (PhaseDialog data). planning/work_phase.py:
+  set_cable_phase(store,cable_ids,name|'') keeps one phase per cable per
+  scenario (cable refs with scope=active_scenario); set_core_phase(store,ids,
+  name|'') puts IDs in phase['cores'] and in excluded_cores of other phases
+  whose cable-derived set contains them ('' clears own + exclusions so the
+  cable phase applies again). phase_names (workflow baseline) now returns a
+  core's explicit phases first (core beats cable), else cable-derived ones.
+  cable_phase_tags(store) (cached by total_changes) = cable's own phase +
+  phases of its cores; App.cable_label_layout appends [1차·2차]
+  (work_phase_short strips 작업). Cable right-click cascade 「작업차수 (케이블
+  전체 코어)」 -> App.apply_context_phase; CableDialog edit panel button
+  「작업차수 지정…」 (row 14, side panel so the tree height is unchanged) and
+  status_menu entry 0 -> build_phase_menu (selected cores / whole cable /
+  PhaseDialog). Blank-ID slots get no phase (by design of phase_id_set).
+  check_work_phase.py.
+
 - V205 (user picked draft A: cables sharing the same two enclosures were
   bowed quadratic curves with staggered labels): app parallel_cable_path(x1,
   y1,x2,y2,index,count,scale) is the single geometry source. count==1 keeps
