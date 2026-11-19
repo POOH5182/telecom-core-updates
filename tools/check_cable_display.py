@@ -109,8 +109,8 @@ def windows_ui():
             cross=s.add_cable(c,d,'CROSS','36C','기설',lot_no='2222')
             app.selected.clear();app.refresh();app.update()
             before=wf.plan_snapshot(s.conn);history=s.history_rows()
-            coords=app.canvas.coords(app.cable_line_items[full]);x1,y1,mx,my,x2,y2=coords
-            t=.25;x=(1-t)**2*x1+2*(1-t)*t*mx+t*t*x2;y=(1-t)**2*y1+2*(1-t)*t*my+t*t*y2
+            coords=app.canvas.coords(app.cable_line_items[full])
+            x,y=code['cable_path_point'](code['cable_path_points'](coords),.25)
             x=int(x-app.canvas.canvasx(0));y=int(y-app.canvas.canvasy(0))
             app.canvas.event_generate('<ButtonPress-1>',x=x,y=y);app.canvas.event_generate('<ButtonRelease-1>',x=x,y=y);app.update()
             assert app.selected=={full},app.selected

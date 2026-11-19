@@ -1,5 +1,20 @@
 # Telecom Core updater project
 
+- V205 (user picked draft A: cables sharing the same two enclosures were
+  bowed quadratic curves with staggered labels): app parallel_cable_path(x1,
+  y1,x2,y2,index,count,scale) is the single geometry source. count==1 keeps
+  the old 3-point straight form (6 coords, smooth). count>=2 gives straight
+  parallel polylines spaced PARALLEL_CABLE_GAP=26*scale; when |offset| >
+  PARALLEL_CABLE_END=18*scale the ends taper into the node (4 points,
+  taper 65*scale). Canvas lines use smooth=cable_path_smooth(path) (Tk
+  smoothing would bend the parallel run). Marks use cable_path_even_points /
+  removal_mark_path_points; SVG uses cable_path_svg; highlight core labels
+  use cable_path_point on canvas coords (no longer require 6 coords).
+  cable_label_layout: outer cables (first/last) put the label outside the
+  bundle along the perpendicular; inner ones on their own line at staggered
+  t (.35-.65). core_layout_map.py / after_routes.py keep their own curves.
+  check_parallel_cables.py.
+
 - V204 (user: 신설 cables should not turn yellow for missing LOT/ID; cable
   dialog 상태/규격 as two vertical columns of click buttons): app
   cable_missing_fields() returns () when cable['status']=='신설' (rows without
