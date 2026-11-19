@@ -1,5 +1,21 @@
 # Telecom Core updater project
 
+- V207 (user: move screens to HTML step by step; first a read-only HTML view
+  of the real drawing using the approved main-screen mockup, logic stays in
+  Python): planning/html_view.py (bundled last, # BEGIN TELECOM HTML VIEW)
+  html_view_cores(store,work,report) (core rows + method from work rows'
+  source_slots/current_slots + done/reason from completion_report by_slot),
+  html_view_dashboard(store,work) (work_core_list_report + drawing progress
+  + error_core_summary), html_view_document(scene,meta) (one offline HTML,
+  JSON in <script type=application/json> with < > & escaped; template has no
+  external URLs). App.html_view_scene() mirrors drawing_svg() geometry
+  (parallel_cable_path, cable_size_color, star/x marks, label/hamche layouts,
+  node_visual, badges) as data; App.open_html_view() writes
+  app_dir()/print/도면_HTML화면.html and webbrowser.open. Entry points: header
+  button 「HTML 화면」 (html_view_button), file menu and drawing tool catalog
+  id html_view. Read-only: never writes the drawing. check_html_view.py.
+  Mockup: /mnt/project-files/previews/html-시안/ (project files, not repo).
+
 - V206 (user: work phase 차수 on cables and cores; cable phase marks all its
   cores, single cores can differ, a core's phase shows along its whole path):
   reuses state(store)['phases'] (PhaseDialog data). planning/work_phase.py:

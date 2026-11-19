@@ -121,6 +121,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM CABLE COMMON CORES\n' + (ROOT / 'planning' / 'cable_common_cores.py').read_text(encoding='utf-8')
         if version >= 206:
             baseline += '\n\n# BEGIN TELECOM WORK PHASE\n' + (ROOT / 'planning' / 'work_phase.py').read_text(encoding='utf-8')
+        if version >= 207:
+            baseline += '\n\n# BEGIN TELECOM HTML VIEW\n' + (ROOT / 'planning' / 'html_view.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()
