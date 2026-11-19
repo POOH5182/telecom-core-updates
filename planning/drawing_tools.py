@@ -62,7 +62,7 @@ class DrawingTools:
             if key=='core_errors':
                 button=tk.Button(self.bar,text=row['label'],command=row['command'],relief='flat',bd=1,padx=9,pady=5,font=('Malgun Gothic',9),takefocus=True)
             else:
-                button=ttk.Button(self.bar,text=row['label'],command=row['command'],style='Danger.TButton' if key=='delete' else 'Tool.TButton')
+                button=ttk.Button(self.bar,text=row['label'],command=row['command'],style='Danger.Tool.TButton' if key=='delete' else 'Tool.TButton')
             self.buttons[key]=self.bar.add(button)
             if key=='files':button.bind('<Down>',lambda e,command=row['command']:command())
             if row.get('mode'):self.app.mode_buttons[row['mode']]=button

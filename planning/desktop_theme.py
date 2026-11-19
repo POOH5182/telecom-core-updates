@@ -3,10 +3,13 @@ from tkinter import font as tkfont
 
 
 DESKTOP_COLORS = {
-    'ink':'#192b46', 'muted':'#64748b', 'navy':'#14243d',
-    'accent':'#315eac', 'hover':'#254b8c', 'soft':'#edf3fc',
-    'surface':'#ffffff', 'page':'#f3f6fa', 'line':'#dbe3ed',
+    # V206 정밀 계기판(instrument panel) 톤: 깊은 남색 머리, 맑은 회백 바탕,
+    # 하나의 코발트 강조색. 버튼은 얇은 테두리로 '누를 수 있음'이 보이게 한다.
+    'ink':'#16233a', 'muted':'#5b6b82', 'navy':'#101d33',
+    'accent':'#2f5fc4', 'hover':'#244c9e', 'soft':'#e9f0fc',
+    'surface':'#ffffff', 'page':'#f2f4f8', 'line':'#d5dde8',
     'success':'#16734b', 'danger':'#c62828',
+    'field':'#f7f9fc', 'border':'#c2cddc', 'header_raise':'#1e3354',
 }
 
 
@@ -28,64 +31,115 @@ def install_desktop_theme(root):
         '*Text.background':colors['surface'], '*Text.foreground':colors['ink'],
         '*Text.selectBackground':colors['soft'], '*Text.selectForeground':colors['ink'],
         '*Text.relief':'flat', '*Text.borderWidth':1,
-        '*Text.highlightBackground':colors['line'], '*Text.highlightColor':colors['accent'],
+        '*Text.highlightBackground':colors['border'], '*Text.highlightColor':colors['accent'],
         '*Menu.background':colors['surface'], '*Menu.foreground':colors['ink'],
         '*Menu.activeBackground':colors['soft'], '*Menu.activeForeground':colors['accent'],
         '*Menu.relief':'flat', '*Menu.borderWidth':1,
+        '*Listbox.background':colors['surface'], '*Listbox.foreground':colors['ink'],
+        '*Listbox.selectBackground':'#dbe7fb', '*Listbox.selectForeground':colors['ink'],
+        '*Listbox.highlightBackground':colors['border'], '*Listbox.highlightColor':colors['accent'],
     }.items():root.option_add(pattern,value)
     style=ttk.Style(root);style.theme_use('clam')
     style.configure('.',font=(family,9),background=colors['surface'],foreground=colors['ink'],
-                    bordercolor=colors['line'],lightcolor=colors['surface'],darkcolor=colors['line'])
+                    bordercolor=colors['line'],lightcolor=colors['surface'],darkcolor=colors['line'],
+                    troughcolor=colors['page'],selectbackground='#dbe7fb',selectforeground=colors['ink'])
     style.configure('TFrame',background=colors['surface'])
     style.configure('Page.TFrame',background=colors['page'])
     style.configure('TLabel',background=colors['surface'],foreground=colors['ink'])
     style.configure('Muted.TLabel',foreground=colors['muted'])
-    style.configure('Title.TLabel',font=(family,16,'bold'))
-    style.configure('Section.TLabel',font=(family,10,'bold'))
-    style.configure('TLabelframe',background=colors['surface'],borderwidth=1,relief='solid')
-    style.configure('TLabelframe.Label',font=(family,9,'bold'),foreground=colors['muted'],padding=(0,3))
-    style.configure('TButton',padding=(10,6),relief='flat',borderwidth=1,background=colors['surface'],
-                    foreground=colors['ink'],focuscolor=colors['accent'],focusthickness=1)
-    style.map('TButton',background=[('disabled','#f4f6f9'),('pressed','#dfe8f5'),('active','#f0f4fa')],
-              foreground=[('disabled','#8b98ab')],bordercolor=[('focus',colors['accent']),('active','#b6c7df')])
-    for name,bg,fg in [('Primary.TButton',colors['accent'],'#ffffff'),
-                       ('Active.Tool.TButton',colors['soft'],colors['accent']),
-                       ('Header.TButton','#294468','#ffffff')]:
-        style.configure(name,background=bg,foreground=fg,bordercolor=bg,font=(family,9,'bold'))
-        style.map(name,background=[('disabled','#e7ebf1'),('pressed',colors['hover']),('active',colors['accent'])],
-                  foreground=[('disabled','#8794a6'),('pressed','#ffffff'),('active','#ffffff')])
-    style.configure('Danger.TButton',foreground=colors['danger'])
-    style.configure('Tool.TButton',padding=(9,5))
-    style.configure('TMenubutton',padding=(10,6),relief='flat',arrowsize=10)
+    style.configure('Title.TLabel',font=(family,16,'bold'),foreground=colors['navy'])
+    style.configure('Section.TLabel',font=(family,10,'bold'),foreground=colors['navy'])
+    style.configure('TLabelframe',background=colors['surface'],borderwidth=1,relief='solid',
+                    bordercolor=colors['line'],lightcolor=colors['line'],darkcolor=colors['line'])
+    style.configure('TLabelframe.Label',font=(family,9,'bold'),foreground=colors['accent'],padding=(0,3))
+    # 기본 버튼: 옅은 바탕 + 얇은 테두리. 예전엔 테두리가 거의 안 보여 글자처럼 보였다.
+    style.configure('TButton',padding=(10,6),relief='solid',borderwidth=1,background=colors['field'],
+                    foreground=colors['ink'],bordercolor=colors['border'],lightcolor=colors['field'],
+                    darkcolor=colors['field'],focuscolor=colors['accent'],focusthickness=1)
+    style.map('TButton',background=[('disabled','#f3f5f8'),('pressed','#dce6f6'),('active',colors['soft'])],
+              foreground=[('disabled','#97a3b4'),('active',colors['hover'])],
+              bordercolor=[('disabled',colors['line']),('focus',colors['accent']),('active','#8fa8d4')],
+              lightcolor=[('pressed','#dce6f6'),('active',colors['soft'])],
+              darkcolor=[('pressed','#dce6f6'),('active',colors['soft'])])
+    for name,bg,fg,edge,hover in [('Primary.TButton',colors['accent'],'#ffffff',colors['hover'],colors['hover']),
+                                  ('Active.Tool.TButton',colors['accent'],'#ffffff',colors['hover'],colors['hover']),
+                                  ('Header.TButton','#22395c','#ffffff','#35517c','#2c4a76')]:
+        style.configure(name,background=bg,foreground=fg,bordercolor=edge,lightcolor=bg,darkcolor=bg,
+                        font=(family,9,'bold'))
+        style.map(name,background=[('disabled','#e7ebf1'),('pressed',colors['hover']),('active',hover)],
+                  foreground=[('disabled','#8794a6'),('pressed','#ffffff'),('active',fg)],
+                  bordercolor=[('focus',colors['accent'] if name!='Header.TButton' else '#7ba7f2'),('active',edge)],
+                  lightcolor=[('pressed',colors['hover']),('active',hover)],
+                  darkcolor=[('pressed',colors['hover']),('active',hover)])
+    style.configure('Danger.TButton',foreground=colors['danger'],background=colors['surface'],bordercolor='#efc9c9',
+                    lightcolor=colors['surface'],darkcolor=colors['surface'])
+    style.map('Danger.TButton',foreground=[('disabled','#c9a3a3'),('active','#a61b1b')],
+              background=[('pressed','#f9dede'),('active','#fdeeee')],bordercolor=[('active','#e3a4a4')],
+              lightcolor=[('active','#fdeeee')],darkcolor=[('active','#fdeeee')])
+    # 도구줄의 '선택 삭제': 빨간 글자만, 테두리 없이(다른 도구 버튼과 같은 무게).
+    style.configure('Danger.Tool.TButton',padding=(9,5),relief='flat',foreground=colors['danger'],background=colors['surface'],
+                    bordercolor=colors['surface'],lightcolor=colors['surface'],darkcolor=colors['surface'])
+    style.map('Danger.Tool.TButton',foreground=[('disabled','#c9a3a3'),('active','#a61b1b')],
+              background=[('pressed','#f9dede'),('active','#fdeeee')],bordercolor=[('active','#fdeeee')],
+              lightcolor=[('active','#fdeeee')],darkcolor=[('active','#fdeeee')])
+    # 도구줄 버튼: 평소엔 바탕과 같은 색(조용하게), 마우스를 올리면 옅게 드러난다.
+    style.configure('Tool.TButton',padding=(9,5),relief='flat',background=colors['surface'],bordercolor=colors['surface'],
+                    lightcolor=colors['surface'],darkcolor=colors['surface'])
+    style.configure('TMenubutton',padding=(10,6),relief='flat',arrowsize=10,background=colors['field'],
+                    bordercolor=colors['border'],lightcolor=colors['field'],darkcolor=colors['field'])
     style.map('TMenubutton',background=[('active',colors['soft'])])
     for name in ('TEntry','TCombobox','TSpinbox'):
         style.configure(name,padding=(6,5),fieldbackground=colors['surface'],borderwidth=1,
-                        foreground=colors['ink'],selectbackground=colors['soft'],selectforeground=colors['ink'])
-        style.map(name,bordercolor=[('focus',colors['accent'])],
-                  fieldbackground=[('readonly','#f6f8fc'),('disabled','#f0f3f8')],
-                  foreground=[('disabled','#7d8da2'),('readonly',colors['ink'])])
+                        bordercolor=colors['border'],lightcolor=colors['surface'],darkcolor=colors['surface'],
+                        foreground=colors['ink'],selectbackground='#dbe7fb',selectforeground=colors['ink'],
+                        arrowcolor=colors['muted'])
+        style.map(name,bordercolor=[('focus',colors['accent']),('hover','#9fb2cf')],
+                  lightcolor=[('focus','#c9d9f5')],
+                  fieldbackground=[('readonly',colors['field']),('disabled','#f0f3f8')],
+                  foreground=[('disabled','#7d8da2'),('readonly',colors['ink'])],
+                  arrowcolor=[('active',colors['accent'])])
     for name in ('TCheckbutton','TRadiobutton'):
-        style.configure(name,padding=(2,4),indicatorcolor=colors['surface'])
-        style.map(name,background=[('active',colors['surface'])],indicatorcolor=[('selected',colors['accent'])])
-    style.configure('TNotebook',background=colors['surface'],borderwidth=0,tabmargins=(0,0,0,0))
-    style.configure('TNotebook.Tab',padding=(16,8),background=colors['page'],foreground=colors['muted'])
-    style.map('TNotebook.Tab',background=[('selected',colors['soft']),('active','#f5f8fd')],
-              foreground=[('selected',colors['accent'])],font=[('selected',(family,9,'bold'))])
+        style.configure(name,padding=(2,4),indicatorcolor=colors['surface'],indicatorbackground=colors['surface'],
+                        upperbordercolor=colors['border'],lowerbordercolor=colors['border'])
+        style.map(name,background=[('active',colors['surface'])],foreground=[('active',colors['hover'])],
+                  indicatorcolor=[('selected',colors['accent']),('pressed',colors['soft'])])
+    style.configure('TNotebook',background=colors['surface'],borderwidth=0,tabmargins=(0,0,0,0),
+                    bordercolor=colors['line'],lightcolor=colors['surface'],darkcolor=colors['line'])
+    style.configure('TNotebook.Tab',padding=(16,8),background=colors['page'],foreground=colors['muted'],
+                    bordercolor=colors['line'],lightcolor=colors['page'],darkcolor=colors['page'])
+    style.map('TNotebook.Tab',background=[('selected',colors['accent']),('active','#e2e9f5')],
+              foreground=[('selected','#ffffff'),('active',colors['ink'])],
+              bordercolor=[('selected',colors['accent'])],
+              lightcolor=[('selected',colors['accent'])],darkcolor=[('selected',colors['accent'])],
+              font=[('selected',(family,9,'bold'))])
     style.configure('Treeview',rowheight=27,font=(family,9),background=colors['surface'],
-                    fieldbackground=colors['surface'],borderwidth=1,relief='solid')
+                    fieldbackground=colors['surface'],borderwidth=1,relief='solid',bordercolor=colors['line'],
+                    lightcolor=colors['line'],darkcolor=colors['line'])
     # Keep semantic row foreground tags visible when selected (ON, errors, etc.).
-    style.map('Treeview',background=[('selected','#dfeafb')],foreground=[('disabled','#8b98ab')])
-    style.configure('Treeview.Heading',padding=(8,8),background='#f1f5fa',foreground='#435773',
-                    font=(family,9,'bold'),relief='flat',borderwidth=1)
-    style.map('Treeview.Heading',background=[('active','#e7eef8')])
+    style.map('Treeview',background=[('selected','#dbe7fb')],foreground=[('disabled','#8b98ab')])
+    # 표 머리: 진한 남색 띠 + 흰 글자 (모든 코어표에서 머리와 내용이 바로 구분된다)
+    style.configure('Treeview.Heading',padding=(8,8),background='#1c3150',foreground='#ffffff',
+                    font=(family,9,'bold'),relief='flat',borderwidth=1,bordercolor='#2c4569',
+                    lightcolor='#1c3150',darkcolor='#2c4569')
+    style.map('Treeview.Heading',background=[('active','#2a4670')],foreground=[('active','#ffffff')],
+              lightcolor=[('active','#2a4670')])
     for name in ('Horizontal.TScrollbar','Vertical.TScrollbar'):
-        style.configure(name,background='#c5d0df',troughcolor='#f4f7fb',borderwidth=0,arrowsize=11)
-        style.map(name,background=[('active','#9babc1'),('pressed','#8599b3')])
+        style.configure(name,background='#cbd5e2',troughcolor='#f3f6fa',borderwidth=0,arrowsize=11,
+                        bordercolor='#f3f6fa',lightcolor='#cbd5e2',darkcolor='#cbd5e2',arrowcolor=colors['muted'],gripcount=0)
+        style.map(name,background=[('active','#9fb0c7'),('pressed','#8599b3')],
+                  lightcolor=[('active','#9fb0c7')],darkcolor=[('active','#9fb0c7')])
     style.configure('TSeparator',background=colors['line'])
-    style.configure('Completion.Horizontal.TProgressbar',background=colors['accent'],troughcolor='#eaf0f7',
-                    borderwidth=0,lightcolor=colors['accent'],darkcolor=colors['accent'],thickness=6)
-    style.configure('Complete.Horizontal.TProgressbar',background=colors['success'],troughcolor='#e9f3ee',
-                    borderwidth=0,lightcolor=colors['success'],darkcolor=colors['success'],thickness=6)
+    style.configure('Hero.TFrame',background=colors['navy'])
+    style.configure('Hero.Title.TLabel',background=colors['navy'],foreground='#ffffff',font=(family,16,'bold'))
+    style.configure('Hero.Muted.TLabel',background=colors['navy'],foreground='#a9bcd8')
+    style.configure('Accent.TFrame',background=colors['accent'])
+    style.configure('Status.TFrame',background=colors['navy'])
+    style.configure('Status.TLabel',background=colors['navy'],foreground='#c9d6ea')
+    style.configure('Status.Muted.TLabel',background=colors['navy'],foreground='#8ea3c2')
+    style.configure('Completion.Horizontal.TProgressbar',background=colors['accent'],troughcolor='#e7edf6',
+                    borderwidth=0,lightcolor=colors['accent'],darkcolor=colors['accent'],bordercolor='#e7edf6',thickness=6)
+    style.configure('Complete.Horizontal.TProgressbar',background=colors['success'],troughcolor='#e7f2ec',
+                    borderwidth=0,lightcolor=colors['success'],darkcolor=colors['success'],bordercolor='#e7f2ec',thickness=6)
 
 
 class FlowToolbar(ttk.Frame):
@@ -154,10 +208,11 @@ class ScrollableActions(ttk.Frame):
 
 
 def desktop_dialog_heading(parent,title,subtitle=''):
-    box=ttk.Frame(parent,padding=(18,14,18,10));box.pack(fill='x')
-    ttk.Label(box,text=title,style='Title.TLabel').pack(anchor='w')
-    if subtitle:ttk.Label(box,text=subtitle,style='Muted.TLabel').pack(anchor='w',pady=(3,0))
-    ttk.Separator(parent).pack(fill='x',padx=18)
+    # V206: 창 제목을 남색 띠 + 코발트 밑줄로. 높이는 예전(여백+구분선)과 같게 유지한다.
+    box=ttk.Frame(parent,padding=(18,14,18,10),style='Hero.TFrame');box.pack(fill='x')
+    ttk.Label(box,text=title,style='Hero.Title.TLabel').pack(anchor='w')
+    if subtitle:ttk.Label(box,text=subtitle,style='Hero.Muted.TLabel').pack(anchor='w',pady=(3,0))
+    ttk.Frame(parent,height=2,style='Accent.TFrame').pack(fill='x')
     return box
 
 

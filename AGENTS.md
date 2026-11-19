@@ -1,5 +1,23 @@
 # Telecom Core updater project
 
+- V206 (user: polish the whole UI design with frontend-design; no feature
+  changes): theme-only. planning/desktop_theme.py palette refined (navy
+  #101d33, accent #2f5fc4, new keys field/border/header_raise). Default
+  TButton = relief solid, field fill, visible border (#c2cddc); Tool.TButton
+  stays flat (surface border); new Danger.Tool.TButton (toolbar 선택 삭제:
+  red text, no box; drawing_tools uses it). Danger.TButton (dialogs) has a
+  light red border. App header #14243d -> #101d33, stage inactive #1c3150.
+  CableDialog choice buttons: relief flat (CHOICE_ON #2f5fc4). Sizes and
+  paddings unchanged (cable edit tree height must not shrink). Semantic
+  colors (stage, cable status/rim, ON/OFF/error) untouched. Second pass
+  (user: "barely changed"): desktop_dialog_heading = Hero.TFrame navy band
+  + 2px Accent.TFrame line (same height as old separator); Treeview.Heading
+  navy #1c3150 / white; Active.Tool.TButton and selected notebook tab filled
+  accent; App.workflow_strips (3px under each stage button, stage color when
+  active; stages pady 12->9 to keep header height); statusbar Status.TFrame
+  navy; dashboard card 4px accent top line.
+  check_design_polish.py (UI part on win32 or TELECOM_CHECK_UI=1).
+
 - V205 (user picked draft A: cables sharing the same two enclosures were
   bowed quadratic curves with staggered labels): app parallel_cable_path(x1,
   y1,x2,y2,index,count,scale) is the single geometry source. count==1 keeps
