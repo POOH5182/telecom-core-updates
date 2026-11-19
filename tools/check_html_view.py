@@ -42,7 +42,7 @@ class HtmlViewTests(unittest.TestCase):
         self.assertEqual((rows[2]['method'],rows[2]['done'],rows[2]['reason']),('코어절체',False,'경로 없음'))
         self.assertEqual((rows[3]['method'],rows[3]['done'],rows[3]['reason']),('',None,'OFF'))
         self.assertEqual(rows[4]['id'],'')
-        print('PASS core rows carry 절단절체·코어절체 and 완료/미완료 per core')
+        print('PASS core rows carry cut/transfer method and done/not-done per core')
 
     def test_document_is_safe_and_read_only(self):
         s=self.s;before=s.conn.total_changes
@@ -98,7 +98,7 @@ def windows_ui():
             assert not errors,errors
         finally:app.on_close()
     faulthandler.cancel_dump_traceback_later()
-    print('PASS Windows HTML 화면 button writes the real drawing (colours, marks, 차수, cores) without changing it')
+    print('PASS Windows HTML view button writes the real drawing (colours, marks, phases, cores) without changing it')
 
 
 if __name__=='__main__':
