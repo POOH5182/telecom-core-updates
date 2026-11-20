@@ -201,6 +201,29 @@ def work_view_counts(cables,cores,work=None,issues=None):
                 before_issues=len(issues.get('before',())),after_issues=len(issues.get('after',())),broken=len(issues.get('broken',())))
 
 
+def work_view_work_rows(work,limit=3000):
+    """V213: 작업필요코어 진행표 rows (Workflow.report) for the HTML list."""
+    rows=[]
+    for row in list((work or {}).get('rows') or ())[:limit]:
+        rows.append(dict(id=str(row.get('core_id') or ''),method=str(row.get('method') or ''),result=str(row.get('result') or ''),
+                         done=bool(row.get('complete')),error=bool(row.get('error')),excluded=bool(row.get('excluded')),
+                         note=str(row.get('note') or '')[:300],route=str(row.get('current_route') or '')[:300]))
+    return rows
+
+
+def work_view_trace_value(trace):
+    """V213: Store.trace_core_paths result as plain JSON for the HTML page."""
+    groups=[]
+    for group in trace.get('groups') or ():
+        paths=[[dict(frm=str(step.get('from') or ''),to=str(step.get('to') or ''),cable=str(step.get('cable') or ''),
+                     n=step.get('index') if step.get('index')!='' else None,cable_id=str(step.get('cable_id') or ''),status=str(step.get('status') or ''))
+                for step in path] for path in group.get('paths') or ()]
+        groups.append(dict(number=group.get('number'),paths=paths,issues=[str(x) for x in group.get('issues') or ()]))
+    return dict(id=str(trace.get('core_id') or ''),groups=groups,issues=[str(x) for x in trace.get('issues') or ()],
+                complete=bool(trace.get('complete')),cables=sorted(str(x) for x in trace.get('highlight') or ()),
+                found=bool(trace.get('rows')))
+
+
 def work_view_document(scene,meta):
     import html as _html
     data=dict(scene,meta=meta)
@@ -355,6 +378,15 @@ tbody tr.editing td{background:#e8f0ff}
 .st-btn{border:1.5px solid var(--c);color:var(--c);background:#fff;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700}
 .st-btn.on{background:var(--c);color:#fff}
 .mini.danger{color:var(--bad);border-color:#f3c0c0}
+.tabs{display:flex;gap:2px;padding:8px 12px 0;border-bottom:1px solid var(--line-2)}
+.tab{border:0;background:none;padding:7px 12px;font-size:12.5px;color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab span{font-size:11px;color:var(--ink-4)}
+.tab.on{color:var(--accent);font-weight:700;border-bottom-color:var(--accent)}
+.tr-in{display:flex;gap:6px}.tr-in input{flex:1;border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-family:var(--mono);font-size:12.5px}
+.tr-sum{padding:8px 10px;border-radius:8px;font-weight:700;font-size:12.5px;margin-bottom:6px}.tr-sum.good{background:#f2f8f3;color:var(--ok)}.tr-sum.bad{background:#fdecec;color:var(--bad)}
+.tr-g{border:1px solid var(--line-2);border-radius:8px;padding:8px 10px;margin:8px 0}.tr-h{font-weight:700;font-size:12px;color:#7c3aed;margin-bottom:4px}
+.tr-path{margin:0;padding-left:20px;font-size:12px}.tr-path li{padding:4px 0;border-bottom:1px dashed var(--line-2)}.tr-path li[data-tc]{cursor:pointer}.tr-path li[data-tc]:hover{background:#f7faff}
+.tr-path li span{display:block;color:var(--ink-3);font-size:11.5px}
 .sp-list{max-height:180px;overflow:auto;margin-bottom:6px}
 .sp-row{display:flex;align-items:center;gap:6px;justify-content:space-between;padding:5px 2px;border-bottom:1px solid var(--line-2);font-size:12px}
 .sp-h{font-size:11.5px;font-weight:700;color:var(--ink-2);margin:8px 0 5px}
@@ -493,6 +525,7 @@ function draw(){
     const g=el('g',{class:'cable'+(dim?' dim':''),'data-id':c.id},gC);
     const hasBad=(cores[c.id]||[]).some(r=>bad.has(c.id+'#'+r.n));
     if(hasBad)el('path',{d:c.d,fill:'none',stroke:'#ff1744','stroke-width':16,'stroke-opacity':.28},g);
+    if(traceSet.has(c.id))el('path',{d:c.d,fill:'none',stroke:'#a855f7','stroke-width':14,'stroke-opacity':.55},g);
     if(on)el('path',{d:c.d,fill:'none',stroke:'#b9f6ca','stroke-width':16},g);
     if(query&&hits.has('c:'+c.id))el('path',{d:c.d,fill:'none',stroke:'#ffd54f','stroke-width':16,'stroke-opacity':.8},g);
     if(view==='during'&&c.role==='신설')el('path',{d:c.d,fill:'none',stroke:'#fff','stroke-width':st.w+4},g);
@@ -624,8 +657,13 @@ function renderSide(){
   const list=issueList(view),broken=view==='before'?[]:(issues.broken||[]);
   const item=(i,c)=>{const cb=C[i.cable]||{};return `<button data-i="${c}"><i style="--c:${i.kind==='끊김'?'#b71c1c':i.kind==='중복'?'#c62828':'#7b1fa2'}"></i><span><span class="t">${i.v?`[${esc(i.v)}] `:''}${esc(i.id||'(ID 없음)')} · ${esc(cableName(cb))} ${(i.n||[]).join(',')}번</span><span class="d">${esc(i.text)} · ${esc(ends(cb))}</span></span></button>`};
   const all=[...list,...broken];
-  $('side').innerHTML=`<div class="side-h"><div class="crumb">작업도면 요약 · ${VIEWS.find(x=>x[0]===view)[1]}</div><div class="title-row"><h2>${esc(M.name||'')}</h2></div>
+  const tabs=[['check','확인 필요',list.length+broken.length],['work','작업 목록',(D.work||[]).length],['trace','코어 추적',null]];
+  const head=`<div class="side-h"><div class="crumb">작업도면 요약 · ${VIEWS.find(x=>x[0]===view)[1]}</div><div class="title-row"><h2>${esc(M.name||'')}</h2></div>
    <div class="meta"><div><span>기설</span><b>${(counts.roles||{})['기설']||0}</b></div><div><span>철거·절단</span><b>${((counts.roles||{})['철거']||0)+((counts.roles||{})['절단']||0)}</b></div><div><span>신설</span><b>${(counts.roles||{})['신설']||0}</b></div></div></div>
+   <div class="tabs">${tabs.map(t=>`<button class="tab${sideTab===t[0]?' on':''}" data-tab="${t[0]}">${t[1]}${t[2]!=null?` <span>${t[2]}</span>`:''}</button>`).join('')}</div>`;
+  if(sideTab==='work'){$('side').innerHTML=head+matchList()+workPanel();bindTabs();bindWork();bindList($('side'));return}
+  if(sideTab==='trace'){$('side').innerHTML=head+tracePanel();bindTabs();bindTrace();return}
+  $('side').innerHTML=head+`
    ${matchList()}
    <div class="list">
     <h4 style="--c:#c62828">이 보기 안의 충돌 <span class="cnt">${list.length}</span></h4>
@@ -635,7 +673,55 @@ function renderSide(){
     <div class="empty" style="padding:16px 8px">케이블을 누르면 칸마다 <b>작업전 → 작업후</b> 배정이 나옵니다.<br>숫자키 <b>1·2·3</b>으로 보기를 바꿀 수 있어요.</div>
    </div>`;
   $('side').querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>goIssue(all[+b.dataset.i]));
-  bindList($('side'));
+  bindTabs();bindList($('side'));
+}
+/* V213 side tabs: 작업 목록 (작업필요코어 진행표) and 코어 추적 */
+let sideTab='check',workFilter='todo',traceId='',traceResult=null,traceSet=new Set(),traceBusy=false;
+function bindTabs(){$('side').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{sideTab=b.dataset.tab;renderSide();if(sideTab==='trace'){const i=$('trId');if(i)i.focus()}})}
+const RESULT_C=r=>r.done?'#15803d':r.excluded?'#64748b':r.error?'#c62828':'#ff1744';
+function workPanel(){
+  const rows=D.work||[],f={todo:r=>!r.done&&!r.excluded,done:r=>r.done,excluded:r=>r.excluded,all:()=>true};
+  const cnt=k=>rows.filter(f[k]).length,list=rows.filter(f[workFilter]);
+  return `<div class="split">${[['todo','미완료'],['done','완료'],['excluded','제외'],['all','전체']].map(x=>`<span class="chip btn${workFilter===x[0]?' on':''}" data-wf="${x[0]}">${x[1]} <b>${cnt(x[0])}</b></span>`).join('')}
+    <button class="mini r" id="copyWork">목록 복사</button></div>
+   <div class="table-wrap"><table><thead><tr><th>코어ID</th><th>분배</th><th>결과</th><th>메모 · 지금 경로</th></tr></thead><tbody>
+   ${list.slice(0,800).map((r,i)=>`<tr data-w="${esc(r.id)}" style="cursor:pointer"><td class="cid">${esc(r.id||'-')}</td><td>${r.method?`<span class="st" style="--c:${METHOD_C[r.method]||'#64748b'}">${esc(r.method)}</span>`:''}</td>
+     <td><span class="done" style="color:${RESULT_C(r)}">${esc(r.result)}</span></td><td><span class="sub" style="margin:0">${esc(r.note)}</span>${r.route?`<span class="sub">${esc(r.route)}</span>`:''}</td></tr>`).join('')}
+   </tbody></table>${list.length?'':'<div class="empty">해당하는 작업 코어가 없습니다.</div>'}${list.length>800?`<div class="side-f">앞의 800개만 보여요. 목록 복사로 전체를 받으세요.</div>`:''}</div>
+   <div class="side-f">작업필요코어 진행표와 같은 내용이에요 (프로그램에 열린 도면 기준) · 줄을 누르면 ${LIVE?'코어 추적':'도면에서 찾기'}</div>`;
+}
+function bindWork(){
+  $('side').querySelectorAll('[data-wf]').forEach(b=>b.onclick=()=>{workFilter=b.dataset.wf;renderSide()});
+  $('side').querySelectorAll('tr[data-w]').forEach(tr=>tr.onclick=()=>{const id=tr.dataset.w;if(!id)return;
+    if(LIVE){traceId=id;sideTab='trace';runTrace()}else{$('q').value=id;query=id;runSearch();draw();renderSide()}});
+  $('copyWork').onclick=()=>{const rows=D.work||[];clip([['코어ID','분배','결과','메모','지금 경로'].join('\t'),...rows.map(r=>[r.id,r.method,r.result,r.note,r.route].map(v=>String(v||'').replace(/[\t\n]/g,' ')).join('\t'))].join('\n'),'작업 목록')};
+}
+function tracePanel(){
+  if(!LIVE)return `<div class="empty">코어 추적은 프로그램의 「작업도면 전·중·후」 버튼으로 연 화면에서 쓸 수 있어요.</div>`;
+  const t=traceResult;let body='';
+  if(t&&!t.found)body=`<div class="ed-note">「${esc(t.id)}」 코어를 ${targetName()}에서 찾지 못했어요.</div>`;
+  else if(t){
+    body=`<div class="tr-sum ${t.complete?'good':'bad'}">${t.complete?'한 경로로 이어져 있어요':'확인이 필요해요'} · 경로 ${t.groups.length}개 · 케이블 ${t.cables.length}개</div>
+     ${t.issues.map(x=>`<div class="sub badtxt">${esc(x)}</div>`).join('')}
+     ${t.groups.map(g=>`<div class="tr-g"><div class="tr-h">경로 ${g.number}</div>${g.paths.map(path=>`<ol class="tr-path">${path.map(st=>`<li${st.cable_id?` data-tc="${esc(st.cable_id)}"`:''}><b>${esc(st.frm)}</b> → <b>${esc(st.to)}</b><span>${esc(st.cable)}${st.n!=null?` · ${st.n}번`:''}${st.status&&st.status!=='기설'?` · ${esc(st.status)}`:''}</span></li>`).join('')}</ol>`).join('')}</div>`).join('')}
+     <div class="side-f" style="border:0;background:none;padding:6px 0">${esc(t.basis||'')}</div>`;
+  }
+  return `<div class="list"><div class="tr-in"><input id="trId" value="${esc(traceId)}" placeholder="추적할 코어ID"><button class="mini primary" id="trGo">${traceBusy?'추적 중…':'추적'}</button>${traceResult?'<button class="mini" id="trClear">지우기</button>':''}</div>
+    <div class="crumb" style="margin:6px 2px 10px">${targetName()} 기준 · 보라색으로 도면에 표시돼요 · 단계를 누르면 그 케이블로 가요</div>${body}</div>`;
+}
+function bindTrace(){
+  const i=$('trId');if(!i)return;
+  i.addEventListener('keydown',e=>{if(e.key==='Enter'){traceId=i.value.trim();runTrace()}});
+  $('trGo').onclick=()=>{traceId=i.value.trim();runTrace()};
+  const c=$('trClear');if(c)c.onclick=()=>{traceResult=null;traceSet=new Set();traceId='';draw();renderSide()};
+  $('side').querySelectorAll('[data-tc]').forEach(li=>li.onclick=()=>{const cb=C[li.dataset.tc];if(!cb)return;if(!shown(cb))setView(cb.role==='신설'?'after':'before');select('cable',cb.id);if(cb.mid)focusOn(cb.mid[0],cb.mid[1])});
+}
+async function runTrace(){
+  if(!traceId||traceBusy)return;traceBusy=true;renderSide();
+  try{const res=await api('trace',{view,id:traceId});
+    if(res.ok){traceResult=res.value;traceSet=new Set(res.value.cables||[])}else toast(res.error||'추적하지 못했어요');
+  }catch(e){toast('프로그램과 연결이 끊겼어요')}
+  finally{traceBusy=false;sel={kind:null,id:null};sideTab='trace';draw();renderSide()}
 }
 function matchList(){
   if(!query)return'';

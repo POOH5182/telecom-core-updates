@@ -38,6 +38,7 @@ class FakeApp:
     work_view_edit_core=code['App'].work_view_edit_core
     work_view_edit=code['App'].work_view_edit
     work_view_apply=code['App'].work_view_apply
+    work_view_trace=code['App'].work_view_trace
     work_view_backup=code['App'].work_view_backup
     def scenario_folder(self):return self.folder
     def refresh(self):self.refreshed=getattr(self,'refreshed',0)+1
@@ -217,6 +218,22 @@ class WorkEditTests(WorkViewTests):
         self.assertTrue(self.after.splice_for(self.nc,self.s,2));self.assertIn('직결',r['result'])
         with self.assertRaises(ValueError):e(op='core_paste',view='after',cable=t,start=1,lines=[])
         print('PASS HTML splices (connect, refuse wrong facility/occupied, disconnect, range) and multi-line paste')
+
+    def test_trace_and_work_list(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        self.before.close()
+        try:
+            r=app.work_view_trace({'view':'after','id':'R1'})['value']
+            self.assertTrue(r['found']);self.assertIn(self.s,r['cables']);self.assertTrue(r['groups'] and r['groups'][0]['paths'][0][0]['cable_id'])
+            b=app.work_view_trace({'view':'before','id':'R2'})['value']
+            self.assertTrue(b['found']);self.assertEqual(b['cables'],[self.r],'작업전 traces the saved field file')
+            self.assertFalse(app.work_view_trace({'view':'after','id':'NOPE'})['value']['found'])
+            with self.assertRaises(ValueError):app.work_view_trace({'view':'after','id':' '})
+        finally:self.before=code['Store'](self.folder/'before.sqlite3')
+        data=embedded(app.work_view_text(live='T'))
+        self.assertEqual(data['work'][0]['id'],'X5');self.assertEqual(data['work'][0]['method'],'코어절체')
+        self.assertIn('function runTrace',app.work_view_text(live='T'))
+        print('PASS HTML core trace per view (live after / saved field file) and work list rows')
 
     def test_server_routes_token_and_host(self):
         import threading,urllib.request,urllib.error

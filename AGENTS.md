@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V213 (HTML migration step 5): side panel tabs 확인 필요 / 작업 목록 / 코어
+  추적. scene.work = work_view_work_rows(App.work_report()) (id, method,
+  result, done, error, excluded, note, route; max 3000). Route trace ->
+  App.work_view_trace(view,id): Store.trace_core_paths on the view's store
+  (live, or the other saved file copied into :memory:; no 후도면 yet while
+  현장반영 is open -> the live store) -> work_view_trace_value (groups/paths
+  steps frm,to,cable,n,cable_id,status; issues; complete; cables) + basis
+  (trace_basis). JS: sideTab, workPanel/bindWork (filters, copy), tracePanel/
+  bindTrace/runTrace, traceSet purple glow in draw().
+
 - V212 (HTML migration step 4: HTML 작업도면 is the main screen, Tk stays as
   sub screen and server host): module global AUTO_HTML_ON_START=False, set
   True only in the pyw's `if __name__ == "__main__"` block (checks/smoke use
