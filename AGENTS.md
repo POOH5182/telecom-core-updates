@@ -1,5 +1,29 @@
 # Telecom Core updater project
 
+- V208 (user: one work drawing holding 기설/철거/신설 with 작업전/작업중/작업후
+  views instead of three drawings; each core slot keeps a separate 작업전 and
+  작업후 assignment so renumbering an existing cable is 코어절체, not an error;
+  apply the existing core rules; HTML; separate version): planning/
+  work_views.py (bundled after html_view, # BEGIN TELECOM WORK VIEWS).
+  작업전 = before.sqlite3 (현장반영), 작업후 = after.sqlite3 (후도면), joined
+  by cable id / core number (after is a copy of before so ids match). The
+  open drawing is used live; the other saved file is copied into a
+  Store(':memory:') via sqlite backup (never written). work_view_role(b,a)
+  (절단 > 철거 > deleted-in-after=철거 > only-in-after/신설=신설 > 기설),
+  work_view_state(role,b,a) (유지/코어절체/해제/신규배정/신설/철거/절단),
+  work_view_data(before,after,work) rows n,b,bd,a,ad,s,m(method from work
+  rows),db/rb (before completion_report), da/ra (after), eb/ea
+  (error_core_summary slots), ph. work_view_issues: per view only (중복 within
+  one cable + existing 오류코어) plus 'broken' = IDs on 철거/절단 cables found
+  on no 작업후-visible cable. No 후도면 yet: 작업후 uses the 현장반영
+  assignment (has_after False). 임시도면 is refused. App.work_view_stores/
+  work_view_scene (parallel_cable_path over the union so 철거 and 신설 run
+  side by side)/work_view_text/open_work_view -> app_dir()/print/
+  도면_작업도면_전중후.html. Entry: header 「작업도면 전·중·후」
+  (work_view_button), file menu and tool catalog id work_view.
+  check_work_views.py. check_html_view now compares meta version with
+  APP_TITLE instead of '207'.
+
 - V207 (user: move screens to HTML step by step; first a read-only HTML view
   of the real drawing using the approved main-screen mockup, logic stays in
   Python): planning/html_view.py (bundled last, # BEGIN TELECOM HTML VIEW)

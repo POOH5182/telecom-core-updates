@@ -91,7 +91,7 @@ def windows_ui():
             assert '[1차]' in labels[new]['parts'][0]['text'],labels[new]
             assert {n['name'] for n in data['nodes']}=={'HTML A','HTML B','HTML C','HTML D'}
             assert [r['id'] for r in data['cores'][old]][:1]==['HV-1'] and len(data['cores'][old])==72
-            assert data['meta']['kind']==app.scenario_kind() and data['meta']['version']=='207'
+            assert data['meta']['kind']==app.scenario_kind() and data['meta']['version']==code['APP_TITLE'].rsplit('V',1)[-1]
             labels_menu=[app.file_menu.entrycget(i,'label') for i in range(app.file_menu.index('end')+1)]
             assert 'HTML 화면으로 보기' in labels_menu,labels_menu
             assert any(r['id']=='html_view' for r in app.drawing_tool_catalog())
