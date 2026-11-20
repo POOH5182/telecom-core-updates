@@ -1,5 +1,25 @@
 # Telecom Core updater project
 
+- VERSION LABEL RULE (user, 2026-11-21): the shown version is
+  APP_VERSION_LABEL = "YY.MM.DD.NN" (KST date of the release + the number of
+  that day starting at 01; next day restarts at 01). Set it in the pyw next to
+  APP_UPDATE_NUMBER (= version.json integer). APP_TITLE shows the label, not
+  "V<N>"; HTML meta.version = APP_VERSION_LABEL. The integer N still names
+  workflow_v<N>.py, the ZIP, tag v<N> and the installed updater's messages
+  (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
+  Before bumping, look at RELEASE_NOTES to find today's last NN.
+
+- V215 / 26.11.21.01 (one drawing + view options, step 1): facility
+  positions per view. 작업전 = 현장반영 node x,y, 작업후 = 후도면 node x,y,
+  작업중 = own layout in common workflow state 'work_view_layout'.during
+  {node id:[x,y]} (copied on switch like phases, so written to the LIVE store
+  with label '작업정책: 작업중 배치'); unset -> 작업전 position
+  (work_view_positions). Scene nodes carry pos{before,during,after}+moved,
+  cables geo{view:{d,mid,lab,marks}}; JS applyGeo() at draw(). node_move
+  refuses locked hamche; reset:true removes the during placement. Next steps
+  agreed with the user: merge 현장반영+후도면 into one drawing (backup first),
+  then phase timeline views (작업전 → 1차 중 → 1차 후 = 2차 전 → … → 최종).
+
 - V214 (HTML migration step 6): 작업차수 / 함체 잠금 / 도면 전환 in the
   HTML 작업도면. Phase state is common to 현장반영·후도면 and copied on every
   switch, so ops cable_phase / core_phase / phase_add always write the LIVE

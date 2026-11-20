@@ -127,7 +127,7 @@ class WorkViewTests(unittest.TestCase):
         self.assertEqual({r['n']:r for r in data['cores'][self.k]}[9]['b'],'</script><b>x')
         self.assertEqual({r['n']:r for r in data['cores'][self.k]}[3]['m'],'코어절체')
         self.assertTrue(data['has_after']);self.assertEqual(data['meta']['modes'][1][1],'작업중')
-        self.assertEqual(data['meta']['version'],code['APP_TITLE'].rsplit('V',1)[-1])
+        self.assertEqual(data['meta']['version'],code['APP_VERSION_LABEL'])
         print('PASS work drawing page joins field + after drawings, escapes text, stays offline and never writes')
 
     def test_open_from_field_drawing_without_after(self):
@@ -264,6 +264,38 @@ class WorkEditTests(WorkViewTests):
         page=app.work_view_text(live='T')
         for name in ('function phaseRow','function toggleAllLock','function switchKind','data-lock'):self.assertIn(name,page)
         print('PASS HTML work phases (open drawing only), facility lock / all lock per view, drawing switch')
+
+    def test_version_label(self):
+        label=code['APP_VERSION_LABEL']
+        self.assertRegex(label,r'^\d\d\.\d\d\.\d\d\.\d\d$','shown version is YY.MM.DD.NN')
+        root=Path(__file__).resolve().parents[1]
+        self.assertEqual(code['APP_UPDATE_NUMBER'],json.loads((root/'app'/'version.json').read_text(encoding='utf-8'))['version'])
+        self.assertIn(label,code['APP_TITLE']);self.assertNotIn(' V2',code['APP_TITLE'])
+        print('PASS shown version label YY.MM.DD.NN matches the update number')
+
+    def test_positions_per_view(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        e=lambda **kw:app.work_view_edit(kw)
+        self.after.update_node_pos(self.nb,500,40);self.after.conn.commit()
+        scene=app.work_view_live_scene();node={n['id']:n for n in scene['nodes']}[self.nb]
+        self.assertEqual(node['pos'],{'before':[300,0],'during':[300,0],'after':[500,40]},'during follows 작업전 until placed')
+        r=e(op='node_move',view='during',node=self.nb,x=700,y=600)
+        node={n['id']:n for n in r['scene']['nodes']}[self.nb]
+        self.assertEqual(node['pos'],{'before':[300,0],'during':[700,600],'after':[500,40]});self.assertTrue(node['moved'])
+        self.assertEqual((self.after.node(self.nb)['x'],self.after.node(self.nb)['y']),(500,40),'during placement never moves a drawing')
+        cable={c['id']:c for c in r['scene']['cables']}[self.k]
+        self.assertNotEqual(cable['geo']['during']['d'],cable['geo']['after']['d'])
+        self.assertNotEqual(cable['geo']['before']['d'],cable['geo']['during']['d'])
+        new=self.after.add_node('NEW',900,900);self.after.conn.commit()
+        node={n['id']:n for n in app.work_view_live_scene()['nodes']}[new]
+        self.assertEqual(node['pos'],{'before':[900,900],'during':[900,900],'after':[900,900]},'after-only facility')
+        r=e(op='node_move',view='during',node=self.nb,x=0,y=0,reset=True)
+        node={n['id']:n for n in r['scene']['nodes']}[self.nb];self.assertEqual(node['pos']['during'],[300,0]);self.assertFalse(node['moved'])
+        self.after.set_node_locked(self.nb,True);self.after.conn.commit()
+        for v in ('during','after'):
+            with self.assertRaises(ValueError):e(op='node_move',view=v,node=self.nb,x=10,y=10)
+        self.assertIn('function applyGeo',app.work_view_text(live='T'))
+        print('PASS facility positions per view: before/after drawings, own during layout, reset, locked refused')
 
     def test_trace_and_work_list(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k

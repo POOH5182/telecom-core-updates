@@ -273,7 +273,7 @@ let sel={kind:null,id:null},phase='전체',query='',hits=new Set(),hitCores=new 
 /* header */
 const kind=M.kind||'before',stageLabel=M.stage_label||'';
 $('strip').innerHTML=`<span>●</span>${esc(stageLabel)} 도면 · HTML 보기 전용<span class="right">${esc(M.created||'')} 기준 · 수정은 기존 프로그램에서 하고 이 화면은 다시 열면 새로 반영됩니다</span>`;
-$('ver').textContent='telecom_core · V'+(M.version||'');
+$('ver').textContent='telecom_core · '+(M.version||'');
 $('fname').textContent=M.name||'';
 $('when').textContent=M.created?('만든 시각 '+M.created):'';
 const stageIdx={gis:0,before:1,after:3}[kind];

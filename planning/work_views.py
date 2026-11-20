@@ -251,6 +251,36 @@ def work_view_phase_add(store,name):
     return name
 
 
+def work_view_layout(store,view='during'):
+    """V215: {node id: [x, y]} placed only for this view (작업중)."""
+    try:value=state(store).get('work_view_layout',{}).get(view,{})
+    except Exception:return {}
+    out={}
+    for key,point in (value.items() if isinstance(value,dict) else []):
+        try:out[str(key)]=[float(point[0]),float(point[1])]
+        except (TypeError,ValueError,IndexError):pass
+    return out
+
+
+def work_view_set_layout(store,view,node_id,point):
+    """V215: place one facility for one view only (point None = follow 작업전 again)."""
+    value=state(store);layout=value.setdefault('work_view_layout',{});places=layout.setdefault(view,{})
+    if point is None:places.pop(str(node_id),None)
+    else:places[str(node_id)]=[round(point[0]),round(point[1])]
+    write_state(store,value,'작업도면 '+('배치 되돌림' if point is None else '배치'))
+    return str(node_id)
+
+
+def work_view_positions(rows,during=None):
+    """V215: where a facility sits in each view. 작업전 = 현장반영 position,
+    작업후 = 후도면 position, 작업중 = its own place or else the 작업전 one.
+    A missing side falls back to the other drawing."""
+    b=rows.get('before');a=rows.get('after')
+    bp=[b['x'],b['y']] if b else None;ap=[a['x'],a['y']] if a else None
+    bp=bp or ap;ap=ap or bp
+    return {'before':bp,'during':list(during) if during else bp,'after':ap}
+
+
 def work_view_node_locked(row):
     try:return str(row['type'] or 'hamche')=='hamche' and bool(json.loads(row['extra_json'] or '{}').get('editLocked'))
     except (KeyError,IndexError,TypeError,ValueError):return False
@@ -515,7 +545,7 @@ function issueList(v){return v==='before'?(issues.before||[]):v==='after'?(issue
 function badSlots(){const s=new Set();issueList(view).forEach(i=>(i.n||[]).forEach(n=>s.add(i.cable+'#'+n)));if(view!=='before')(issues.broken||[]).forEach(i=>s.add(i.cable+'#'+i.n[0]));return s}
 
 /* header */
-$('ver').textContent='telecom_core · V'+(M.version||'');
+$('ver').textContent='telecom_core · '+(M.version||'');
 if(LIVE){const b=$('mode-badge');b.textContent='수정 가능';b.title='케이블을 누르고 코어 줄을 누르면 코어ID·내역을 고칠 수 있어요. 저장은 바로 프로그램 도면에 됩니다.';b.style.color='#86efac';b.style.borderColor='#2f6b45';$('reload').style.display=''}
 $('fname').textContent=M.name||'';
 $('when').textContent=M.created?('만든 시각 '+M.created):'';
@@ -554,8 +584,12 @@ function cableBadge(c){
   if(view==='after'&&c.role==='신설'){const k=rows.filter(r=>r.a).length;return ['신설 '+k+'코어','#b45309']}
   return null;
 }
+function applyGeo(){
+  nodes.forEach(n=>{const p=(n.pos||{})[view];if(p){n.x=p[0];n.y=p[1]}});
+  cables.forEach(c=>{const g=(c.geo||{})[view];if(g){c.d=g.d;c.mid=g.mid;c.lab=g.lab;c.marks=g.marks}});
+}
 function draw(){
-  world.innerHTML='';
+  applyGeo();world.innerHTML='';
   const bad=badSlots();
   const gC=el('g',{},world),gL=el('g',{},world),gN=el('g',{},world);
   cables.filter(shown).forEach(c=>{
@@ -830,14 +864,14 @@ function renderNode(n){
 
 /* V210 drawing tools: move / add facility / add cable / cable and facility info / delete */
 let tool='select',nodeDrag=null,justDragged=false,cableStart=null,newCable=null;
-const TOOLS=[['select','선택·이동','시설을 끌어서 옮겨요'],['hamche','+ 함체','빈 곳을 누르면 함체를 만들어요'],['rn','+ RN','빈 곳을 누르면 RN을 만들어요'],['sub','+ 가입자','빈 곳을 누르면 가입자를 만들어요'],['cable','+ 케이블','시설 두 개를 차례로 누르세요']];
+const TOOLS=[['select','선택·이동','시설을 끌어서 옮겨요 (이 보기에서만)'],['hamche','+ 함체','빈 곳을 누르면 함체를 만들어요'],['rn','+ RN','빈 곳을 누르면 RN을 만들어요'],['sub','+ 가입자','빈 곳을 누르면 가입자를 만들어요'],['cable','+ 케이블','시설 두 개를 차례로 누르세요']];
 const target=()=>view==='before'?'before':'after';
 const targetName=()=>view==='before'?'현장반영 도면':'후도면';
 function renderTools(){
   if(!LIVE)return;const box=$('tools');box.style.display='flex';
   const hint=tool==='cable'&&cableStart?`${esc((N[cableStart]||{}).name||'')} 다음 시설을 누르세요`:esc(TOOLS.find(t=>t[0]===tool)[2]);
   const locked=!!(D.locks||{})[target()];
-  box.innerHTML=TOOLS.map(t=>`<button class="chip btn${t[0]===tool?' on':''}" data-t="${t[0]}">${t[1]}</button>`).join('')+`<button class="chip btn${locked?' lock-on':''}" id="allLock" title="${targetName()}의 함체 전체 잠금">${locked?'🔒 전체 잠김':'🔓 전체 잠금'}</button><span class="hint">${hint} · ${targetName()}에 저장</span>`;
+  box.innerHTML=TOOLS.map(t=>`<button class="chip btn${t[0]===tool?' on':''}" data-t="${t[0]}">${t[1]}</button>`).join('')+`<button class="chip btn${locked?' lock-on':''}" id="allLock" title="${targetName()}의 함체 전체 잠금">${locked?'🔒 전체 잠김':'🔓 전체 잠금'}</button><span class="hint">${hint} · ${tool==='select'&&view==='during'?'작업중 배치로 저장 (도면 파일 위치는 그대로)':targetName()+'에 저장'}</span>`;
   $('allLock').onclick=toggleAllLock;
   box.querySelectorAll('button[data-t]').forEach(b=>b.onclick=()=>{tool=b.dataset.t;cableStart=null;newCable=null;svg.style.cursor=tool==='select'?'':'crosshair';renderTools();if(sel.kind===null)renderSide()});
 }
@@ -851,7 +885,7 @@ function moveNodeDrag(e){
 async function endNodeDrag(e){
   const d=nodeDrag;nodeDrag=null;const g=$('ghost');if(g)g.remove();
   if(!d.moved)return;justDragged=true;setTimeout(()=>justDragged=false,300);
-  const p=worldPoint(e);await edit('node_move',{node:d.id,x:p.x,y:p.y},'시설을 옮겼어요');
+  const p=worldPoint(e);await edit('node_move',{node:d.id,x:p.x,y:p.y},(view==='during'?'작업중 보기에서만':VIEWS.find(x=>x[0]===view)[1]+' 보기에서')+' 시설을 옮겼어요');
 }
 async function addNodeAt(e){
   const p=worldPoint(e),label={hamche:'함체',rn:'RN',sub:'가입자'}[tool];
@@ -888,6 +922,7 @@ function infoForm(kind,x){
      <div class="if-row"><label>LOT</label><input data-k="lot" value="${esc(v.lot)}"></div>`:
     `<div class="if-row"><label>이름</label><input data-k="name" value="${esc(v.name)}"></div>
      <div class="if-row"><label>상태</label><div class="st-group">${statusButtons(v.status)}</div></div>
+     ${view==='during'&&x.moved?`<div class="if-row"><label>배치</label><div><button type="button" class="mini" data-reset="1">작업중 배치 되돌리기 (작업전 위치로)</button></div></div>`:''}
      ${x.type==='hamche'?`<div class="if-row"><label>잠금</label><div><button type="button" class="mini${v.locked?' lock-on':''}" data-lock="1">${v.locked?'🔒 잠김 · 누르면 해제':'🔓 풀림 · 누르면 잠금'}</button></div></div>`:''}`;
   return `<details class="infoform"${infoOpen?' open':''}><summary>${kind==='cable'?'케이블':'시설'} 정보 고치기 <small>${targetName()}에 저장</small></summary>${rows}
     <div class="ed-b"><button class="mini danger" data-del="1">${kind==='cable'?'케이블':'시설'} 삭제</button><span class="ed-msg" data-msg="1"></span><button class="mini primary" data-save="1">저장</button></div></details>`;
@@ -907,6 +942,8 @@ function bindInfo(kind,x){
       await edit('cable_info',{cable:x.id,status,spec:val('spec'),cable_id:val('cable_id'),lot:val('lot')},'케이블 정보를 저장했어요',msg);
     }else await edit('node_info',{node:x.id,name:val('name'),status},'시설 정보를 저장했어요',msg);
   };
+  const rs=box.querySelector('[data-reset]');
+  if(rs)rs.onclick=()=>edit('node_move',{node:x.id,x:0,y:0,reset:true},'작업중 배치를 되돌렸어요',msg);
   const lk=box.querySelector('[data-lock]');
   if(lk)lk.onclick=()=>edit('node_lock',{node:x.id,locked:!v.locked},v.locked?'함체 잠금을 풀었어요':'함체를 잠갔어요',msg);
   box.querySelector('[data-del]').onclick=async()=>{
@@ -1108,7 +1145,7 @@ $('q').addEventListener('input',e=>{query=e.target.value.trim();runSearch();draw
 
 function renderFoot(){
   const vis=cables.filter(shown),ro={};vis.forEach(c=>ro[c.role]=(ro[c.role]||0)+1);
-  $('foot').innerHTML=`<span>보기 <b>${VIEWS.find(x=>x[0]===view)[1]}</b></span><span>케이블 <b>${vis.length}</b> (${Object.entries(ro).map(([k,v])=>esc(k)+' '+v).join(' · ')})</span><span>시설 <b>${nodes.filter(nodeShown).length}</b></span><span class="r">통신 코어 도면 V${esc(M.version||'')} · ${LIVE?'프로그램과 연결됨 · 수정 가능':'보기 전용'}</span>`;
+  $('foot').innerHTML=`<span>보기 <b>${VIEWS.find(x=>x[0]===view)[1]}</b></span><span>케이블 <b>${vis.length}</b> (${Object.entries(ro).map(([k,v])=>esc(k)+' '+v).join(' · ')})</span><span>시설 <b>${nodes.filter(nodeShown).length}</b></span><span class="r">통신 코어 도면 ${esc(M.version||'')} · ${LIVE?'프로그램과 연결됨 · 수정 가능':'보기 전용'}</span>`;
 }
 
 renderHeader();renderDash();renderLegend();renderFoot();draw();renderSide();renderTools();fit();
