@@ -1,5 +1,21 @@
 # Telecom Core updater project
 
+- V210 (HTML migration step 2: cable/facility editing in the 작업도면 page):
+  App.work_view_apply(view,label,action) is the single write path (view
+  before -> 현장반영, during/after -> 후도면; live store saved, other file backed
+  up once + type(store)(path); store.action(label) so undo works; sqlite
+  errors -> ValueError). work_view_edit(payload op=cable_info|cable_add|
+  node_add|node_move|node_info|delete) uses resize_cable, set_cable_status
+  (auto NEW id rules), cable_id UPDATE, set_cable_lot_no, add_cable, add_node
+  (+ set_node_status 신설 outside 작업전), update_node_pos (min 40),
+  set_node_details/set_node_status, delete = same SQL as App.delete_selected.
+  Route 'edit' on WorkViewServer. Scene: cables/nodes carry edit={before,
+  after} raw values (rows from work_view_data 'rows'); meta.statuses/sizes
+  (STATUS_VALUES, CABLE_SIZE_CHOICES). JS: floating #tools (select/move, +함체
+  +RN +가입자 via prompt, +케이블 two clicks -> renderNewCable), infoForm/
+  bindInfo per cable/node with confirm() for shrink/delete, edit(op,...) ->
+  api('edit'). check_work_views.test_cable_and_facility_edits.
+
 - V209 (user: move the whole app to HTML step by step; keep the Tk program
   and HTML usable together until the user confirms, then remove Tk): first
   editable step. planning/work_server.py (bundled after work_views, # BEGIN

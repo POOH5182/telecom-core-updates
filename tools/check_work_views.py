@@ -36,6 +36,8 @@ class FakeApp:
     work_view_text=code['App'].work_view_text
     work_view_live_scene=code['App'].work_view_live_scene
     work_view_edit_core=code['App'].work_view_edit_core
+    work_view_edit=code['App'].work_view_edit
+    work_view_apply=code['App'].work_view_apply
     work_view_backup=code['App'].work_view_backup
     def scenario_folder(self):return self.folder
     def refresh(self):self.refreshed=getattr(self,'refreshed',0)+1
@@ -159,6 +161,40 @@ class WorkEditTests(WorkViewTests):
         with self.assertRaises(ValueError):app.work_view_edit_core({'view':'after','cable':self.k,'n':'x','id':'Q'})
         self.before=code['Store'](self.folder/'before.sqlite3')
         print('PASS HTML edit writes the field file (backup once, undo history) or the live after drawing, and refuses bad input')
+
+    def test_cable_and_facility_edits(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        e=lambda **kw:app.work_view_edit(kw)
+        r=e(op='cable_info',view='after',cable=self.k,status='절단',spec='24C',cable_id='K-NEW',lot='L9')
+        c=self.after.cable(self.k)
+        self.assertEqual((c['status'],c['spec'],c['size'],c['cable_id']),('절단','24C',24,'K-NEW'))
+        self.assertEqual(code['cable_lot_no'](c),'L9');self.assertEqual(len(self.after.cores(self.k)),24)
+        roles={x['id']:x['role'] for x in r['scene']['cables']};self.assertEqual(roles[self.k],'절단')
+        r=e(op='node_add',view='during',name='새 함체',type='hamche',x=600.4,y=50)
+        nid=r['result'];n=self.after.node(nid)
+        self.assertEqual((n['name'],n['x'],n['y'],n['status']),('새 함체',600,50,'신설'))
+        r=e(op='cable_add',view='after',a=self.nc,b=nid,status='신설',spec='48C',cable_id='',lot='')
+        new=self.after.cable(r['result']);self.assertEqual((new['status'],new['size']),('신설',48))
+        self.assertTrue(new['cable_id'],'신설 gets an automatic NEW id')
+        e(op='node_move',view='after',node=nid,x=720,y=10)
+        self.assertEqual((self.after.node(nid)['x'],self.after.node(nid)['y']),(720,40))
+        e(op='node_info',view='after',node=nid,name='새 함체2',status='기설')
+        self.assertEqual((self.after.node(nid)['name'],self.after.node(nid)['status']),('새 함체2','기설'))
+        e(op='delete',view='after',kind='node',id=nid)
+        self.assertIsNone(self.after.node(nid));self.assertIsNone(self.after.cable(new['id']),'cables of a deleted facility go too')
+        e(op='delete',view='after',kind='cable',id=self.s);self.assertIsNone(self.after.cable(self.s))
+        self.before.close()
+        e(op='cable_info',view='before',cable=self.r,status='철거',spec='12C',cable_id='R',lot='BL')
+        check=code['Store'](self.folder/'before.sqlite3')
+        try:self.assertEqual(code['cable_lot_no'](check.cable(self.r)),'BL')
+        finally:check.close()
+        self.before=code['Store'](self.folder/'before.sqlite3')
+        for bad in (dict(op='cable_info',view='after',cable=self.k,status='이상',spec='12C'),dict(op='cable_info',view='after',cable=self.k,status='기설',spec='abc'),
+                    dict(op='cable_info',view='after',cable='nope',status='기설',spec='12C'),dict(op='node_add',view='after',name='',type='hamche',x=1,y=1),
+                    dict(op='cable_add',view='after',a=self.na,b=self.na,status='신설',spec='12C'),dict(op='drop',view='after'),dict(op='delete',view='xx',kind='cable',id=self.k)):
+            with self.assertRaises(ValueError):app.work_view_edit(bad)
+        undo=self.after.undo();self.assertTrue(undo,'HTML edits are undoable in the program')
+        print('PASS HTML cable/facility edits: info, add, move, rename, delete, bad input refused, undo works')
 
     def test_server_routes_token_and_host(self):
         import threading,urllib.request,urllib.error

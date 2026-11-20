@@ -109,12 +109,12 @@ def work_view_data(before,after,work=None):
     for nid in list(b_nodes)+[k for k in a_nodes if k not in b_nodes]:
         bn=b_nodes.get(nid);an=a_nodes.get(nid)
         role=work_view_node_role(bn['status'] if bn else None,an['status'] if an else None,has_after)
-        nodes.append(dict(id=nid,role=role,row=an or bn))
+        nodes.append(dict(id=nid,role=role,row=an or bn,rows=dict(before=bn,after=an)))
     cables=[];cores={}
     for cid in list(b_cables)+[k for k in a_cables if k not in b_cables]:
         bc=b_cables.get(cid);ac=a_cables.get(cid)
         role=work_view_role(bc['status'] if bc else None,ac['status'] if ac else None,has_after)
-        row=ac or bc;cables.append(dict(id=cid,role=role,row=row,in_before=bool(bc),in_after=bool(ac)))
+        row=ac or bc;cables.append(dict(id=cid,role=role,row=row,in_before=bool(bc),in_after=bool(ac),rows=dict(before=bc,after=ac)))
         b_rows=_work_view_rows(before,cid) if bc else {}
         a_rows=(_work_view_rows(after,cid) if ac else {}) if has_after else b_rows
         phase_store=after if (has_after and ac) else before
@@ -329,6 +329,21 @@ td.no{font-family:var(--mono);font-weight:700;color:var(--ink-2);width:30px}
 .list .ok{padding:10px 12px;border:1px dashed #b7dfc2;border-radius:8px;color:var(--ok);background:#f4fbf6;font-size:12px;margin-bottom:6px}
 .side-f{padding:9px 16px;border-top:1px solid var(--line-2);background:#fbfcfe;font-size:11.5px;color:var(--ink-3)}
 tbody tr.editing td{background:#e8f0ff}
+.tools{left:50%;transform:translateX(-50%);top:16px;display:flex;gap:4px;align-items:center;padding:5px 6px;border-radius:999px;max-width:calc(100% - 660px);flex-wrap:wrap}
+.tools .hint{font-size:11.5px;color:var(--ink-3);padding:0 8px;white-space:nowrap}
+.infoform{margin:8px 12px 0;border:1px solid var(--line);border-radius:10px;background:#fbfcfe;padding:8px 12px}
+.infoform summary{cursor:pointer;font-weight:700;font-size:12.5px;color:var(--ink-2)}
+.infoform summary small{font-weight:500;color:var(--ink-3);margin-left:6px}
+.infoform[open] summary{margin-bottom:8px}
+.infoform.open{padding-top:12px}
+.if-row{display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;margin-bottom:7px}
+.if-row label{font-size:11.5px;color:var(--ink-3)}
+.if-row input,.if-row select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;background:#fff;min-width:0;width:100%}
+.st-group{display:flex;gap:4px;flex-wrap:wrap}
+.st-btn{border:1.5px solid var(--c);color:var(--c);background:#fff;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700}
+.st-btn.on{background:var(--c);color:#fff}
+.mini.danger{color:var(--bad);border-color:#f3c0c0}
+.mini.danger:hover{background:#fdecec}
 .editbox{margin:8px 12px;border:1.5px solid var(--accent);border-radius:10px;background:#f8fbff;padding:10px 12px}
 .ed-h{display:flex;gap:8px;align-items:baseline;margin-bottom:8px}.ed-h span{color:var(--ink-3);font-size:11.5px}
 .ed-row{display:grid;grid-template-columns:52px 1fr 1fr;gap:6px;align-items:center;margin-bottom:6px}
@@ -371,6 +386,7 @@ footer .r{margin-left:auto}
       <section class="float legend" id="legend"></section>
       <section class="float zoom"><button id="zin" title="확대">＋</button><div class="pct" id="pct">100%</div><button id="zout" title="축소">－</button></section>
       <section class="float toast" id="toast"></section>
+      <section class="float tools" id="tools" style="display:none"></section>
     </main>
     <aside class="side" id="side"></aside>
   </div>
@@ -423,7 +439,7 @@ function renderHeader(){
 function setView(v){view=v;try{localStorage.setItem('workview.mode',v)}catch(e){}
   if(sel.kind==='cable'&&C[sel.id]&&!shown(C[sel.id]))sel={kind:null,id:null};
   if(sel.kind==='node'&&N[sel.id]&&!nodeShown(N[sel.id]))sel={kind:null,id:null};
-  runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot()}
+  runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools()}
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;const i=['1','2','3'].indexOf(e.key);if(i>=0)setView(VIEWS[i][0])});
 
 /* drawing */
@@ -493,7 +509,9 @@ function draw(){
     el('rect',{x:x-lw/2,y:y-61,width:lw,height:24,rx:5,fill:n.name_fill||'#fff',stroke:n.border||'#1565c0','stroke-width':2},g);
     const t=el('text',{x,y:y-49,'dominant-baseline':'central','text-anchor':'middle','font-size':12,'font-weight':'bold',fill:n.name_ink||'#222','font-family':'var(--font)'},g);t.textContent=name;
     if(n.role!=='기설'&&view==='during'){const bw=40;el('rect',{x:x-bw/2,y:y+38,width:bw,height:18,rx:9,fill:ROLE_C[n.role]},g);const bt=el('text',{x,y:y+47,'dominant-baseline':'central','text-anchor':'middle','font-size':10,'font-weight':'bold',fill:'#fff','font-family':'var(--font)'},g);bt.textContent=n.role}
-    g.addEventListener('click',e=>{e.stopPropagation();select('node',n.id)});
+    g.addEventListener('mousedown',e=>{if(!LIVE||tool!=='select'||e.button!==0)return;e.stopPropagation();nodeDrag={id:n.id,sx:e.clientX,sy:e.clientY,moved:false}});
+    g.addEventListener('click',e=>{e.stopPropagation();if(justDragged){justDragged=false;return}
+      if(LIVE&&tool==='cable')return pickCableEnd(n);select('node',n.id)});
   });
 }
 function star(cx,cy,o,i){const p=[];for(let k=0;k<10;k++){const r=k%2?i:o,a=-Math.PI/2+k*Math.PI/5;p.push((cx+Math.cos(a)*r).toFixed(1)+','+(cy+Math.sin(a)*r).toFixed(1))}return p.join(' ')}
@@ -512,9 +530,12 @@ function zoomAt(f,cx,cy){const r=svg.getBoundingClientRect();const px=vb.x+(cx-r
 svg.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.deltaY>0?1.15:1/1.15,e.clientX,e.clientY)},{passive:false});
 let drag=null;
 svg.addEventListener('mousedown',e=>{drag={x:e.clientX,y:e.clientY,vx:vb.x,vy:vb.y,moved:false};svg.classList.add('drag')});
-window.addEventListener('mousemove',e=>{if(!drag)return;const r=svg.getBoundingClientRect();const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>3)drag.moved=true;vb.x=drag.vx-dx/r.width*vb.w;vb.y=drag.vy-dy/r.height*vb.h;applyView()});
-window.addEventListener('mouseup',()=>{svg.classList.remove('drag');setTimeout(()=>drag=null,0)});
-svg.addEventListener('click',()=>{if(drag&&drag.moved)return;select(null,null)},true);
+window.addEventListener('mousemove',e=>{if(nodeDrag)return moveNodeDrag(e);if(!drag)return;const r=svg.getBoundingClientRect();const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>3)drag.moved=true;vb.x=drag.vx-dx/r.width*vb.w;vb.y=drag.vy-dy/r.height*vb.h;applyView()});
+window.addEventListener('mouseup',e=>{if(nodeDrag)return endNodeDrag(e);svg.classList.remove('drag');setTimeout(()=>drag=null,0)});
+svg.addEventListener('click',e=>{if(drag&&drag.moved)return;
+  if(LIVE&&['hamche','rn','sub'].includes(tool)&&!e.target.closest('.node')){e.stopPropagation();return addNodeAt(e)}
+  if(LIVE&&tool==='cable')return;
+  select(null,null)},true);
 $('zin').onclick=()=>{const r=svg.getBoundingClientRect();zoomAt(1/1.25,r.left+r.width/2,r.top+r.height/2)};
 $('zout').onclick=()=>{const r=svg.getBoundingClientRect();zoomAt(1.25,r.left+r.width/2,r.top+r.height/2)};
 $('fit').onclick=fit;window.addEventListener('resize',fit);
@@ -577,6 +598,7 @@ function renderLegend(){
 
 /* side */
 function renderSide(){
+  if(LIVE&&newCable&&!sel.kind)return renderNewCable();
   if(sel.kind==='cable'&&C[sel.id])return renderCable(C[sel.id]);
   if(sel.kind==='node'&&N[sel.id])return renderNode(N[sel.id]);
   const list=issueList(view),broken=view==='before'?[]:(issues.broken||[]);
@@ -638,10 +660,12 @@ function renderCable(c){
    <div class="meta"><div><span>규격</span><b>${esc(c.spec)}</b></div><div><span>LOT</span><b>${esc(c.lot||'-')}</b></div><div><span>사용 코어 (${VIEWS.find(x=>x[0]===view)[1]})</span><b>${used} / ${c.size||all.length}</b></div></div></div>
    <div class="split">${Object.entries(cnt).map(([k,v])=>`<span class="chip"><i style="--c:${STATE_C[k]}"></i>${esc(STATE_T[k]||k)} <b>${v}</b></span>`).join('')}
     ${view==='during'?`<span class="chip btn${onlyChanged?' on':''}" id="onlyChg">바뀐 칸만</span>`:''}<button class="mini r" id="copyOne">표 복사</button></div>
+   ${infoForm('cable',c)}
    ${editBox(c)}
    <div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${rows.length?'':'<div class="empty">보여 줄 칸이 없습니다.</div>'}</div>
    <div class="side-f">${view==='during'?'같은 칸의 작업전·작업후 배정이 다르면 <b>코어절체</b>로 표시합니다 (에러 아님).':'충돌은 이 보기 안에서만 검사합니다 · 미완료에 마우스를 올리면 이유가 보입니다'}${LIVE?' · 코어 줄을 누르면 고칠 수 있어요':''}</div>`;
   const oc=$('onlyChg');if(oc)oc.onclick=()=>{onlyChanged=!onlyChanged;renderCable(c)};
+  bindInfo('cable',c);
   if(LIVE){$('side').querySelectorAll('tr[data-row]').forEach(tr=>{tr.style.cursor='pointer';tr.onclick=()=>{editN=+tr.dataset.row;renderCable(c);const f=$('side').querySelector('.editbox input');if(f)f.focus()}});bindEdit(c)}
   $('copyOne').onclick=()=>copyRows([c],'이 케이블 표');
   const first=$('side').querySelector('tr.hit');if(first)first.scrollIntoView({block:'center'});
@@ -650,9 +674,103 @@ function renderNode(n){
   const list=cables.filter(c=>shown(c)&&(c.a===n.id||c.b===n.id));
   $('side').innerHTML=`<div class="side-h"><div class="crumb">${esc(n.type_label||'시설')}</div>
    <div class="title-row"><h2>${esc(n.name)}</h2><span class="pill" style="--c:${ROLE_C[n.role]||'#1565c0'}">${esc(n.role)}</span></div></div>
+   ${infoForm('node',n)}
    <div class="list"><div class="crumb" style="margin:4px 2px 8px">이 보기에서 연결된 케이블 ${list.length}개</div>
    ${list.map(c=>`<button data-c="${esc(c.id)}"><i style="--c:${ROLE_C[c.role]}"></i><span><span class="t">${esc(cableName(c))}</span><span class="d">${esc(c.role)} · ${esc((N[c.a===n.id?c.b:c.a]||{}).name||'')}</span></span></button>`).join('')}</div>`;
-  bindList($('side'));
+  bindInfo('node',n);bindList($('side'));
+}
+
+/* V210 drawing tools: move / add facility / add cable / cable and facility info / delete */
+let tool='select',nodeDrag=null,justDragged=false,cableStart=null,newCable=null;
+const TOOLS=[['select','선택·이동','시설을 끌어서 옮겨요'],['hamche','+ 함체','빈 곳을 누르면 함체를 만들어요'],['rn','+ RN','빈 곳을 누르면 RN을 만들어요'],['sub','+ 가입자','빈 곳을 누르면 가입자를 만들어요'],['cable','+ 케이블','시설 두 개를 차례로 누르세요']];
+const target=()=>view==='before'?'before':'after';
+const targetName=()=>view==='before'?'현장반영 도면':'후도면';
+function renderTools(){
+  if(!LIVE)return;const box=$('tools');box.style.display='flex';
+  const hint=tool==='cable'&&cableStart?`${esc((N[cableStart]||{}).name||'')} 다음 시설을 누르세요`:esc(TOOLS.find(t=>t[0]===tool)[2]);
+  box.innerHTML=TOOLS.map(t=>`<button class="chip btn${t[0]===tool?' on':''}" data-t="${t[0]}">${t[1]}</button>`).join('')+`<span class="hint">${hint} · ${targetName()}에 저장</span>`;
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{tool=b.dataset.t;cableStart=null;newCable=null;svg.style.cursor=tool==='select'?'':'crosshair';renderTools();if(sel.kind===null)renderSide()});
+}
+function worldPoint(e){const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(world.getScreenCTM().inverse())}
+function moveNodeDrag(e){
+  if(Math.abs(e.clientX-nodeDrag.sx)+Math.abs(e.clientY-nodeDrag.sy)>4)nodeDrag.moved=true;
+  if(!nodeDrag.moved)return;const p=worldPoint(e);let g=$('ghost');
+  if(!g){g=el('g',{id:'ghost'},world);el('circle',{r:34,fill:'#2f5fc4','fill-opacity':.18,stroke:'#2f5fc4','stroke-width':3,'stroke-dasharray':'6 4'},g)}
+  g.setAttribute('transform',`translate(${p.x},${p.y})`);
+}
+async function endNodeDrag(e){
+  const d=nodeDrag;nodeDrag=null;const g=$('ghost');if(g)g.remove();
+  if(!d.moved)return;justDragged=true;setTimeout(()=>justDragged=false,300);
+  const p=worldPoint(e);await edit('node_move',{node:d.id,x:p.x,y:p.y},'시설을 옮겼어요');
+}
+async function addNodeAt(e){
+  const p=worldPoint(e),label={hamche:'함체',rn:'RN',sub:'가입자'}[tool];
+  const name=(window.prompt(`새 ${label} 이름 (${targetName()}에 만들어요)`,'')||'').trim();if(!name)return;
+  const res=await edit('node_add',{name,type:tool,x:p.x,y:p.y},`${label} 「${name}」을 만들었어요`);
+  if(res&&res.ok){tool='select';svg.style.cursor='';renderTools();select('node',res.result)}
+}
+function pickCableEnd(n){
+  if(!cableStart){cableStart=n.id;renderTools();return}
+  if(cableStart===n.id){cableStart=null;renderTools();return}
+  newCable={a:cableStart,b:n.id};cableStart=null;renderTools();sel={kind:null,id:null};draw();renderNewCable();
+}
+function sizeOptions(cur){const list=(M.sizes||[]).slice();if(cur&&!list.includes(cur))list.unshift(cur);return list.map(x=>`<option${x===cur?' selected':''}>${esc(x)}</option>`).join('')}
+function statusButtons(cur){return (M.statuses||['기설','신설','철거','절단']).map(x=>`<button type="button" class="st-btn${x===cur?' on':''}" data-st="${esc(x)}" style="--c:${ROLE_C[x]}">${esc(x)}</button>`).join('')}
+function renderNewCable(){
+  const a=N[newCable.a]||{},b=N[newCable.b]||{},st=view==='before'?'기설':'신설';
+  $('side').innerHTML=`<div class="side-h"><div class="crumb">새 케이블 · ${targetName()}에 만들어요</div><div class="title-row"><h2>${esc(a.name)} ↔ ${esc(b.name)}</h2></div></div>
+   <div class="infoform open"><div class="if-row"><label>상태</label><div class="st-group">${statusButtons(st)}</div></div>
+   <div class="if-row"><label>규격</label><select id="ncSpec">${sizeOptions('12C')}</select></div>
+   <div class="if-row"><label>케이블 ID</label><input id="ncId" placeholder="${st==='신설'?'비우면 NEW 번호 자동':'예: 광주-101'}"></div>
+   <div class="if-row"><label>LOT</label><input id="ncLot" placeholder="LOT NO."></div>
+   <div class="ed-b"><span class="ed-msg" id="ncMsg"></span><button class="mini" id="ncCancel">취소</button><button class="mini primary" id="ncSave">케이블 만들기</button></div></div>`;
+  let status=st;$('side').querySelectorAll('.st-btn').forEach(b=>b.onclick=()=>{status=b.dataset.st;$('side').querySelectorAll('.st-btn').forEach(x=>x.classList.toggle('on',x===b))});
+  $('ncCancel').onclick=()=>{newCable=null;renderSide()};
+  $('ncSave').onclick=async()=>{const res=await edit('cable_add',{a:newCable.a,b:newCable.b,status,spec:$('ncSpec').value,cable_id:$('ncId').value,lot:$('ncLot').value},'케이블을 만들었어요',$('ncMsg'));
+    if(res&&res.ok){newCable=null;tool='select';svg.style.cursor='';renderTools();if(C[res.result]&&shown(C[res.result]))select('cable',res.result);else renderSide()}};
+}
+function infoForm(kind,x){
+  if(!LIVE)return'';const v=(x.edit||{})[target()];
+  if(!v)return `<div class="infoform"><div class="ed-note">이 ${kind==='cable'?'케이블':'시설'}은 ${targetName()}에 없어요. ${target()==='after'?'작업전':'작업후'} 보기에서 고치세요.</div></div>`;
+  const rows=kind==='cable'?`<div class="if-row"><label>상태</label><div class="st-group">${statusButtons(v.status)}</div></div>
+     <div class="if-row"><label>규격</label><select data-k="spec">${sizeOptions(v.spec)}</select></div>
+     <div class="if-row"><label>케이블 ID</label><input data-k="cable_id" value="${esc(v.cable_id)}"></div>
+     <div class="if-row"><label>LOT</label><input data-k="lot" value="${esc(v.lot)}"></div>`:
+    `<div class="if-row"><label>이름</label><input data-k="name" value="${esc(v.name)}"></div>
+     <div class="if-row"><label>상태</label><div class="st-group">${statusButtons(v.status)}</div></div>`;
+  return `<details class="infoform"${infoOpen?' open':''}><summary>${kind==='cable'?'케이블':'시설'} 정보 고치기 <small>${targetName()}에 저장</small></summary>${rows}
+    <div class="ed-b"><button class="mini danger" data-del="1">${kind==='cable'?'케이블':'시설'} 삭제</button><span class="ed-msg" data-msg="1"></span><button class="mini primary" data-save="1">저장</button></div></details>`;
+}
+let infoOpen=false;
+function bindInfo(kind,x){
+  if(!LIVE)return;const box=$('side').querySelector('.infoform');if(!box||!box.querySelector('[data-save]'))return;
+  box.addEventListener('toggle',()=>{infoOpen=box.open});
+  const v=x.edit[target()];let status=v.status;
+  box.querySelectorAll('.st-btn').forEach(b=>b.onclick=()=>{status=b.dataset.st;box.querySelectorAll('.st-btn').forEach(y=>y.classList.toggle('on',y===b))});
+  const val=k=>{const i=box.querySelector(`[data-k="${k}"]`);return i?i.value.trim():''};
+  const msg=box.querySelector('[data-msg]');
+  box.querySelector('[data-save]').onclick=async()=>{
+    if(kind==='cable'){
+      const ns=parseInt(val('spec'))||1,os=parseInt(v.spec)||1;
+      if(ns<os&&!window.confirm(`${v.spec}에서 ${val('spec')}로 줄이면 ${ns+1}번 이후 코어와 연결이 지워져요. 계속할까요?`))return;
+      await edit('cable_info',{cable:x.id,status,spec:val('spec'),cable_id:val('cable_id'),lot:val('lot')},'케이블 정보를 저장했어요',msg);
+    }else await edit('node_info',{node:x.id,name:val('name'),status},'시설 정보를 저장했어요',msg);
+  };
+  box.querySelector('[data-del]').onclick=async()=>{
+    const what=kind==='cable'?`케이블 ${cableName(x)}`:`시설 ${x.name} (연결된 케이블도 함께)`;
+    if(!window.confirm(`${targetName()}에서 ${what}을 지울까요? 프로그램에서 실행취소(Ctrl+Z)로 되돌릴 수 있어요.`))return;
+    const res=await edit('delete',{kind,id:x.id},'지웠어요',msg);if(res&&res.ok){sel={kind:null,id:null};renderAll()}
+  };
+}
+async function edit(op,body,done,msgEl){
+  if(busy)return null;busy=true;if(msgEl){msgEl.textContent='저장 중…';msgEl.className='ed-msg'}
+  try{
+    const res=await api('edit',Object.assign({op,view},body));
+    if(!res.ok){const t=res.error||'저장하지 못했어요';if(msgEl){msgEl.textContent=t;msgEl.className='ed-msg bad'}else toast(t);return res}
+    applyScene(res.scene);if(sel.kind==='cable'&&!C[sel.id]||sel.kind==='node'&&!N[sel.id])sel={kind:null,id:null};
+    renderAll();toast(done+' · '+res.where+' 저장');return res;
+  }catch(e){toast('프로그램과 연결이 끊겼어요. 프로그램이 켜져 있는지 확인하세요.');return null}
+  finally{busy=false}
 }
 
 /* V209 editing (only when opened from the program) */
@@ -704,7 +822,7 @@ async function api(name,body){
   return res.json();
 }
 function applyScene(scene){if(scene)setData(scene)}
-function renderAll(){runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot()}
+function renderAll(){runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools()}
 async function reload(){if(!LIVE||busy)return;try{const res=await api('scene');if(res.ok){applyScene(res.value);renderAll();toast('프로그램 도면을 다시 불러왔어요')}else toast(res.error||'불러오지 못했어요')}catch(e){toast('프로그램과 연결이 끊겼어요')}}
 if(LIVE)$('reload').onclick=reload;
 
@@ -747,7 +865,7 @@ function renderFoot(){
   $('foot').innerHTML=`<span>보기 <b>${VIEWS.find(x=>x[0]===view)[1]}</b></span><span>케이블 <b>${vis.length}</b> (${Object.entries(ro).map(([k,v])=>esc(k)+' '+v).join(' · ')})</span><span>시설 <b>${nodes.filter(nodeShown).length}</b></span><span class="r">통신 코어 도면 V${esc(M.version||'')} · ${LIVE?'프로그램과 연결됨 · 수정 가능':'보기 전용'}</span>`;
 }
 
-renderHeader();renderDash();renderLegend();renderFoot();draw();renderSide();fit();
+renderHeader();renderDash();renderLegend();renderFoot();draw();renderSide();renderTools();fit();
 </script>
 </body>
 </html>
