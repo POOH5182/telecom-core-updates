@@ -1,5 +1,21 @@
 # Telecom Core updater project
 
+- V214 (HTML migration step 6): 작업차수 / 함체 잠금 / 도면 전환 in the
+  HTML 작업도면. Phase state is common to 현장반영·후도면 and copied on every
+  switch, so ops cable_phase / core_phase / phase_add always write the LIVE
+  store (view mapped to scenario_kind) with labels starting '작업정책:' (not
+  blocked by the 전도면 edit lock). scene.phase = work_view_phase_info(live)
+  {names, cable{id:own phase (this drawing's scope)}, core{core_id:own}};
+  phase_add = work_view_phase_add (same dict as PhaseDialog). node_lock /
+  all_lock go through work_view_apply(view) (Store.set_node_locked /
+  set_all_enclosures_locked); scene.locks {before,after}; node edit[side].locked.
+  Route 'switch' (App.work_view_switch): shows the Tk window and runs
+  load_scenario(kind) via after(50) so its dialogs appear there; the page
+  reloads on focus. JS: phaseRow/bindPhaseRow, editBox #edPhase, newPhase
+  (prompt), toggleAllLock (#allLock in tools), switchKind (#switchKind).
+  After an awaited edit the side panel re-renders: never read .value from a
+  select captured before the await.
+
 - V213 (HTML migration step 5): side panel tabs 확인 필요 / 작업 목록 / 코어
   추적. scene.work = work_view_work_rows(App.work_report()) (id, method,
   result, done, error, excluded, note, route; max 3000). Route trace ->

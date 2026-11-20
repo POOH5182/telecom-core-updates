@@ -40,6 +40,10 @@ class FakeApp:
     work_view_apply=code['App'].work_view_apply
     work_view_trace=code['App'].work_view_trace
     work_view_backup=code['App'].work_view_backup
+    work_view_switch=code['App'].work_view_switch
+    def work_view_show_app(self,payload=None):self.shown=getattr(self,'shown',0)+1;return {'ok':True}
+    def after(self,ms,fn):self.later=getattr(self,'later',[])+[fn]
+    def load_scenario(self,kind):self.switched=kind;return True
     def scenario_folder(self):return self.folder
     def refresh(self):self.refreshed=getattr(self,'refreshed',0)+1
     def save_current_drawing(self,silent=False):self.saved=getattr(self,'saved',0)+1
@@ -219,6 +223,48 @@ class WorkEditTests(WorkViewTests):
         with self.assertRaises(ValueError):e(op='core_paste',view='after',cable=t,start=1,lines=[])
         print('PASS HTML splices (connect, refuse wrong facility/occupied, disconnect, range) and multi-line paste')
 
+    def test_phase_lock_and_switch(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        e=lambda **kw:app.work_view_edit(kw)
+        r=e(op='phase_add',view='before',name='4차작업')
+        self.assertEqual(r['where'],'후도면','phases always go to the open drawing')
+        self.assertEqual(r['scene']['phase']['names'],['1차작업','2차작업','3차작업','4차작업'])
+        with self.assertRaises(ValueError):e(op='phase_add',view='after',name='4차작업')
+        with self.assertRaises(ValueError):e(op='phase_add',view='after',name=' ')
+        r=e(op='cable_phase',view='before',cable=self.k,name='1차작업')
+        self.assertEqual(r['scene']['phase']['cable'],{self.k:'1차작업'})
+        self.assertEqual(wf.cable_phase_name(self.after,self.k),'1차작업')
+        r=e(op='core_phase',view='during',ids=['X5'],name='2차작업')
+        self.assertEqual(r['scene']['phase']['core'],{'X5':'2차작업'})
+        self.assertEqual(wf.core_phase_source(self.after,'X5'),('core',['2차작업']))
+        r=e(op='core_phase',view='after',ids=['X5'],name='')
+        self.assertEqual(r['scene']['phase']['core'],{},'empty name follows the cable again')
+        r=e(op='cable_phase',view='after',cable=self.k,name='');self.assertEqual(r['scene']['phase']['cable'],{})
+        for bad in (dict(op='cable_phase',view='after',cable=self.k,name='9차'),dict(op='cable_phase',view='after',cable='nope',name='1차작업'),
+                    dict(op='core_phase',view='after',ids=[],name='1차작업')):
+            with self.assertRaises(ValueError):app.work_view_edit(bad)
+        r=e(op='node_lock',view='after',node=self.nb,locked=True)
+        self.assertTrue(wf.node_locked(self.after,self.nb))
+        node={n['id']:n for n in r['scene']['nodes']}[self.nb]
+        self.assertTrue(node['edit']['after']['locked']);self.assertFalse(node['edit']['before']['locked'])
+        e(op='node_lock',view='after',node=self.nb,locked=False);self.assertFalse(wf.node_locked(self.after,self.nb))
+        rn=self.after.add_node('RN1',50,50,'rn')
+        with self.assertRaises(ValueError):e(op='node_lock',view='after',node=rn,locked=True)
+        self.before.close()
+        try:
+            r=e(op='all_lock',view='before',locked=True)
+            self.assertEqual(r['scene']['locks'],{'before':True,'after':False})
+            self.assertIn('현장반영',r['where'])
+        finally:self.before=code['Store'](self.folder/'before.sqlite3')
+        self.assertTrue(self.before.all_enclosures_locked())
+        with self.assertRaises(ValueError):app.work_view_switch({'kind':'gis'})
+        self.assertEqual(app.work_view_switch({'kind':'after'}),{'ok':True,'started':False,'kind':'after'})
+        r=app.work_view_switch({'kind':'before'});self.assertTrue(r['started'] and '현장반영' in r['label'])
+        self.assertEqual(app.shown,1);app.later[-1]();self.assertEqual(app.switched,'before')
+        page=app.work_view_text(live='T')
+        for name in ('function phaseRow','function toggleAllLock','function switchKind','data-lock'):self.assertIn(name,page)
+        print('PASS HTML work phases (open drawing only), facility lock / all lock per view, drawing switch')
+
     def test_trace_and_work_list(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
         self.before.close()
@@ -335,6 +381,7 @@ def windows_ui():
                 again=app.auto_open_work_view();assert again==url,(again,url)
                 assert app.auto_open_work_view() is None,'auto open runs once'
             assert app.work_view_show_app()=={'ok':True}
+            assert app.work_view_switch({'kind':'before'})['started'] is False,'already open'
             assert any(r['id']=='work_view' for r in app.drawing_tool_catalog())
             assert not errors,errors
         finally:app.on_close()

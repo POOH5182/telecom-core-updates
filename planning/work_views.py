@@ -224,6 +224,38 @@ def work_view_trace_value(trace):
                 found=bool(trace.get('rows')))
 
 
+def work_view_phase_info(store):
+    """V214: 작업차수 of the open drawing for the page: phase names, each cable's
+    own phase (this drawing) and each core ID's own phase (beats the cable)."""
+    try:value=state(store)
+    except Exception:return {'names':[],'cable':{},'core':{}}
+    kind=work_phase_kind(store);cable={};core={}
+    for phase in value.get('phases',[]):
+        name=phase.get('name','')
+        for ref in phase.get('cables',[]):
+            if ref.get('scope','before')==kind:cable.setdefault(str(ref.get('id')),name)
+        excluded=set(phase.get('excluded_cores',[]))
+        for cid in phase.get('cores',[]):
+            if cid not in excluded:core.setdefault(str(cid),name)
+    return {'names':[p.get('name','') for p in value.get('phases',[])],'cable':cable,'core':core}
+
+
+def work_view_phase_add(store,name):
+    """V214: add one 작업차수 (same shape as the 작업차수 / 구간 window)."""
+    name=str(name or '').strip()[:40]
+    if not name:raise ValueError('작업차수 이름을 입력하세요. 예: 1차작업')
+    value=state(store)
+    if any(p['name']==name for p in value['phases']):raise ValueError(f'「{name}」 작업차수가 이미 있습니다.')
+    value['phases'].append({'id':uuid.uuid4().hex,'name':name,'cores':[],'cables':[],'excluded_cores':[],'note':''})
+    write_state(store,value,'작업차수 추가: '+name)
+    return name
+
+
+def work_view_node_locked(row):
+    try:return str(row['type'] or 'hamche')=='hamche' and bool(json.loads(row['extra_json'] or '{}').get('editLocked'))
+    except (KeyError,IndexError,TypeError,ValueError):return False
+
+
 def work_view_document(scene,meta):
     import html as _html
     data=dict(scene,meta=meta)
@@ -371,6 +403,11 @@ tbody tr.editing td{background:#e8f0ff}
 .infoform summary small{font-weight:500;color:var(--ink-3);margin-left:6px}
 .infoform[open] summary{margin-bottom:8px}
 .infoform.open{padding-top:12px}
+.ph-row{display:flex;gap:6px;align-items:center;margin:8px 12px 0;padding:6px 10px;border:1px dashed #c4b5fd;border-radius:10px;background:#faf5ff;font-size:12px}
+.ph-row label{color:#6d28d9;font-weight:700;white-space:nowrap}.ph-row select{flex:1;min-width:0;border:1px solid #ddd6fe;border-radius:6px;padding:4px 6px;font-size:12px;background:#fff}
+.ph-row small{color:var(--ink-3);white-space:nowrap}
+.lock-on{background:#facc15!important;border-color:#ca8a04!important;color:#1f2937!important}
+.btn-top.kind{background:#1e3a8a;border-color:#3b5bb5}
 .if-row{display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;margin-bottom:7px}
 .if-row label{font-size:11.5px;color:var(--ink-3)}
 .if-row input,.if-row select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;background:#fff;min-width:0;width:100%}
@@ -400,7 +437,7 @@ tbody tr.editing td{background:#e8f0ff}
 .ed-row{display:grid;grid-template-columns:52px 1fr 1fr;gap:6px;align-items:center;margin-bottom:6px}
 .ed-row small{grid-column:2/-1;color:var(--ink-3);font-size:10.5px;margin-top:-3px}
 .ed-l{font-size:11px;font-weight:700;color:#fff;background:var(--c);border-radius:5px;padding:4px 0;text-align:center}
-.ed-row input{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;min-width:0;background:#fff}
+.ed-row input,.ed-row select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;min-width:0;background:#fff}
 .ed-row input[data-f="id"]{font-family:var(--mono)}
 .ed-row input:focus{outline:2px solid #bcd3fb;border-color:var(--accent)}
 .ed-b{display:flex;gap:6px;align-items:center;justify-content:flex-end}
@@ -425,6 +462,7 @@ footer .r{margin-left:auto}
       <span class="readonly" id="mode-badge" title="수정은 기존 프로그램 화면에서 합니다">보기 전용</span>
       <button class="btn-top" id="reload" style="display:none" title="프로그램에서 고친 내용을 다시 불러옵니다">새로 고침</button>
       <button class="btn-top" id="showApp" style="display:none" title="기존 프로그램 화면을 앞으로 가져옵니다 (전체 기능)">기존 화면</button>
+      <button class="btn-top kind" id="switchKind" style="display:none" title="프로그램에서 열린 도면을 현장반영 ↔ 후도면으로 바꿉니다"></button>
       <label class="search"><span style="color:#8ea3c4">⌕</span><input id="q" placeholder="코어ID · 케이블 · 함체 찾기"></label>
       <button class="btn-top" id="copyAll" title="작업전·작업후 배정이 다른 칸을 엑셀에 붙여 넣을 수 있게 복사">절체 목록 복사</button>
       <button class="btn-top" id="fit">전체 보기</button>
@@ -486,6 +524,7 @@ function renderHeader(){
   $('views').innerHTML=VIEWS.map((x,i)=>`<button class="view${x[0]===view?' on':''}" data-v="${x[0]}" style="--vc:${x[3]}"><span class="n">${i+1}</span>${x[1]} <small>${x[2]}</small></button>`).join('');
   $('views').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
   const note=D.has_after?'현장반영 도면 = 작업전 배정 · 후도면 = 작업후 배정':'후도면이 아직 없어 작업후는 현장반영 배정으로 보여 줍니다';
+  if(LIVE){const k=D.kind||M.kind,b=$('switchKind');b.style.display='';b.textContent=`열린 도면: ${k==='after'?'후도면':'현장반영'} ⇄`;b.title=`프로그램에서 ${k==='after'?'현장반영':'후도면'}(으)로 전환합니다 · 작업차수는 열린 도면 기준`}
   $('strip').innerHTML=`<span>●</span>${v[1]} 보기 · ${esc(v[2])}<span class="right">${esc(note)} · ${esc(D.created||M.created||'')} 기준 · ${LIVE?'코어 줄을 눌러 바로 수정':'수정은 기존 프로그램에서'}</span>`;
 }
 function setView(v){view=v;try{localStorage.setItem('workview.mode',v)}catch(e){}
@@ -767,12 +806,13 @@ function renderCable(c){
    <div class="split">${Object.entries(cnt).map(([k,v])=>`<span class="chip"><i style="--c:${STATE_C[k]}"></i>${esc(STATE_T[k]||k)} <b>${v}</b></span>`).join('')}
     ${view==='during'?`<span class="chip btn${onlyChanged?' on':''}" id="onlyChg">바뀐 칸만</span>`:''}<button class="mini r" id="copyOne">표 복사</button></div>
    ${infoForm('cable',c)}
+   ${phaseRow(c)}
    ${editBox(c)}
    ${pasteForm(c)}
    <div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${rows.length?'':'<div class="empty">보여 줄 칸이 없습니다.</div>'}</div>
    <div class="side-f">${view==='during'?'같은 칸의 작업전·작업후 배정이 다르면 <b>코어절체</b>로 표시합니다 (에러 아님).':'충돌은 이 보기 안에서만 검사합니다 · 미완료에 마우스를 올리면 이유가 보입니다'}${LIVE?' · 코어 줄을 누르면 고칠 수 있어요':''}</div>`;
   const oc=$('onlyChg');if(oc)oc.onclick=()=>{onlyChanged=!onlyChanged;renderCable(c)};
-  bindInfo('cable',c);bindPaste(c);
+  bindInfo('cable',c);bindPaste(c);bindPhaseRow(c);
   if(LIVE){$('side').querySelectorAll('tr[data-row]').forEach(tr=>{tr.style.cursor='pointer';tr.onclick=()=>{editN=+tr.dataset.row;renderCable(c);const f=$('side').querySelector('.editbox input');if(f)f.focus()}});bindEdit(c)}
   $('copyOne').onclick=()=>copyRows([c],'이 케이블 표');
   const first=$('side').querySelector('tr.hit');if(first)first.scrollIntoView({block:'center'});
@@ -796,8 +836,10 @@ const targetName=()=>view==='before'?'현장반영 도면':'후도면';
 function renderTools(){
   if(!LIVE)return;const box=$('tools');box.style.display='flex';
   const hint=tool==='cable'&&cableStart?`${esc((N[cableStart]||{}).name||'')} 다음 시설을 누르세요`:esc(TOOLS.find(t=>t[0]===tool)[2]);
-  box.innerHTML=TOOLS.map(t=>`<button class="chip btn${t[0]===tool?' on':''}" data-t="${t[0]}">${t[1]}</button>`).join('')+`<span class="hint">${hint} · ${targetName()}에 저장</span>`;
-  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{tool=b.dataset.t;cableStart=null;newCable=null;svg.style.cursor=tool==='select'?'':'crosshair';renderTools();if(sel.kind===null)renderSide()});
+  const locked=!!(D.locks||{})[target()];
+  box.innerHTML=TOOLS.map(t=>`<button class="chip btn${t[0]===tool?' on':''}" data-t="${t[0]}">${t[1]}</button>`).join('')+`<button class="chip btn${locked?' lock-on':''}" id="allLock" title="${targetName()}의 함체 전체 잠금">${locked?'🔒 전체 잠김':'🔓 전체 잠금'}</button><span class="hint">${hint} · ${targetName()}에 저장</span>`;
+  $('allLock').onclick=toggleAllLock;
+  box.querySelectorAll('button[data-t]').forEach(b=>b.onclick=()=>{tool=b.dataset.t;cableStart=null;newCable=null;svg.style.cursor=tool==='select'?'':'crosshair';renderTools();if(sel.kind===null)renderSide()});
 }
 function worldPoint(e){const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(world.getScreenCTM().inverse())}
 function moveNodeDrag(e){
@@ -845,7 +887,8 @@ function infoForm(kind,x){
      <div class="if-row"><label>케이블 ID</label><input data-k="cable_id" value="${esc(v.cable_id)}"></div>
      <div class="if-row"><label>LOT</label><input data-k="lot" value="${esc(v.lot)}"></div>`:
     `<div class="if-row"><label>이름</label><input data-k="name" value="${esc(v.name)}"></div>
-     <div class="if-row"><label>상태</label><div class="st-group">${statusButtons(v.status)}</div></div>`;
+     <div class="if-row"><label>상태</label><div class="st-group">${statusButtons(v.status)}</div></div>
+     ${x.type==='hamche'?`<div class="if-row"><label>잠금</label><div><button type="button" class="mini${v.locked?' lock-on':''}" data-lock="1">${v.locked?'🔒 잠김 · 누르면 해제':'🔓 풀림 · 누르면 잠금'}</button></div></div>`:''}`;
   return `<details class="infoform"${infoOpen?' open':''}><summary>${kind==='cable'?'케이블':'시설'} 정보 고치기 <small>${targetName()}에 저장</small></summary>${rows}
     <div class="ed-b"><button class="mini danger" data-del="1">${kind==='cable'?'케이블':'시설'} 삭제</button><span class="ed-msg" data-msg="1"></span><button class="mini primary" data-save="1">저장</button></div></details>`;
 }
@@ -864,6 +907,8 @@ function bindInfo(kind,x){
       await edit('cable_info',{cable:x.id,status,spec:val('spec'),cable_id:val('cable_id'),lot:val('lot')},'케이블 정보를 저장했어요',msg);
     }else await edit('node_info',{node:x.id,name:val('name'),status},'시설 정보를 저장했어요',msg);
   };
+  const lk=box.querySelector('[data-lock]');
+  if(lk)lk.onclick=()=>edit('node_lock',{node:x.id,locked:!v.locked},v.locked?'함체 잠금을 풀었어요':'함체를 잠갔어요',msg);
   box.querySelector('[data-del]').onclick=async()=>{
     const what=kind==='cable'?`케이블 ${cableName(x)}`:`시설 ${x.name} (연결된 케이블도 함께)`;
     if(!window.confirm(`${targetName()}에서 ${what}을 지울까요? 프로그램에서 실행취소(Ctrl+Z)로 되돌릴 수 있어요.`))return;
@@ -923,6 +968,36 @@ function bindPaste(c){
     edit('core_paste',{view:box.querySelector('[data-k="side"]').value,cable:c.id,start:box.querySelector('[data-k="start"]').value,lines},'붙여넣기를 저장했어요',box.querySelector('[data-msg="p"]'));
   };
 }
+/* V214 작업차수 (always the drawing open in the program), 함체 잠금, 도면 전환 */
+function phaseOptions(cur,none){const P=D.phase||{names:[]};const list=P.names.slice();if(cur&&!list.includes(cur))list.unshift(cur);
+  return `<option value="">${esc(none)}</option>`+list.map(x=>`<option value="${esc(x)}"${x===cur?' selected':''}>${esc(x)}</option>`).join('')+'<option value="__new">+ 새 차수 만들기…</option>'}
+async function newPhase(){
+  const nm=(window.prompt('새 작업차수 이름 (예: 1차작업)',`${((D.phase||{}).names||[]).length+1}차작업`)||'').trim();if(!nm)return '';
+  const res=await edit('phase_add',{name:nm},`작업차수 ${nm}을(를) 만들었어요`);return res&&res.ok?nm:'';
+}
+const liveSide=()=>(D.kind||M.kind)==='after'?'after':'before',liveName=()=>liveSide()==='after'?'후도면':'현장반영';
+function phaseRow(c){
+  if(!LIVE)return'';const P=D.phase||{names:[]};
+  if(!(c.edit||{})[liveSide()])return `<div class="ph-row"><label>작업차수</label><small>이 케이블은 지금 열린 ${liveName()}에 없어서 차수를 줄 수 없어요</small></div>`;
+  return `<div class="ph-row" title="케이블에 차수를 주면 안의 코어 전체가 그 차수로 표시돼요. 코어 줄을 눌러 코어마다 따로 줄 수도 있어요."><label>작업차수</label><select id="cPhase">${phaseOptions((P.cable||{})[c.id]||'','차수 없음')}</select><small>${liveName()} 기준</small></div>`;
+}
+function bindPhaseRow(c){
+  const s=$('cPhase');if(!s)return;
+  s.onchange=async()=>{let name=s.value;if(name==='__new'){s.value=((D.phase||{}).cable||{})[c.id]||'';name=await newPhase();if(!name)return}
+    await edit('cable_phase',{cable:c.id,name},name?`케이블을 ${name}(으)로 지정했어요`:'케이블 작업차수를 지웠어요')};
+}
+async function toggleAllLock(){
+  const on=!((D.locks||{})[target()]);
+  if(!window.confirm(`${targetName()}의 함체 전체를 ${on?'잠글':'잠금 해제할'}까요?`))return;
+  await edit('all_lock',{locked:on},on?'함체 전체를 잠갔어요':'함체 전체 잠금을 풀었어요');
+}
+async function switchKind(){
+  const k=liveSide()==='after'?'before':'after',nm=k==='after'?'후도면':'현장반영';
+  if(!window.confirm(`프로그램에서 ${nm}(으)로 전환할까요?\n확인 창이 나오면 기존 화면에서 답해 주세요. 끝나면 이 화면을 다시 누르면 새로 불러와요.`))return;
+  try{const r=await api('switch',{kind:k});toast(!r.ok?(r.error||'전환하지 못했어요'):r.started?`${nm} 전환을 시작했어요 · 기존 화면을 확인하세요`:`이미 ${nm}이 열려 있어요`)}
+  catch(e){toast('프로그램과 연결이 끊겼어요')}
+}
+if(LIVE)$('switchKind').onclick=switchKind;
 async function edit(op,body,done,msgEl){
   if(busy)return null;busy=true;if(msgEl){msgEl.textContent='저장 중…';msgEl.className='ed-msg'}
   try{
@@ -950,12 +1025,20 @@ function editBox(c){
      <input data-side="${s[0]}" data-f="id" value="${esc(r[s[3]])}" placeholder="코어ID (비우면 배정 해제)">
      <input data-side="${s[0]}" data-f="detail" value="${esc(r[s[4]])}" placeholder="내역"><small>${s[2]}</small></div>`).join(''):
      '<div class="ed-note">이 보기에서는 이 케이블을 고칠 수 없어요. 작업전·작업중·작업후 중 이 케이블이 있는 보기로 바꾸세요.</div>';
-  return `<div class="editbox"><div class="ed-h"><b>${editN}번 코어 고치기</b><span>${esc(cableName(c))}</span></div>${body}
+  const pid=view==='before'?r.b:(r.a||r.b),P=D.phase||{names:[]};
+  const phase=pid?`<div class="ed-row"><span class="ed-l" style="--c:#7c3aed">차수</span><select id="edPhase" style="grid-column:2/-1">${phaseOptions((P.core||{})[pid]||'','케이블 차수 따름')}</select><small>코어 ${esc(pid)} · 이 코어가 지나가는 모든 케이블에 표시${P.names.length?'':' · 차수가 없으면 「+ 차수」로 만드세요'}</small></div>`:'';
+  return `<div class="editbox"><div class="ed-h"><b>${editN}번 코어 고치기</b><span>${esc(cableName(c))}</span></div>${body}${phase}
     <div class="ed-b"><span class="ed-msg" id="edMsg"></span><button class="mini" id="edCancel">닫기</button>${sides.length?'<button class="mini primary" id="edSave">저장 (Enter)</button>':''}</div></div>`;
 }
 function bindEdit(c){
   const save=$('edSave'),cancel=$('edCancel');
   if(cancel)cancel.onclick=()=>{editN=null;renderCable(c)};
+  const ph=$('edPhase');
+  if(ph)ph.onchange=async()=>{const r=(cores[c.id]||[]).find(x=>x.n===editN)||{},pid=view==='before'?r.b:(r.a||r.b);
+    let name=ph.value;const keep=editN;
+    if(name==='__new'){ph.value=((D.phase||{}).core||{})[pid]||'';name=await newPhase();editN=keep;if(!name){if(C[c.id])renderCable(C[c.id]);return}}
+    await edit('core_phase',{ids:[pid],name},name?`코어 ${pid}를 ${name}(으)로 지정했어요`:`코어 ${pid}가 케이블 차수를 따라요`,$('edMsg'));
+    if(C[c.id]){editN=keep;renderCable(C[c.id])}};
   if(!save)return;
   const box=$('side').querySelector('.editbox');
   box.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save.click()}if(e.key==='Escape'){editN=null;renderCable(c)}}));
