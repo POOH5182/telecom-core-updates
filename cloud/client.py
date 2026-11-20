@@ -228,7 +228,7 @@ def cloud_google_login(cancel):
                 self.send_error(400)
                 return
             codes.put(params)
-            body = '<!doctype html><meta charset="utf-8"><title>통신 코어 도면</title><p>로그인 응답을 받았습니다. 통신 코어 도면 프로그램으로 돌아가 주세요.</p>'.encode()
+            body = '<!doctype html><meta charset="utf-8"><title>통신 코어 도면</title><p>로그인 응답을 받았습니다. 이 탭은 닫고 통신 코어 도면 로그인 화면으로 돌아가 주세요.</p><script>setTimeout(function(){window.close()},1500)</script>'.encode()
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))
@@ -289,6 +289,83 @@ class CloudLogin(tk.Tk):
         self.remember = tk.BooleanVar(value=True)
         ttk.Checkbutton(self, text='이 PC에서 로그인 유지', variable=self.remember).pack()
         self.resume_id = self.after(150,self.resume)
+        # V216: the same login as an HTML page (this window stays usable too).
+        self.web = None
+        self.web_state = None
+        self.web_pump_id = None
+        if namespace.get('AUTO_HTML_ON_START') and login_view_enabled(self.home):
+            try:
+                self.start_web(namespace)
+            except Exception:
+                self.stop_web()
+
+    def start_web(self, namespace):
+        state = login_view_state()
+        state['info'] = self.info.get()
+        self.web_state = state
+        namespace['LOGIN_WEB'] = state
+        self.info.trace_add('write', lambda *args: state.__setitem__('info', self.info.get()))
+        version = str(namespace.get('APP_VERSION_LABEL', ''))
+        self.web = WorkViewServer({
+            'page': lambda: login_view_document({'token': self.web.token, 'version': version}),
+            'status': lambda: login_view_status(state),
+            'login': self.web_login, 'check': self.web_check, 'show': self.web_show}, direct=('page', 'status'))
+        state['_server'] = self.web
+        self.web_pump_id = self.after(60, self.web_pump)
+        webbrowser.open(self.web.url())
+
+    def web_pump(self):
+        self.web_pump_id = None
+        if not self.web or self.web.closed:
+            return
+        try:
+            self.web.pump()
+        finally:
+            if self.web_state is not None:
+                self.web_state['busy'] = bool(self.jobs.busy)
+            try:
+                self.web_pump_id = self.after(60, self.web_pump)
+            except tk.TclError:
+                pass
+
+    def web_login(self, payload):
+        remember = bool(payload.get('remember', True))
+        self.remember.set(remember)
+        self.web_state['remember'] = remember
+        if self.jobs.busy:
+            raise ValueError('로그인을 처리하고 있습니다. 잠시 기다려 주세요.')
+        self.login()
+        return {'ok': True}
+
+    def web_check(self, payload):
+        if not self.candidate:
+            raise ValueError('먼저 Google 계정으로 로그인하세요.')
+        self.check()
+        return {'ok': True}
+
+    def web_show(self, payload):
+        try:
+            self.deiconify(); self.lift(); self.attributes('-topmost', True)
+            self.after(400, lambda: self.attributes('-topmost', False)); self.focus_force()
+        except tk.TclError:
+            pass
+        return {'ok': True}
+
+    def stop_web(self, keep_status=False):
+        """keep_status: the page keeps reading its status (approved -> 작업도면 address)."""
+        if self.web_pump_id:
+            try:
+                self.after_cancel(self.web_pump_id)
+            except tk.TclError:
+                pass
+            self.web_pump_id = None
+        web = self.web
+        if web is None:
+            return
+        web.closed = True
+        web.pump()
+        if not keep_status:
+            web.close_later(0)
 
     def resume(self):
         if not self.cache.exists():
@@ -325,7 +402,13 @@ class CloudLogin(tk.Tk):
 
     def checked(self, profile):
         self.candidate.remember()
+        if self.web_state is not None:
+            self.web_state['email'] = str(profile.get('email') or '')
+            self.web_state['status'] = str(profile.get('status') or '')
         if profile['status'] == 'approved':
+            if self.web_state is not None:
+                self.web_state['approved'] = True
+                self.stop_web(keep_status=True)
             self.session = self.candidate
             self.jobs.stop()
             self.after_cancel(self.resume_id)
@@ -338,6 +421,11 @@ class CloudLogin(tk.Tk):
         self.info.set(str(error))
 
     def close(self):
+        if self.web_state is not None:
+            self.web_state['closed'] = True
+        self.stop_web(keep_status=True)
+        if self.web is not None:
+            self.web.close_later(5)
         self.cancel.set()
         self.jobs.stop()
         self.after_cancel(self.resume_id)

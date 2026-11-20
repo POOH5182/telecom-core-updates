@@ -23,8 +23,10 @@ class WorkViewServer:
     """routes: {'page': fn()->html, 'scene': fn()->dict, '<name>': fn(payload)->dict}.
     Route functions run on the UI thread via pump()."""
 
-    def __init__(self,routes,host='127.0.0.1'):
-        self.routes=dict(routes);self.token=_wv_secrets.token_urlsafe(24);self.requests=_wv_queue.Queue();self.closed=False
+    def __init__(self,routes,host='127.0.0.1',direct=()):
+        # V216: names in `direct` run on the server thread (must be thread safe),
+        # e.g. the login page status that is still read after the login window closed.
+        self.direct=set(direct);self.routes=dict(routes);self.token=_wv_secrets.token_urlsafe(24);self.requests=_wv_queue.Queue();self.closed=False
         server=self
 
         class Handler(_wv_http.BaseHTTPRequestHandler):
@@ -53,15 +55,15 @@ class WorkViewServer:
                     token=(_wv_parse_qs(parsed.query).get('t') or [''])[0]
                     if not _wv_secrets.compare_digest(token,server.token):return self.send_text(403,'<!doctype html><meta charset="utf-8">프로그램의 「작업도면 전·중·후」 버튼으로 다시 여세요.','text/html; charset=utf-8')
                     return self.answer('page',None,html=True)
-                if parsed.path=='/api/scene':
+                if parsed.path in ('/api/scene','/api/status') and parsed.path.rsplit('/',1)[-1] in server.routes:
                     if not self.header_token():return self.send_json(403,{'ok':False,'error':'다시 열어 주세요.'})
-                    return self.answer('scene',None)
+                    return self.answer(parsed.path.rsplit('/',1)[-1],None)
                 return self.send_json(404,{'ok':False,'error':'없는 주소입니다.'})
 
             def do_POST(self):
                 if not self.allowed_host() or not self.header_token():return self.send_json(403,{'ok':False,'error':'다시 열어 주세요.'})
                 name=_wv_urlparse(self.path).path.rsplit('/',1)[-1]
-                if not self.path.startswith('/api/') or name in ('page','scene') or name not in server.routes:return self.send_json(404,{'ok':False,'error':'없는 기능입니다.'})
+                if not self.path.startswith('/api/') or name in ('page','scene','status') or name not in server.routes:return self.send_json(404,{'ok':False,'error':'없는 기능입니다.'})
                 try:size=int(self.headers.get('Content-Length') or 0)
                 except ValueError:size=-1
                 if size<0 or size>WORK_SERVER_MAX_BODY:return self.send_json(413,{'ok':False,'error':'요청이 너무 큽니다.'})
@@ -74,7 +76,8 @@ class WorkViewServer:
 
             def answer(self,name,payload,html=False):
                 route=server.routes[name]
-                try:value=server.run_ui(route if payload is None else (lambda:route(payload)))
+                call=route if payload is None else (lambda:route(payload))
+                try:value=call() if name in server.direct else server.run_ui(call)
                 except ValueError as error:return self.send_json(200,{'ok':False,'error':str(error)})
                 except Exception as error:return self.send_json(500,{'ok':False,'error':'처리하지 못했습니다: '+str(error)[:300]})
                 if html:return self.send_text(200,value,'text/html; charset=utf-8')
@@ -110,3 +113,11 @@ class WorkViewServer:
         try:self.httpd.shutdown();self.httpd.server_close()
         except Exception:pass
         self.pump()
+
+    def close_later(self,seconds=3):
+        """V216: stop serving from any thread after a short delay (login page done)."""
+        def stop():
+            _wv_threading.Event().wait(seconds)
+            try:self.httpd.shutdown();self.httpd.server_close()
+            except Exception:pass
+        _wv_threading.Thread(target=stop,name='work-view-server-stop',daemon=True).start()

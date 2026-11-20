@@ -9,6 +9,19 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V216 / 26.11.21.02: Google 로그인 HTML page (planning/login_view.py, bundled
+  >=216 after work_server). CloudLogin (cloud/client.py) starts it only when
+  namespace AUTO_HTML_ON_START and login_view_enabled(root home data/
+  work_view_start.json; App.set_work_view_start also writes the root copy).
+  WorkViewServer(direct=('page','status')): direct routes run on the server
+  thread, so the status still answers after the login window is destroyed.
+  Buttons call the window's own login()/check() (same PKCE, approval, saved
+  login). namespace['LOGIN_WEB'] = shared state dict; on approval the window
+  stops pumping (actions refused, status kept) and App.auto_open_work_view
+  hands the 작업도면 URL via login_page_handoff (page does location.replace;
+  new tab after 8 s if not taken) or login_page_message (gis / disabled /
+  error). check_login_view.py.
+
 - V215 / 26.11.21.01 (one drawing + view options, step 1): facility
   positions per view. 작업전 = 현장반영 node x,y, 작업후 = 후도면 node x,y,
   작업중 = own layout in common workflow state 'work_view_layout'.during
