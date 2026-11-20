@@ -309,11 +309,20 @@ def windows_ui():
             assert box['edit']['scene']['cores'][k][0]['b']=='WV-9'
             labels_menu=[app.file_menu.entrycget(i,'label') for i in range(app.file_menu.index('end')+1)]
             assert '작업도면 전·중·후 (HTML)' in labels_menu,labels_menu
+            assert '시작할 때 HTML 작업도면 열기' in labels_menu,labels_menu
+            assert code['AUTO_HTML_ON_START'] is False,'checks never auto-open the browser'
+            assert app.work_view_start_enabled() is True
+            app.set_work_view_start(False);assert app.work_view_start_enabled() is False and app.work_view_start_var.get() is False
+            app.set_work_view_start(True)
+            with patch.object(code['webbrowser'],'open',lambda url:opened.append(url)):
+                again=app.auto_open_work_view();assert again==url,(again,url)
+                assert app.auto_open_work_view() is None,'auto open runs once'
+            assert app.work_view_show_app()=={'ok':True}
             assert any(r['id']=='work_view' for r in app.drawing_tool_catalog())
             assert not errors,errors
         finally:app.on_close()
     faulthandler.cancel_dump_traceback_later()
-    print('PASS Windows work drawing button opens the live page and an HTML edit changes the open drawing')
+    print('PASS Windows work drawing button opens the live page, HTML edits change the open drawing, start-up option works')
 
 
 if __name__=='__main__':

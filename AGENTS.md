@@ -1,5 +1,18 @@
 # Telecom Core updater project
 
+- V212 (HTML migration step 4: HTML 작업도면 is the main screen, Tk stays as
+  sub screen and server host): module global AUTO_HTML_ON_START=False, set
+  True only in the pyw's `if __name__ == "__main__"` block (checks/smoke use
+  runpy with other run_names, so they never open a browser). App.__init__
+  schedules auto_open_work_view (once; skips 임시도면 with a status message;
+  errors -> status only, no popup) when work_view_start_enabled()
+  (app_dir()/data/work_view_start.json open_on_start, default True). File
+  menu checkbutton 「시작할 때 HTML 작업도면 열기」 (work_view_start_var ->
+  set_work_view_start). Server route show_app -> work_view_show_app (deiconify,
+  lift, brief topmost). HTML: 「기존 화면」 button, quiet reload on window focus
+  when not editing. Tk window is NOT iconified (startup dialogs must stay
+  visible). Removing Tk waits for the user's explicit confirmation.
+
 - V211 (HTML migration step 3): work_view_edit ops splice_add (Store.connect,
   temporary flag; both cables must touch the node and the numbers exist),
   splice_del (Store.disconnect, False -> ValueError), splice_range

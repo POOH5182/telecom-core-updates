@@ -392,6 +392,7 @@ footer .r{margin-left:auto}
     <div class="actions">
       <span class="readonly" id="mode-badge" title="수정은 기존 프로그램 화면에서 합니다">보기 전용</span>
       <button class="btn-top" id="reload" style="display:none" title="프로그램에서 고친 내용을 다시 불러옵니다">새로 고침</button>
+      <button class="btn-top" id="showApp" style="display:none" title="기존 프로그램 화면을 앞으로 가져옵니다 (전체 기능)">기존 화면</button>
       <label class="search"><span style="color:#8ea3c4">⌕</span><input id="q" placeholder="코어ID · 케이블 · 함체 찾기"></label>
       <button class="btn-top" id="copyAll" title="작업전·작업후 배정이 다른 칸을 엑셀에 붙여 넣을 수 있게 복사">절체 목록 복사</button>
       <button class="btn-top" id="fit">전체 보기</button>
@@ -898,8 +899,9 @@ async function api(name,body){
 }
 function applyScene(scene){if(scene)setData(scene)}
 function renderAll(){runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools()}
-async function reload(){if(!LIVE||busy)return;try{const res=await api('scene');if(res.ok){applyScene(res.value);renderAll();toast('프로그램 도면을 다시 불러왔어요')}else toast(res.error||'불러오지 못했어요')}catch(e){toast('프로그램과 연결이 끊겼어요')}}
-if(LIVE)$('reload').onclick=reload;
+async function reload(quiet){if(!LIVE||busy)return;try{const res=await api('scene');if(res.ok){applyScene(res.value);renderAll();if(quiet!==true)toast('프로그램 도면을 다시 불러왔어요')}else if(quiet!==true)toast(res.error||'불러오지 못했어요')}catch(e){if(quiet!==true)toast('프로그램과 연결이 끊겼어요')}}
+if(LIVE){$('reload').onclick=reload;$('showApp').style.display='';$('showApp').onclick=async()=>{try{const r=await api('show_app',{});toast(r.ok?'기존 화면을 앞으로 가져왔어요':(r.error||'열지 못했어요'))}catch(e){toast('프로그램과 연결이 끊겼어요')}}}
+window.addEventListener('focus',()=>{if(LIVE&&!busy&&editN==null&&!newCable&&!document.querySelector('.infoform[open] input:focus'))reload(true)});
 
 /* copy for Excel */
 function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',2200)}
