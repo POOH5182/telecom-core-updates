@@ -131,8 +131,20 @@ def work_view_data(before,after,work=None):
                                ph=_work_view_phases(phase_store,a if (has_after and ac) else b) if (aid or bid) else []))
         cores[cid]=result
     issues=work_view_issues(cables,cores)
-    return dict(has_after=has_after,nodes=nodes,cables=cables,cores=cores,issues=issues,
+    splices=dict(before=work_view_splices(before),after=work_view_splices(after) if has_after else {})
+    return dict(has_after=has_after,nodes=nodes,cables=cables,cores=cores,issues=issues,splices=splices,
                 counts=work_view_counts(cables,cores,work,issues))
+
+
+def work_view_splices(store):
+    """V211: {node id: [[cable1, n1, cable2, n2, core id], ...]} of one drawing."""
+    found={}
+    if store is None:return found
+    try:rows=store.conn.execute("SELECT s.node_id,s.cable1_id,s.core1_index,s.cable2_id,s.core2_index,COALESCE(c.core_id,'') FROM splices s "
+                                "LEFT JOIN cores c ON c.cable_id=s.cable1_id AND c.core_index=s.core1_index ORDER BY s.node_id,s.cable1_id,s.core1_index").fetchall()
+    except Exception:return found
+    for node,c1,i1,c2,i2,cid in rows:found.setdefault(str(node),[]).append([str(c1),int(i1),str(c2),int(i2),str(cid or '')])
+    return found
 
 
 def work_view_issues(cables,cores):
@@ -343,6 +355,13 @@ tbody tr.editing td{background:#e8f0ff}
 .st-btn{border:1.5px solid var(--c);color:var(--c);background:#fff;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700}
 .st-btn.on{background:var(--c);color:#fff}
 .mini.danger{color:var(--bad);border-color:#f3c0c0}
+.sp-list{max-height:180px;overflow:auto;margin-bottom:6px}
+.sp-row{display:flex;align-items:center;gap:6px;justify-content:space-between;padding:5px 2px;border-bottom:1px solid var(--line-2);font-size:12px}
+.sp-h{font-size:11.5px;font-weight:700;color:var(--ink-2);margin:8px 0 5px}
+.sp-grid{display:grid;grid-template-columns:1fr 58px 14px 1fr 58px;gap:5px;align-items:center;margin-bottom:6px}
+.sp-grid select,.sp-grid input{border:1px solid var(--line);border-radius:6px;padding:5px 6px;font-size:12px;background:#fff;min-width:0;width:100%}
+.ck{font-size:11.5px;color:var(--ink-3);margin-right:auto;display:flex;gap:4px;align-items:center}
+.infoform textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:12px;resize:vertical;margin-bottom:6px}
 .mini.danger:hover{background:#fdecec}
 .editbox{margin:8px 12px;border:1.5px solid var(--accent);border-radius:10px;background:#f8fbff;padding:10px 12px}
 .ed-h{display:flex;gap:8px;align-items:baseline;margin-bottom:8px}.ed-h span{color:var(--ink-3);font-size:11.5px}
@@ -662,10 +681,11 @@ function renderCable(c){
     ${view==='during'?`<span class="chip btn${onlyChanged?' on':''}" id="onlyChg">바뀐 칸만</span>`:''}<button class="mini r" id="copyOne">표 복사</button></div>
    ${infoForm('cable',c)}
    ${editBox(c)}
+   ${pasteForm(c)}
    <div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${rows.length?'':'<div class="empty">보여 줄 칸이 없습니다.</div>'}</div>
    <div class="side-f">${view==='during'?'같은 칸의 작업전·작업후 배정이 다르면 <b>코어절체</b>로 표시합니다 (에러 아님).':'충돌은 이 보기 안에서만 검사합니다 · 미완료에 마우스를 올리면 이유가 보입니다'}${LIVE?' · 코어 줄을 누르면 고칠 수 있어요':''}</div>`;
   const oc=$('onlyChg');if(oc)oc.onclick=()=>{onlyChanged=!onlyChanged;renderCable(c)};
-  bindInfo('cable',c);
+  bindInfo('cable',c);bindPaste(c);
   if(LIVE){$('side').querySelectorAll('tr[data-row]').forEach(tr=>{tr.style.cursor='pointer';tr.onclick=()=>{editN=+tr.dataset.row;renderCable(c);const f=$('side').querySelector('.editbox input');if(f)f.focus()}});bindEdit(c)}
   $('copyOne').onclick=()=>copyRows([c],'이 케이블 표');
   const first=$('side').querySelector('tr.hit');if(first)first.scrollIntoView({block:'center'});
@@ -675,9 +695,10 @@ function renderNode(n){
   $('side').innerHTML=`<div class="side-h"><div class="crumb">${esc(n.type_label||'시설')}</div>
    <div class="title-row"><h2>${esc(n.name)}</h2><span class="pill" style="--c:${ROLE_C[n.role]||'#1565c0'}">${esc(n.role)}</span></div></div>
    ${infoForm('node',n)}
+   ${spliceForm(n)}
    <div class="list"><div class="crumb" style="margin:4px 2px 8px">이 보기에서 연결된 케이블 ${list.length}개</div>
    ${list.map(c=>`<button data-c="${esc(c.id)}"><i style="--c:${ROLE_C[c.role]}"></i><span><span class="t">${esc(cableName(c))}</span><span class="d">${esc(c.role)} · ${esc((N[c.a===n.id?c.b:c.a]||{}).name||'')}</span></span></button>`).join('')}</div>`;
-  bindInfo('node',n);bindList($('side'));
+  bindInfo('node',n);bindSplice(n);bindList($('side'));
 }
 
 /* V210 drawing tools: move / add facility / add cable / cable and facility info / delete */
@@ -762,10 +783,64 @@ function bindInfo(kind,x){
     const res=await edit('delete',{kind,id:x.id},'지웠어요',msg);if(res&&res.ok){sel={kind:null,id:null};renderAll()}
   };
 }
+/* V211 splices inside a facility, paste many cores */
+let spliceOpen=true,pasteOpen=false;
+function nodeCables(n){return cables.filter(c=>(c.a===n.id||c.b===n.id)&&(c.edit||{})[target()])}
+function cableOptions(list,cur){return list.map(c=>`<option value="${esc(c.id)}"${c.id===cur?' selected':''}>${esc(cableName(c))} · ${esc((c.edit[target()]||{}).status||c.role)}</option>`).join('')}
+function spliceForm(n){
+  if(!LIVE)return'';
+  const rows=((D.splices||{})[target()]||{})[n.id]||[],list=nodeCables(n);
+  if(!(n.edit||{})[target()])return'';
+  const nm=id=>C[id]?cableName(C[id]):'(다른 케이블)';
+  const items=rows.length?rows.map((r,i)=>`<div class="sp-row"><span><b>${esc(nm(r[0]))}</b> ${r[1]}번 <span class="arrow">↔</span> <b>${esc(nm(r[2]))}</b> ${r[3]}번${r[4]?` <span class="cid">· ${esc(r[4])}</span>`:''}</span><button class="mini danger" data-sp="${i}">끊기</button></div>`).join(''):'<div class="ed-note">이 시설 안에 연결된 코어가 없어요.</div>';
+  const pick=(k,cur)=>`<select data-k="${k}">${cableOptions(list,cur)}</select>`;
+  return `<details class="infoform" id="spliceBox"${spliceOpen?' open':''}><summary>시설 안 접속 (선번 연결) <small>${rows.length}개 · ${targetName()}</small></summary>
+    <div class="sp-list">${items}</div>
+    ${list.length<2?'<div class="ed-note">연결하려면 이 시설에 케이블이 2개 이상 있어야 해요.</div>':`
+    <div class="sp-h">코어 하나 연결</div>
+    <div class="sp-grid">${pick('a_cable',list[0].id)}<input data-k="a_n" type="number" min="1" placeholder="번호">
+      <span class="arrow">↔</span>${pick('b_cable',list[1].id)}<input data-k="b_n" type="number" min="1" placeholder="번호"></div>
+    <div class="ed-b"><label class="ck"><input type="checkbox" data-k="temporary"> 코어ID가 없으면 임시코어로 연결</label><button class="mini primary" data-act="add">연결</button></div>
+    <div class="sp-h">번호 범위 직결 (같은 번호끼리)</div>
+    <div class="sp-grid">${pick('left',list[0].id)}<input data-k="start" type="number" min="1" placeholder="시작">
+      <span class="arrow">↔</span>${pick('right',list[1].id)}<input data-k="end" type="number" min="1" placeholder="끝"></div>
+    <div class="ed-b"><span class="ed-msg" data-msg="sp"></span><button class="mini primary" data-act="range">범위 직결</button></div>`}
+  </details>`;
+}
+function bindSplice(n){
+  const box=$('spliceBox');if(!box)return;
+  box.addEventListener('toggle',()=>{spliceOpen=box.open});
+  const rows=((D.splices||{})[target()]||{})[n.id]||[],val=k=>{const i=box.querySelector(`[data-k="${k}"]`);return i?(i.type==='checkbox'?i.checked:i.value.trim()):''};
+  const msg=box.querySelector('[data-msg="sp"]');
+  box.querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{const r=rows[+b.dataset.sp];edit('splice_del',{node:n.id,cable:r[0],n:r[1]},`${r[1]}번 연결을 끊었어요`,msg)});
+  const add=box.querySelector('[data-act="add"]');
+  if(add)add.onclick=()=>edit('splice_add',{node:n.id,a_cable:val('a_cable'),a_n:val('a_n'),b_cable:val('b_cable'),b_n:val('b_n'),temporary:val('temporary')},'코어를 연결했어요',msg);
+  const range=box.querySelector('[data-act="range"]');
+  if(range)range.onclick=()=>edit('splice_range',{node:n.id,left:val('left'),right:val('right'),start:val('start'),end:val('end')},'범위 직결을 했어요',msg);
+}
+function pasteForm(c){
+  if(!LIVE)return'';const sides=editSides(c);if(!sides.length)return'';
+  return `<details class="infoform" id="pasteBox"${pasteOpen?' open':''}><summary>여러 칸 붙여넣기 <small>엑셀에서 코어ID·내역 두 칸 복사</small></summary>
+    <div class="if-row"><label>저장할 곳</label><select data-k="side">${sides.map(s=>`<option value="${s[0]}">${s[1]} · ${s[2].replace(' 저장','')}</option>`).join('')}</select></div>
+    <div class="if-row"><label>시작 번호</label><input data-k="start" type="number" min="1" value="${editN||1}"></div>
+    <textarea data-k="text" rows="5" placeholder="코어ID[탭]내역 (한 줄에 한 칸, 빈 줄은 빈칸으로 저장)"></textarea>
+    <div class="ed-b"><span class="ed-msg" data-msg="p"></span><button class="mini primary" data-act="paste">붙여넣기 저장</button></div></details>`;
+}
+function bindPaste(c){
+  const box=$('pasteBox');if(!box)return;
+  box.addEventListener('toggle',()=>{pasteOpen=box.open});
+  box.querySelector('[data-act="paste"]').onclick=()=>{
+    const text=box.querySelector('[data-k="text"]').value.replace(/\r/g,'').replace(/\n+$/,'');
+    if(!text.trim()){box.querySelector('[data-msg="p"]').textContent='붙여 넣을 내용이 없어요.';return}
+    const lines=text.split('\n').map(l=>l.split('\t').slice(0,2));
+    edit('core_paste',{view:box.querySelector('[data-k="side"]').value,cable:c.id,start:box.querySelector('[data-k="start"]').value,lines},'붙여넣기를 저장했어요',box.querySelector('[data-msg="p"]'));
+  };
+}
 async function edit(op,body,done,msgEl){
   if(busy)return null;busy=true;if(msgEl){msgEl.textContent='저장 중…';msgEl.className='ed-msg'}
   try{
     const res=await api('edit',Object.assign({op,view},body));
+    if(res.ok&&typeof res.result==='string'&&/건너뜀|확인 필요/.test(res.result))done=res.result;
     if(!res.ok){const t=res.error||'저장하지 못했어요';if(msgEl){msgEl.textContent=t;msgEl.className='ed-msg bad'}else toast(t);return res}
     applyScene(res.scene);if(sel.kind==='cable'&&!C[sel.id]||sel.kind==='node'&&!N[sel.id])sel={kind:null,id:null};
     renderAll();toast(done+' · '+res.where+' 저장');return res;

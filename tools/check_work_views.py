@@ -196,6 +196,28 @@ class WorkEditTests(WorkViewTests):
         undo=self.after.undo();self.assertTrue(undo,'HTML edits are undoable in the program')
         print('PASS HTML cable/facility edits: info, add, move, rename, delete, bad input refused, undo works')
 
+    def test_splices_and_paste(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        e=lambda **kw:app.work_view_edit(kw)
+        t=self.after.add_cable(self.nb,self.nc,'T','12C','기설')
+        r=e(op='core_paste',view='after',cable=t,start=1,lines=[['R1','첫줄'],['R9',''],[''],['X1']])
+        self.assertIn('4줄 저장',r['result'])
+        self.assertEqual([self.after.core(t,i)['core_id'] for i in (1,2,3,4)],['R1','R9','','X1'])
+        self.assertEqual(self.after.core(t,1)['detail'],'첫줄')
+        r=e(op='splice_add',view='after',node=self.nc,a_cable=self.s,a_n=1,b_cable=t,b_n=1,temporary=False)
+        self.assertTrue(self.after.splice_for(self.nc,self.s,1))
+        rows=r['scene']['splices']['after'][self.nc]
+        self.assertIn([min(self.s,t),1,max(self.s,t),1,'R1'],[x[:5] for x in rows])
+        with self.assertRaises(ValueError):e(op='splice_add',view='after',node=self.nc,a_cable=self.s,a_n=1,b_cable=t,b_n=2)
+        with self.assertRaises(ValueError):e(op='splice_add',view='after',node=self.na,a_cable=self.s,a_n=1,b_cable=t,b_n=2)
+        e(op='splice_del',view='after',node=self.nc,cable=self.s,n=1);self.assertFalse(self.after.splice_for(self.nc,self.s,1))
+        with self.assertRaises(ValueError):e(op='splice_del',view='after',node=self.nc,cable=self.s,n=1)
+        put(self.after,self.s,2,'Z2');put(self.after,t,2,'Z2')
+        r=e(op='splice_range',view='after',node=self.nc,left=self.s,right=t,start=2,end=3)
+        self.assertTrue(self.after.splice_for(self.nc,self.s,2));self.assertIn('직결',r['result'])
+        with self.assertRaises(ValueError):e(op='core_paste',view='after',cable=t,start=1,lines=[])
+        print('PASS HTML splices (connect, refuse wrong facility/occupied, disconnect, range) and multi-line paste')
+
     def test_server_routes_token_and_host(self):
         import threading,urllib.request,urllib.error
         calls=[];ui=threading.get_ident()

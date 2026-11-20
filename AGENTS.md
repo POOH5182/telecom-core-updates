@@ -1,5 +1,15 @@
 # Telecom Core updater project
 
+- V211 (HTML migration step 3): work_view_edit ops splice_add (Store.connect,
+  temporary flag; both cables must touch the node and the numbers exist),
+  splice_del (Store.disconnect, False -> ValueError), splice_range
+  (Store.full_splice start/end -> 'N개 직결 · 건너뜀 ...'), core_paste (lines
+  [[id,detail],...] from start, max 1000, per-line ValueError collected inside
+  the outer action via nested savepoints; none saved -> ValueError).
+  work_view_splices(store) -> scene.splices {before,after}{node:[c1,n1,c2,n2,
+  id]}. JS spliceForm/bindSplice in the node panel, pasteForm/bindPaste in the
+  cable panel (side select from editSides).
+
 - V210 (HTML migration step 2: cable/facility editing in the 작업도면 page):
   App.work_view_apply(view,label,action) is the single write path (view
   before -> 현장반영, during/after -> 후도면; live store saved, other file backed
