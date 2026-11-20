@@ -34,6 +34,13 @@ class FakeApp:
     work_view_stores=code['App'].work_view_stores
     work_view_scene=code['App'].work_view_scene
     work_view_text=code['App'].work_view_text
+    work_view_live_scene=code['App'].work_view_live_scene
+    work_view_edit_core=code['App'].work_view_edit_core
+    work_view_backup=code['App'].work_view_backup
+    def scenario_folder(self):return self.folder
+    def refresh(self):self.refreshed=getattr(self,'refreshed',0)+1
+    def save_current_drawing(self,silent=False):self.saved=getattr(self,'saved',0)+1
+    status=SimpleNamespace(set=lambda text:None)
     def __init__(self,store,kind,folder):
         self.store=store;self.kind=kind;self.folder=folder;self.cloud=None
     def scenario_kind(self):return self.kind
@@ -128,6 +135,87 @@ class WorkViewTests(unittest.TestCase):
         print('PASS without an after drawing the page still opens (after = field); temp drawing is refused')
 
 
+class WorkEditTests(WorkViewTests):
+    def test_edit_before_file_and_live_after(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        self.before.close()
+        result=app.work_view_edit_core({'view':'before','cable':self.k,'n':5,'id':'X55','detail':'현장 수정'})
+        self.assertTrue(result['ok']);self.assertEqual(result['where'],wf.SCENARIO_LABELS['before'])
+        check=code['Store'](self.folder/'before.sqlite3')
+        try:
+            row=check.core(self.k,5);self.assertEqual((row['core_id'],row['detail']),('X55','현장 수정'))
+            self.assertTrue(check.conn.execute('SELECT 1 FROM history_groups').fetchone(),'edit keeps undo history')
+        finally:check.close()
+        self.assertEqual(len(list((self.folder/'backup').glob('before_before_html_edit_*.sqlite3'))),1,'saved file backed up once')
+        app.work_view_edit_core({'view':'before','cable':self.k,'n':6,'id':'X66','detail':''})
+        self.assertEqual(len(list((self.folder/'backup').glob('before_before_html_edit_*.sqlite3'))),1)
+        self.assertEqual(getattr(app,'saved',0),0,'editing the other file does not save the open drawing')
+        rows={r['n']:r for r in result['scene']['cores'][self.k]}
+        self.assertEqual((rows[5]['b'],rows[5]['a'],rows[5]['s']),('X55','X7','코어절체'))
+        result=app.work_view_edit_core({'view':'after','cable':self.k,'n':10,'id':'X10','detail':''})
+        self.assertEqual(self.after.core(self.k,10)['core_id'],'X10');self.assertEqual(app.saved,1,'the open drawing is saved after an edit')
+        with self.assertRaises(ValueError):app.work_view_edit_core({'view':'during','cable':self.k,'n':1,'id':'Q'})
+        with self.assertRaises(ValueError):app.work_view_edit_core({'view':'after','cable':'nope','n':1,'id':'Q'})
+        with self.assertRaises(ValueError):app.work_view_edit_core({'view':'after','cable':self.k,'n':'x','id':'Q'})
+        self.before=code['Store'](self.folder/'before.sqlite3')
+        print('PASS HTML edit writes the field file (backup once, undo history) or the live after drawing, and refuses bad input')
+
+    def test_server_routes_token_and_host(self):
+        import threading,urllib.request,urllib.error
+        calls=[];ui=threading.get_ident()
+        def core(payload):
+            assert threading.get_ident()==ui,'routes must run on the UI thread';calls.append(payload)
+            if payload.get('n')==99:raise ValueError('no slot')
+            return {'ok':True,'scene':{'x':1}}
+        server=wf.WorkViewServer({'page':lambda:'<html>page</html>','scene':lambda:{'n':1},'core':core})
+        stop=threading.Event()
+        def request(path,body=None,token=None,host=None):
+            req=urllib.request.Request(f'http://127.0.0.1:{server.port}{path}',data=None if body is None else json.dumps(body).encode(),method='GET' if body is None else 'POST')
+            if token:req.add_header('X-Telecom-Token',token)
+            if host:req.add_header('Host',host)
+            try:
+                with urllib.request.urlopen(req,timeout=20) as r:return r.status,r.read().decode()
+            except urllib.error.HTTPError as e:return e.code,e.read().decode()
+        results={}
+        def client():
+            try:
+                results['page']=request('/?t='+server.token)
+                results['nopage']=request('/?t=wrong')
+                results['scene']=request('/api/scene',token=server.token)
+                results['scene_no']=request('/api/scene')
+                results['edit']=request('/api/core',{'n':1},token=server.token)
+                results['edit_err']=request('/api/core',{'n':99},token=server.token)
+                results['edit_no']=request('/api/core',{'n':2})
+                results['host']=request('/api/core',{'n':3},token=server.token,host='evil.example:80')
+                results['unknown']=request('/api/drop',{'n':4},token=server.token)
+            finally:stop.set()
+        t=threading.Thread(target=client);t.start()
+        import time
+        while not stop.is_set():server.pump();time.sleep(.01)
+        t.join();server.close()
+        self.assertEqual(results['page'],(200,'<html>page</html>'))
+        self.assertEqual(results['nopage'][0],403)
+        self.assertEqual(results['scene'][0],200);self.assertEqual(json.loads(results['scene'][1]),{'ok':True,'value':{'n':1}})
+        self.assertEqual(results['scene_no'][0],403);self.assertEqual(results['edit_no'][0],403);self.assertEqual(results['host'][0],403)
+        self.assertEqual(results['unknown'][0],404)
+        self.assertEqual(json.loads(results['edit'][1]),{'ok':True,'scene':{'x':1}})
+        self.assertEqual(json.loads(results['edit_err'][1]),{'ok':False,'error':'no slot'})
+        self.assertEqual([c['n'] for c in calls],[1,99],'only token + local-host requests reach the program')
+        self.assertTrue(server.closed)
+        print('PASS local edit server: token, host check, UI-thread routes, errors returned as messages')
+
+    def test_live_page_has_token_and_edit_ui(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        data=embedded(app.work_view_text(live='TOKEN123'))
+        self.assertTrue(data['meta']['live']);self.assertEqual(data['meta']['token'],'TOKEN123')
+        cables={c['id']:c for c in data['cables']}
+        self.assertEqual((cables[self.k]['in_before'],cables[self.k]['in_after']),(True,True))
+        self.assertEqual((cables[self.s]['in_before'],cables[self.s]['in_after']),(False,True))
+        text=app.work_view_text(live='TOKEN123')
+        self.assertIn("'X-Telecom-Token'",text);self.assertIn('function editBox',text)
+        print('PASS live page carries its token and the per-slot edit box')
+
+
 def windows_ui():
     if sys.platform!='win32' and not os.environ.get('TELECOM_CHECK_UI'):return
     import faulthandler
@@ -140,22 +228,38 @@ def windows_ui():
             app.set_scenario_kind('before');app.refresh();app.update()
             assert app.work_view_button.winfo_ismapped()
             app.save_current_drawing(silent=True)
-            before=s.conn.total_changes;opened=[]
-            with patch.object(code['webbrowser'],'open',lambda url:opened.append(url)):path=app.open_work_view()
-            assert path and path.exists() and opened and opened[0].startswith('file:'),(path,opened)
-            assert s.conn.total_changes==before
-            data=embedded(path.read_text(encoding='utf-8'))
+            opened=[]
+            with patch.object(code['webbrowser'],'open',lambda url:opened.append(url)):url=app.open_work_view()
+            assert url and url.startswith('http://127.0.0.1:') and opened==[url],(url,opened)
+            import threading,urllib.request,time
+            token=url.split('t=',1)[1];port=url.split(':')[2].split('/')[0];box={}
+            def client():
+                try:
+                    with urllib.request.urlopen(url,timeout=60) as r:box['page']=r.read().decode('utf-8')
+                    req=urllib.request.Request(f'http://127.0.0.1:{port}/api/core',data=json.dumps({'view':'before','cable':k,'n':1,'id':'WV-9','detail':'웹'}).encode(),method='POST')
+                    req.add_header('X-Telecom-Token',token);req.add_header('Content-Type','application/json')
+                    with urllib.request.urlopen(req,timeout=60) as r:box['edit']=json.loads(r.read().decode('utf-8'))
+                except Exception as error:box['error']=repr(error)
+            t=threading.Thread(target=client);t.start();deadline=time.time()+90
+            while t.is_alive() and time.time()<deadline:app.update();time.sleep(.02)
+            t.join(1);assert 'error' not in box and 'edit' in box,box.get('error')
+            data=embedded(box['page'])
+            assert data['meta']['live'] and data['meta']['token']==token
             assert [c['id'] for c in data['cables']]==[k] and data['cores'][k][0]['b']=='WV-1',data['cores'][k][:1]
+            assert box['edit']['ok'],box['edit']
+            assert s.core(k,1)['core_id']=='WV-9' and s.core(k,1)['detail']=='웹'
+            assert box['edit']['scene']['cores'][k][0]['b']=='WV-9'
             labels_menu=[app.file_menu.entrycget(i,'label') for i in range(app.file_menu.index('end')+1)]
             assert '작업도면 전·중·후 (HTML)' in labels_menu,labels_menu
             assert any(r['id']=='work_view' for r in app.drawing_tool_catalog())
             assert not errors,errors
         finally:app.on_close()
     faulthandler.cancel_dump_traceback_later()
-    print('PASS Windows work drawing button writes the joined page without changing the drawing')
+    print('PASS Windows work drawing button opens the live page and an HTML edit changes the open drawing')
 
 
 if __name__=='__main__':
-    result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(WorkViewTests))
+    suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(WorkViewTests),unittest.defaultTestLoader.loadTestsFromTestCase(WorkEditTests)])
+    result=unittest.TextTestRunner(verbosity=2).run(suite)
     if not result.wasSuccessful():raise SystemExit(1)
     windows_ui()

@@ -114,7 +114,7 @@ def work_view_data(before,after,work=None):
     for cid in list(b_cables)+[k for k in a_cables if k not in b_cables]:
         bc=b_cables.get(cid);ac=a_cables.get(cid)
         role=work_view_role(bc['status'] if bc else None,ac['status'] if ac else None,has_after)
-        row=ac or bc;cables.append(dict(id=cid,role=role,row=row))
+        row=ac or bc;cables.append(dict(id=cid,role=role,row=row,in_before=bool(bc),in_after=bool(ac)))
         b_rows=_work_view_rows(before,cid) if bc else {}
         a_rows=(_work_view_rows(after,cid) if ac else {}) if has_after else b_rows
         phase_store=after if (has_after and ac) else before
@@ -328,6 +328,19 @@ td.no{font-family:var(--mono);font-weight:700;color:var(--ink-2);width:30px}
 .list button .d{display:block;color:var(--ink-3);font-size:11.5px;margin-top:2px}
 .list .ok{padding:10px 12px;border:1px dashed #b7dfc2;border-radius:8px;color:var(--ok);background:#f4fbf6;font-size:12px;margin-bottom:6px}
 .side-f{padding:9px 16px;border-top:1px solid var(--line-2);background:#fbfcfe;font-size:11.5px;color:var(--ink-3)}
+tbody tr.editing td{background:#e8f0ff}
+.editbox{margin:8px 12px;border:1.5px solid var(--accent);border-radius:10px;background:#f8fbff;padding:10px 12px}
+.ed-h{display:flex;gap:8px;align-items:baseline;margin-bottom:8px}.ed-h span{color:var(--ink-3);font-size:11.5px}
+.ed-row{display:grid;grid-template-columns:52px 1fr 1fr;gap:6px;align-items:center;margin-bottom:6px}
+.ed-row small{grid-column:2/-1;color:var(--ink-3);font-size:10.5px;margin-top:-3px}
+.ed-l{font-size:11px;font-weight:700;color:#fff;background:var(--c);border-radius:5px;padding:4px 0;text-align:center}
+.ed-row input{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;min-width:0;background:#fff}
+.ed-row input[data-f="id"]{font-family:var(--mono)}
+.ed-row input:focus{outline:2px solid #bcd3fb;border-color:var(--accent)}
+.ed-b{display:flex;gap:6px;align-items:center;justify-content:flex-end}
+.ed-msg{margin-right:auto;font-size:11.5px;color:var(--ink-3)}.ed-msg.bad{color:var(--bad);font-weight:600}
+.ed-note{font-size:12px;color:var(--ink-3);margin-bottom:6px}
+.mini.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 footer{background:var(--navy);color:#a9b9d4;font-size:11.5px;display:flex;gap:18px;align-items:center;padding:6px 16px;white-space:nowrap;overflow:hidden}
 footer b{color:#fff;font-weight:600}
 footer .r{margin-left:auto}
@@ -343,7 +356,8 @@ footer .r{margin-left:auto}
     </div>
     <div class="file"><span class="name" id="fname"></span><span class="when" id="when"></span></div>
     <div class="actions">
-      <span class="readonly" title="수정은 기존 프로그램 화면에서 합니다">보기 전용</span>
+      <span class="readonly" id="mode-badge" title="수정은 기존 프로그램 화면에서 합니다">보기 전용</span>
+      <button class="btn-top" id="reload" style="display:none" title="프로그램에서 고친 내용을 다시 불러옵니다">새로 고침</button>
       <label class="search"><span style="color:#8ea3c4">⌕</span><input id="q" placeholder="코어ID · 케이블 · 함체 찾기"></label>
       <button class="btn-top" id="copyAll" title="작업전·작업후 배정이 다른 칸을 엑셀에 붙여 넣을 수 있게 복사">절체 목록 복사</button>
       <button class="btn-top" id="fit">전체 보기</button>
@@ -365,7 +379,7 @@ footer .r{margin-left:auto}
 <script id="data" type="application/json">__DATA__</script>
 <script>
 "use strict";
-const D=JSON.parse(document.getElementById('data').textContent);
+let D=JSON.parse(document.getElementById('data').textContent);
 const M=D.meta||{};
 const VIEWS=[['before','작업전','기설 + 철거 표시','#1565c0'],['during','작업중','기설 · 철거 · 신설 모두','#7c3aed'],['after','작업후','기설 + 신설 (철거 숨김)','#15803d']];
 const VISIBLE={before:['기설','철거','절단'],during:['기설','철거','절단','신설'],after:['기설','신설']};
@@ -378,8 +392,11 @@ const svgNS='http://www.w3.org/2000/svg';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function el(t,a,p){const e=document.createElementNS(svgNS,t);for(const k in a)if(a[k]!==undefined&&a[k]!==null)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e}
-const nodes=D.nodes||[],cables=D.cables||[],cores=D.cores||{},issues=D.issues||{},counts=D.counts||{};
-const N=Object.fromEntries(nodes.map(n=>[n.id,n])),C=Object.fromEntries(cables.map(c=>[c.id,c]));
+let nodes,cables,cores,issues,counts,N,C;
+function setData(d){D=Object.assign({},D,d);nodes=D.nodes||[];cables=D.cables||[];cores=D.cores||{};issues=D.issues||{};counts=D.counts||{};
+  N=Object.fromEntries(nodes.map(n=>[n.id,n]));C=Object.fromEntries(cables.map(c=>[c.id,c]))}
+setData({});
+const LIVE=!!M.live;let editN=null,busy=false;
 let view=(()=>{try{const v=localStorage.getItem('workview.mode');return VISIBLE[v]?v:'during'}catch(e){return 'during'}})();
 let sel={kind:null,id:null},query='',hits=new Set(),hitCores=new Set(),focusRows=new Set(),onlyChanged=false;
 
@@ -393,6 +410,7 @@ function badSlots(){const s=new Set();issueList(view).forEach(i=>(i.n||[]).forEa
 
 /* header */
 $('ver').textContent='telecom_core · V'+(M.version||'');
+if(LIVE){const b=$('mode-badge');b.textContent='수정 가능';b.title='케이블을 누르고 코어 줄을 누르면 코어ID·내역을 고칠 수 있어요. 저장은 바로 프로그램 도면에 됩니다.';b.style.color='#86efac';b.style.borderColor='#2f6b45';$('reload').style.display=''}
 $('fname').textContent=M.name||'';
 $('when').textContent=M.created?('만든 시각 '+M.created):'';
 function renderHeader(){
@@ -400,7 +418,7 @@ function renderHeader(){
   $('views').innerHTML=VIEWS.map((x,i)=>`<button class="view${x[0]===view?' on':''}" data-v="${x[0]}" style="--vc:${x[3]}"><span class="n">${i+1}</span>${x[1]} <small>${x[2]}</small></button>`).join('');
   $('views').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
   const note=D.has_after?'현장반영 도면 = 작업전 배정 · 후도면 = 작업후 배정':'후도면이 아직 없어 작업후는 현장반영 배정으로 보여 줍니다';
-  $('strip').innerHTML=`<span>●</span>${v[1]} 보기 · ${esc(v[2])}<span class="right">${esc(note)} · ${esc(M.created||'')} 기준 · 수정은 기존 프로그램에서</span>`;
+  $('strip').innerHTML=`<span>●</span>${v[1]} 보기 · ${esc(v[2])}<span class="right">${esc(note)} · ${esc(D.created||M.created||'')} 기준 · ${LIVE?'코어 줄을 눌러 바로 수정':'수정은 기존 프로그램에서'}</span>`;
 }
 function setView(v){view=v;try{localStorage.setItem('workview.mode',v)}catch(e){}
   if(sel.kind==='cable'&&C[sel.id]&&!shown(C[sel.id]))sel={kind:null,id:null};
@@ -503,6 +521,7 @@ $('fit').onclick=fit;window.addEventListener('resize',fit);
 
 function select(k,id,rows){
   if(drag&&drag.moved)return;
+  if(!(k==='cable'&&sel.kind==='cable'&&sel.id===id))editN=null;
   sel={kind:k,id};focusRows=new Set(rows||[]);draw();renderSide();
 }
 function focusOn(x,y){vb.x=x-vb.w/2+170*vb.w/svg.getBoundingClientRect().width;vb.y=y-vb.h/2;applyView()}
@@ -606,22 +625,24 @@ function renderCable(c){
     body=rows.map(r=>{const k=c.id+'#'+r.n,same=r.s==='유지';
       const pair=same?esc(r.a):(r.b||r.a)?`${r.b?esc(r.b):'<span style="color:#cbd5e1">빈칸</span>'}<span class="arrow">→</span>${r.a?esc(r.a):(c.role==='철거'||c.role==='절단')?'<s>철거</s>':'<span style="color:#cbd5e1">빈칸</span>'}`:'<span style="color:#cbd5e1">-</span>';
       const err=[r.eb&&('작업전: '+r.eb),r.ea&&('작업후: '+r.ea)].filter(Boolean).join(' / ');
-      return `<tr class="${focusRows.has(k)||hitCores.has(k)?'hit':bad.has(k)?'bad':''}"><td class="no">${r.n}</td><td>${fiber(r.n)}</td><td class="cid">${pair}${(r.ph||[]).map(p=>`<span class="ph-tag">${esc(p)}</span>`).join('')}${err?`<span class="sub badtxt">${esc(err)}</span>`:''}</td><td>${stateTag(r.s)}${r.m?`<span class="sub" style="color:${METHOD_C[r.m]}">${esc(r.m)}</span>`:''}</td><td>${doneCell(r.da,r.ra)}</td></tr>`}).join('');
+      return `<tr data-row="${r.n}" class="${editN===r.n?'editing':focusRows.has(k)||hitCores.has(k)?'hit':bad.has(k)?'bad':''}"><td class="no">${r.n}</td><td>${fiber(r.n)}</td><td class="cid">${pair}${(r.ph||[]).map(p=>`<span class="ph-tag">${esc(p)}</span>`).join('')}${err?`<span class="sub badtxt">${esc(err)}</span>`:''}</td><td>${stateTag(r.s)}${r.m?`<span class="sub" style="color:${METHOD_C[r.m]}">${esc(r.m)}</span>`:''}</td><td>${doneCell(r.da,r.ra)}</td></tr>`}).join('');
   }else{
     const b=view==='before';
     head=`<th>#</th><th>색</th><th>코어ID · 내역 (${b?'작업전':'작업후'})</th><th>${b?'분배':'상태'}</th><th>연결</th>`;
     body=rows.map(r=>{const k=c.id+'#'+r.n;
       const tag=b?(r.m?`<span class="st" style="--c:${METHOD_C[r.m]}">${esc(r.m)}</span>`:(r.s==='코어절체'?`<span class="st ghost" style="--c:#7c3aed">후: ${esc(r.a||'빈칸')}</span>`:'')):(stateTag(r.s)+(r.s==='코어절체'?`<span class="sub">전: ${esc(r.b)}</span>`:''));
-      return `<tr class="${focusRows.has(k)||hitCores.has(k)?'hit':bad.has(k)?'bad':''}"><td class="no">${r.n}</td><td>${fiber(r.n)}</td><td class="cid">${idCell(b?r.b:r.a,b?r.bd:r.ad,b?r.eb:r.ea)}${(r.ph||[]).map(p=>`<span class="ph-tag">${esc(p)}</span>`).join('')}</td><td>${tag}</td><td>${b?doneCell(r.db,r.rb):doneCell(r.da,r.ra)}</td></tr>`}).join('');
+      return `<tr data-row="${r.n}" class="${editN===r.n?'editing':focusRows.has(k)||hitCores.has(k)?'hit':bad.has(k)?'bad':''}"><td class="no">${r.n}</td><td>${fiber(r.n)}</td><td class="cid">${idCell(b?r.b:r.a,b?r.bd:r.ad,b?r.eb:r.ea)}${(r.ph||[]).map(p=>`<span class="ph-tag">${esc(p)}</span>`).join('')}</td><td>${tag}</td><td>${b?doneCell(r.db,r.rb):doneCell(r.da,r.ra)}</td></tr>`}).join('');
   }
   $('side').innerHTML=`<div class="side-h"><div class="crumb">케이블 · ${esc(ends(c))}</div>
    <div class="title-row"><h2>${esc(cableName(c))}</h2><span class="pill" style="--c:${ROLE_C[c.role]}">${esc(c.role)}</span>${(c.phases||[]).map(p=>`<span class="pill" style="--c:#7c3aed">${esc(p)}</span>`).join('')}</div>
    <div class="meta"><div><span>규격</span><b>${esc(c.spec)}</b></div><div><span>LOT</span><b>${esc(c.lot||'-')}</b></div><div><span>사용 코어 (${VIEWS.find(x=>x[0]===view)[1]})</span><b>${used} / ${c.size||all.length}</b></div></div></div>
    <div class="split">${Object.entries(cnt).map(([k,v])=>`<span class="chip"><i style="--c:${STATE_C[k]}"></i>${esc(STATE_T[k]||k)} <b>${v}</b></span>`).join('')}
     ${view==='during'?`<span class="chip btn${onlyChanged?' on':''}" id="onlyChg">바뀐 칸만</span>`:''}<button class="mini r" id="copyOne">표 복사</button></div>
+   ${editBox(c)}
    <div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${rows.length?'':'<div class="empty">보여 줄 칸이 없습니다.</div>'}</div>
-   <div class="side-f">${view==='during'?'같은 칸의 작업전·작업후 배정이 다르면 <b>코어절체</b>로 표시합니다 (에러 아님).':'충돌은 이 보기 안에서만 검사합니다 · 미완료에 마우스를 올리면 이유가 보입니다'}</div>`;
+   <div class="side-f">${view==='during'?'같은 칸의 작업전·작업후 배정이 다르면 <b>코어절체</b>로 표시합니다 (에러 아님).':'충돌은 이 보기 안에서만 검사합니다 · 미완료에 마우스를 올리면 이유가 보입니다'}${LIVE?' · 코어 줄을 누르면 고칠 수 있어요':''}</div>`;
   const oc=$('onlyChg');if(oc)oc.onclick=()=>{onlyChanged=!onlyChanged;renderCable(c)};
+  if(LIVE){$('side').querySelectorAll('tr[data-row]').forEach(tr=>{tr.style.cursor='pointer';tr.onclick=()=>{editN=+tr.dataset.row;renderCable(c);const f=$('side').querySelector('.editbox input');if(f)f.focus()}});bindEdit(c)}
   $('copyOne').onclick=()=>copyRows([c],'이 케이블 표');
   const first=$('side').querySelector('tr.hit');if(first)first.scrollIntoView({block:'center'});
 }
@@ -633,6 +654,59 @@ function renderNode(n){
    ${list.map(c=>`<button data-c="${esc(c.id)}"><i style="--c:${ROLE_C[c.role]}"></i><span><span class="t">${esc(cableName(c))}</span><span class="d">${esc(c.role)} · ${esc((N[c.a===n.id?c.b:c.a]||{}).name||'')}</span></span></button>`).join('')}</div>`;
   bindList($('side'));
 }
+
+/* V209 editing (only when opened from the program) */
+function editSides(c){
+  const out=[];
+  if(c.in_before&&(view==='before'||view==='during'))out.push(['before','작업전','현장반영 도면에 저장','b','bd']);
+  if(D.has_after&&c.in_after&&(view==='after'||view==='during'))out.push(['after','작업후','후도면에 저장','a','ad']);
+  return out;
+}
+function editBox(c){
+  if(!LIVE||editN==null)return '';
+  const r=(cores[c.id]||[]).find(x=>x.n===editN);if(!r)return '';
+  const sides=editSides(c);
+  const body=sides.length?sides.map(s=>`<div class="ed-row"><span class="ed-l" style="--c:${s[0]==='before'?'#1565c0':'#15803d'}">${s[1]}</span>
+     <input data-side="${s[0]}" data-f="id" value="${esc(r[s[3]])}" placeholder="코어ID (비우면 배정 해제)">
+     <input data-side="${s[0]}" data-f="detail" value="${esc(r[s[4]])}" placeholder="내역"><small>${s[2]}</small></div>`).join(''):
+     '<div class="ed-note">이 보기에서는 이 케이블을 고칠 수 없어요. 작업전·작업중·작업후 중 이 케이블이 있는 보기로 바꾸세요.</div>';
+  return `<div class="editbox"><div class="ed-h"><b>${editN}번 코어 고치기</b><span>${esc(cableName(c))}</span></div>${body}
+    <div class="ed-b"><span class="ed-msg" id="edMsg"></span><button class="mini" id="edCancel">닫기</button>${sides.length?'<button class="mini primary" id="edSave">저장 (Enter)</button>':''}</div></div>`;
+}
+function bindEdit(c){
+  const save=$('edSave'),cancel=$('edCancel');
+  if(cancel)cancel.onclick=()=>{editN=null;renderCable(c)};
+  if(!save)return;
+  const box=$('side').querySelector('.editbox');
+  box.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();save.click()}if(e.key==='Escape'){editN=null;renderCable(c)}}));
+  save.onclick=async()=>{
+    if(busy)return;
+    const r=(cores[c.id]||[]).find(x=>x.n===editN);const jobs=[];
+    editSides(c).forEach(s=>{const id=box.querySelector(`input[data-side="${s[0]}"][data-f="id"]`).value.trim(),det=box.querySelector(`input[data-side="${s[0]}"][data-f="detail"]`).value.trim();
+      if(id!==(r[s[3]]||'')||det!==(r[s[4]]||''))jobs.push({view:s[0],cable:c.id,n:editN,id,detail:det,label:s[1]})});
+    if(!jobs.length){$('edMsg').textContent='바뀐 내용이 없어요.';return}
+    busy=true;save.disabled=true;$('edMsg').textContent='저장 중…';
+    try{
+      for(const j of jobs){
+        const res=await api('core',j);
+        if(!res.ok){$('edMsg').textContent=j.label+': '+(res.error||'저장하지 못했어요');$('edMsg').className='ed-msg bad';return}
+        applyScene(res.scene);
+      }
+      toast(jobs.map(j=>j.label).join('·')+' '+editN+'번 저장됨');const next=editN+1;
+      editN=(cores[c.id]||[]).some(x=>x.n===next)?next:null;renderAll();
+      const f=$('side').querySelector('.editbox input');if(f)f.focus();
+    }catch(e){$('edMsg').textContent='프로그램과 연결이 끊겼어요. 프로그램이 켜져 있는지 확인하고 다시 여세요.';$('edMsg').className='ed-msg bad'}
+    finally{busy=false;if(save)save.disabled=false}
+  };
+}
+async function api(name,body){
+  const res=await fetch(body===undefined?'/api/'+name:'/api/'+name,{method:body===undefined?'GET':'POST',headers:{'X-Telecom-Token':M.token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store'});
+  return res.json();
+}
+function applyScene(scene){if(scene)setData(scene)}
+function renderAll(){runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot()}
+async function reload(){if(!LIVE||busy)return;try{const res=await api('scene');if(res.ok){applyScene(res.value);renderAll();toast('프로그램 도면을 다시 불러왔어요')}else toast(res.error||'불러오지 못했어요')}catch(e){toast('프로그램과 연결이 끊겼어요')}}
+if(LIVE)$('reload').onclick=reload;
 
 /* copy for Excel */
 function toast(t){const e=$('toast');e.textContent=t;e.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>e.style.display='none',2200)}
@@ -670,7 +744,7 @@ $('q').addEventListener('input',e=>{query=e.target.value.trim();runSearch();draw
 
 function renderFoot(){
   const vis=cables.filter(shown),ro={};vis.forEach(c=>ro[c.role]=(ro[c.role]||0)+1);
-  $('foot').innerHTML=`<span>보기 <b>${VIEWS.find(x=>x[0]===view)[1]}</b></span><span>케이블 <b>${vis.length}</b> (${Object.entries(ro).map(([k,v])=>esc(k)+' '+v).join(' · ')})</span><span>시설 <b>${nodes.filter(nodeShown).length}</b></span><span class="r">통신 코어 도면 V${esc(M.version||'')} · 보기 전용</span>`;
+  $('foot').innerHTML=`<span>보기 <b>${VIEWS.find(x=>x[0]===view)[1]}</b></span><span>케이블 <b>${vis.length}</b> (${Object.entries(ro).map(([k,v])=>esc(k)+' '+v).join(' · ')})</span><span>시설 <b>${nodes.filter(nodeShown).length}</b></span><span class="r">통신 코어 도면 V${esc(M.version||'')} · ${LIVE?'프로그램과 연결됨 · 수정 가능':'보기 전용'}</span>`;
 }
 
 renderHeader();renderDash();renderLegend();renderFoot();draw();renderSide();fit();

@@ -125,6 +125,8 @@ def prepare_payload():
             baseline += '\n\n# BEGIN TELECOM HTML VIEW\n' + (ROOT / 'planning' / 'html_view.py').read_text(encoding='utf-8')
         if version >= 208:
             baseline += '\n\n# BEGIN TELECOM WORK VIEWS\n' + (ROOT / 'planning' / 'work_views.py').read_text(encoding='utf-8')
+        if version >= 209:
+            baseline += '\n\n# BEGIN TELECOM WORK SERVER\n' + (ROOT / 'planning' / 'work_server.py').read_text(encoding='utf-8')
         workflow.write_text(baseline + marker + (ROOT / 'cloud' / 'client.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest = build_release(ROOT / 'app', ROOT / 'dist')
     payload = (ROOT / 'dist' / manifest['package']).read_bytes()

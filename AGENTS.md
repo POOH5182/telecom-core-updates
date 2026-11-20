@@ -1,5 +1,24 @@
 # Telecom Core updater project
 
+- V209 (user: move the whole app to HTML step by step; keep the Tk program
+  and HTML usable together until the user confirms, then remove Tk): first
+  editable step. planning/work_server.py (bundled after work_views, # BEGIN
+  TELECOM WORK SERVER): WorkViewServer(routes) = ThreadingHTTPServer on
+  127.0.0.1:0, random token (page: ?t=, API: X-Telecom-Token header), Host
+  must be 127.0.0.1/localhost:<port>, OPTIONS 405, body <= 64 KiB. Routes run
+  on the Tk thread: run_ui() queues, App pumps every 60 ms (self.after).
+  ValueError -> {ok:false,error}. App.work_view_server_start/open_work_view
+  (opens server.url()), work_view_live_scene, work_view_edit_core(view
+  before|after, cable, n, id, detail): uses Store.update_core with the old
+  status1/status2/signal. The open drawing is edited live then
+  save_current_drawing(silent); the other scenario file is backed up once
+  per session (scenario_folder()/backup/<kind>_before_html_edit_*) and
+  edited through type(store)(path) (history kept in that file), then cloud
+  sync. on_close closes the server. Template: LIVE mode (meta.live/token),
+  rows clickable -> editBox (작업전 / 작업후 inputs per editSides), Enter saves
+  and moves to the next number, 「새로 고침」 refetches /api/scene. Cables carry
+  in_before/in_after. check_work_views.py covers server + edits.
+
 - V208 (user: one work drawing holding 기설/철거/신설 with 작업전/작업중/작업후
   views instead of three drawings; each core slot keeps a separate 작업전 and
   작업후 assignment so renumbering an existing cable is 코어절체, not an error;
