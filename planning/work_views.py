@@ -574,7 +574,7 @@ function setView(v){view=v;try{localStorage.setItem('workview.mode',v)}catch(e){
    Alt+` 케이블, Delete, Esc, Ctrl+Z/Y, Ctrl+F). 1·2·3 alone switch views; with Alt
    they no longer switch views. */
 const KEYS=[['1 · 2 · 3','작업전 · 작업중 · 작업후 보기'],['Alt+1','+ 함체 (빈 곳 누르기)'],['Alt+2','+ RN'],['Alt+3','+ 가입자'],['Alt+`','+ 케이블 (시설 두 개 누르기)'],
-  ['Esc','도구 끝내기 · 선택 해제'],['Delete','선택한 함체·케이블 삭제'],['Ctrl+Z','실행취소 (보기의 도면)'],['Ctrl+Y','다시실행'],['Ctrl+F','찾기'],['F1 · ?','단축키 보기']];
+  ['Esc','도구 끝내기 · 선택 해제'],['Shift+드래그','빈 곳을 끌어 함체 여러 개 고르기 (Shift+클릭: 하나씩 더하기·빼기)'],['G','격자 맞추기 켜기·끄기'],['Delete','선택한 함체·케이블 삭제'],['Ctrl+Z','실행취소 (보기의 도면)'],['Ctrl+Y','다시실행'],['Ctrl+F','찾기'],['F1 · ?','단축키 보기']];
 function toggleHelp(open){const h=$('help');const on=open===undefined?!h.classList.contains('open'):open;
   h.innerHTML=`<div class="box"><h3>단축키</h3><table>${KEYS.map(k=>`<tr><td>${k[0].split(' · ').map(x=>`<kbd>${esc(x)}</kbd>`).join(' ')}</td><td>${esc(k[1])}</td></tr>`).join('')}</table><div style="text-align:right;margin-top:12px"><button class="mini" id="helpClose">닫기 (Esc)</button></div></div>`;
   h.classList.toggle('open',on);if(on)$('helpClose').onclick=()=>toggleHelp(false);}
@@ -606,7 +606,8 @@ document.addEventListener('keydown',e=>{
   if(e.altKey&&!ctrl){const m={Digit1:'hamche',Digit2:'rn',Digit3:'sub',Backquote:'cable',Numpad1:'hamche',Numpad2:'rn',Numpad3:'sub'}[e.code]||{'1':'hamche','2':'rn','3':'sub','`':'cable'}[k];
     if(m){e.preventDefault();if(LIVE)setTool(m)}return}
   if(ctrl)return;
-  if(k==='Escape'){if($('help').classList.contains('open'))toggleHelp(false);else if(LIVE&&(tool!=='select'||cableStart||newCable))setTool('select');else if(sel.kind){select(null,null)}return}
+  if(k==='Escape'){if($('help').classList.contains('open'))toggleHelp(false);else if(LIVE&&(tool!=='select'||cableStart||newCable))setTool('select');else if(msel.size){msel.clear();draw();renderTools()}else if(sel.kind){select(null,null)}return}
+  if(low==='g'&&LIVE&&!e.altKey){toggleGrid();return}
   if(k==='Delete'&&LIVE){e.preventDefault();deleteSelected();return}
   const i=['1','2','3'].indexOf(k);if(i>=0)setView(VIEWS[i][0]);
 });
@@ -638,6 +639,9 @@ function applyGeo(){
 }
 function draw(){
   applyGeo();world.innerHTML='';
+  if(gridOn&&LIVE){const defs=el('defs',{},world),pt=el('pattern',{id:'gridPat',width:GRID,height:GRID,patternUnits:'userSpaceOnUse'},defs);
+    el('path',{d:`M ${GRID} 0 L 0 0 0 ${GRID}`,fill:'none',stroke:'#cfd8e6','stroke-width':1},pt);
+    el('rect',{x:B[0]-20000,y:B[1]-20000,width:B[2]-B[0]+40000,height:B[3]-B[1]+40000,fill:'url(#gridPat)'},world)}
   const bad=badSlots();
   const gC=el('g',{},world),gL=el('g',{},world),gN=el('g',{},world);
   cables.filter(shown).forEach(c=>{
@@ -667,7 +671,7 @@ function draw(){
     L.addEventListener('click',e=>{e.stopPropagation();select('cable',c.id)});
   });
   nodes.filter(nodeShown).forEach(n=>{
-    const on=sel.kind==='node'&&sel.id===n.id,v=n.v||{},x=n.x,y=n.y;
+    const on=sel.kind==='node'&&sel.id===n.id||msel.has(n.id),v=n.v||{},x=n.x,y=n.y;
     const dim=query&&!hits.has('n:'+n.id);
     const g=el('g',{class:'node'+(dim?' dim':'')},gN);
     if(on)el('circle',{cx:x,cy:y,r:44,fill:'none',stroke:'#00a843','stroke-width':3,'stroke-dasharray':'6 4'},g);
@@ -683,9 +687,12 @@ function draw(){
     el('rect',{x:x-lw/2,y:y-61,width:lw,height:24,rx:5,fill:n.name_fill||'#fff',stroke:n.border||'#1565c0','stroke-width':2},g);
     const t=el('text',{x,y:y-49,'dominant-baseline':'central','text-anchor':'middle','font-size':12,'font-weight':'bold',fill:n.name_ink||'#222','font-family':'var(--font)'},g);t.textContent=name;
     if(n.role!=='기설'&&view==='during'){const bw=40;el('rect',{x:x-bw/2,y:y+38,width:bw,height:18,rx:9,fill:ROLE_C[n.role]},g);const bt=el('text',{x,y:y+47,'dominant-baseline':'central','text-anchor':'middle','font-size':10,'font-weight':'bold',fill:'#fff','font-family':'var(--font)'},g);bt.textContent=n.role}
-    g.addEventListener('mousedown',e=>{if(!LIVE||tool!=='select'||e.button!==0)return;e.stopPropagation();nodeDrag={id:n.id,sx:e.clientX,sy:e.clientY,moved:false}});
+    g.addEventListener('mousedown',e=>{if(!LIVE||tool!=='select'||e.button!==0||e.shiftKey)return;e.stopPropagation();
+      nodeDrag={id:n.id,sx:e.clientX,sy:e.clientY,moved:false,group:msel.has(n.id)&&msel.size>1?[...msel]:[n.id]}});
     g.addEventListener('click',e=>{e.stopPropagation();if(justDragged){justDragged=false;return}
-      if(LIVE&&tool==='cable')return pickCableEnd(n);select('node',n.id)});
+      if(LIVE&&tool==='cable')return pickCableEnd(n);
+      if(e.shiftKey){if(msel.has(n.id))msel.delete(n.id);else{msel.add(n.id);if(sel.kind==='node'&&sel.id&&sel.id!==n.id)msel.add(sel.id)}renderTools();return select(msel.size===1?'node':null,msel.size===1?[...msel][0]:null)}
+      msel.clear();select('node',n.id)});
   });
 }
 function star(cx,cy,o,i){const p=[];for(let k=0;k<10;k++){const r=k%2?i:o,a=-Math.PI/2+k*Math.PI/5;p.push((cx+Math.cos(a)*r).toFixed(1)+','+(cy+Math.sin(a)*r).toFixed(1))}return p.join(' ')}
@@ -703,10 +710,21 @@ function fit(){
 function zoomAt(f,cx,cy){const r=svg.getBoundingClientRect();const px=vb.x+(cx-r.left)/r.width*vb.w,py=vb.y+(cy-r.top)/r.height*vb.h;vb.w*=f;vb.h*=f;vb.x=px-(cx-r.left)/r.width*vb.w;vb.y=py-(cy-r.top)/r.height*vb.h;applyView()}
 svg.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.deltaY>0?1.15:1/1.15,e.clientX,e.clientY)},{passive:false});
 let drag=null;
-svg.addEventListener('mousedown',e=>{drag={x:e.clientX,y:e.clientY,vx:vb.x,vy:vb.y,moved:false};svg.classList.add('drag')});
+svg.addEventListener('mousedown',e=>{
+  if(LIVE&&e.shiftKey&&e.button===0&&tool==='select'){const p=worldPoint(e);band={x:p.x,y:p.y,el:el('rect',{x:p.x,y:p.y,width:0,height:0,fill:'#2f5fc4','fill-opacity':.08,stroke:'#2f5fc4','stroke-width':1.5,'stroke-dasharray':'6 4'},world)};return}
+  drag={x:e.clientX,y:e.clientY,vx:vb.x,vy:vb.y,moved:false};svg.classList.add('drag')});
+/* V219 Shift+drag on empty space: box select facilities (Shift+click adds or removes one) */
+let band=null;const msel=new Set();
+function bandRect(p){return {x:Math.min(band.x,p.x),y:Math.min(band.y,p.y),w:Math.abs(p.x-band.x),h:Math.abs(p.y-band.y)}}
+window.addEventListener('mousemove',e=>{if(band){const r=bandRect(worldPoint(e));band.el.setAttribute('x',r.x);band.el.setAttribute('y',r.y);band.el.setAttribute('width',r.w);band.el.setAttribute('height',r.h);return}});
+window.addEventListener('mouseup',e=>{if(!band)return;const r=bandRect(worldPoint(e));band.el.remove();band=null;justBanded=true;setTimeout(()=>justBanded=false,0);
+  nodes.filter(nodeShown).forEach(n=>{if(n.x>=r.x&&n.x<=r.x+r.w&&n.y>=r.y&&n.y<=r.y+r.h)msel.add(n.id)});
+  if(msel.size)toast(`함체 ${msel.size}개 선택 · 하나를 끌면 함께 옮겨져요 · Esc로 해제`);sel={kind:null,id:null};draw();renderSide();renderTools()},true);
+let justBanded=false;
 window.addEventListener('mousemove',e=>{if(nodeDrag)return moveNodeDrag(e);if(!drag)return;const r=svg.getBoundingClientRect();const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>3)drag.moved=true;vb.x=drag.vx-dx/r.width*vb.w;vb.y=drag.vy-dy/r.height*vb.h;applyView()});
 window.addEventListener('mouseup',e=>{if(nodeDrag)return endNodeDrag(e);svg.classList.remove('drag');setTimeout(()=>drag=null,0)});
-svg.addEventListener('click',e=>{if(drag&&drag.moved)return;
+svg.addEventListener('click',e=>{if(drag&&drag.moved||justBanded||band)return;
+  if(!e.target.closest('.node')&&!e.shiftKey&&msel.size){msel.clear();renderTools()}
   if(LIVE&&['hamche','rn','sub'].includes(tool)&&!e.target.closest('.node')){e.stopPropagation();return addNodeAt(e)}
   if(LIVE&&tool==='cable')return;
   select(null,null)},true);
@@ -920,6 +938,8 @@ function renderTools(){
   const hint=tool==='cable'&&cableStart?`${esc((N[cableStart]||{}).name||'')} 다음 시설을 누르세요`:esc(TOOLS.find(t=>t[0]===tool)[2]);
   const locked=!!(D.locks||{})[target()];
   box.innerHTML=TOOLS.map(t=>`<button class="chip btn${t[0]===tool?' on':''}" data-t="${t[0]}" title="${esc(t[2])} (${t[3]})">${t[1]}<kbd>${t[3]}</kbd></button>`).join('')+`<button class="chip btn${locked?' lock-on':''}" id="allLock" title="${targetName()}의 함체 전체 잠금">${locked?'🔒 전체 잠김':'🔓 전체 잠금'}</button><span class="hint">${hint} · ${tool==='select'&&view==='during'?'작업중 배치로 저장 (도면 파일 위치는 그대로)':targetName()+'에 저장'}</span>`;
+  $('allLock').insertAdjacentHTML('afterend',`<button class="chip btn${gridOn?' on':''}" id="gridBtn" title="놓을 때 20칸 격자에 맞춰요 (G)">격자<kbd>G</kbd></button>${msel.size>1?`<span class="chip on" title="Shift+드래그로 고름 · Esc로 해제">${msel.size}개 선택</span>`:''}`);
+  $('gridBtn').onclick=toggleGrid;
   $('allLock').onclick=toggleAllLock;
   box.querySelectorAll('button[data-t]').forEach(b=>b.onclick=()=>setTool(b.dataset.t));
 }
@@ -927,10 +947,13 @@ function worldPoint(e){const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clien
 function moveNodeDrag(e){
   if(Math.abs(e.clientX-nodeDrag.sx)+Math.abs(e.clientY-nodeDrag.sy)>4)nodeDrag.moved=true;
   if(!nodeDrag.moved)return;const p=worldPoint(e);let g=$('ghost');
-  if(!g){g=el('g',{id:'ghost'},world);nodeDrag.lines=cables.filter(c=>shown(c)&&(c.a===nodeDrag.id||c.b===nodeDrag.id)).map(c=>{const o=N[c.a===nodeDrag.id?c.b:c.a];return [el('line',{x1:o.x,y1:o.y,x2:o.x,y2:o.y,stroke:'#2f5fc4','stroke-width':3,'stroke-dasharray':'8 6','stroke-opacity':.7},g),o]});
-    el('circle',{r:34,fill:'#2f5fc4','fill-opacity':.18,stroke:'#2f5fc4','stroke-width':3,'stroke-dasharray':'6 4',id:'ghostDot'},g)}
-  (nodeDrag.lines||[]).forEach(([l])=>{l.setAttribute('x2',p.x);l.setAttribute('y2',p.y)});
-  const dot=$('ghostDot');dot.setAttribute('cx',p.x);dot.setAttribute('cy',p.y);
+  const A=N[nodeDrag.id],dx=p.x-A.x,dy=p.y-A.y,group=new Set(nodeDrag.group);
+  if(!g){g=el('g',{id:'ghost'},world);
+    nodeDrag.lines=cables.filter(c=>shown(c)&&(group.has(c.a)||group.has(c.b))).map(c=>[el('line',{stroke:'#2f5fc4','stroke-width':3,'stroke-dasharray':'8 6','stroke-opacity':.7},g),c]);
+    nodeDrag.dots=nodeDrag.group.map(id=>[el('circle',{r:34,fill:'#2f5fc4','fill-opacity':.18,stroke:'#2f5fc4','stroke-width':3,'stroke-dasharray':'6 4'},g),N[id]])}
+  const at=n=>group.has(n.id)?[snapV(n.x+dx),snapV(n.y+dy)]:[n.x,n.y];
+  (nodeDrag.lines||[]).forEach(([l,c])=>{const a=at(N[c.a]),b=at(N[c.b]);l.setAttribute('x1',a[0]);l.setAttribute('y1',a[1]);l.setAttribute('x2',b[0]);l.setAttribute('y2',b[1])});
+  (nodeDrag.dots||[]).forEach(([d,n])=>{const q=at(n);d.setAttribute('cx',q[0]);d.setAttribute('cy',q[1])});
 }
 /* V217 moves show at once: the page moves the facility and redraws its cables
    itself, then saves in the background (one after another). */
@@ -959,6 +982,10 @@ function moveLocal(id,x,y,v){
   if(v==='during')n.moved=true;
   cables.forEach(c=>{if(c.a!==id&&c.b!==id)return;c.geo=c.geo||{};['before','during','after'].forEach(k=>{const g=geoFor(c,k);if(g)c.geo[k]=g})});
 }
+/* V219 격자 맞추기 (G): facilities snap to a 20 grid when dropped */
+const GRID=20;let gridOn=(()=>{try{return localStorage.getItem('workview.grid')==='1'}catch(e){return false}})();
+function snapV(v){return gridOn?Math.round(v/GRID)*GRID:v}
+function toggleGrid(){gridOn=!gridOn;try{localStorage.setItem('workview.grid',gridOn?'1':'0')}catch(e){}renderTools();draw();toast(gridOn?'격자 맞추기 켬 · 놓을 때 20칸 격자에 맞춰요':'격자 맞추기 끔')}
 let moveChain=Promise.resolve(),movesPending=0;
 function sendMove(body,label){
   movesPending++;
@@ -971,9 +998,11 @@ function sendMove(body,label){
 async function endNodeDrag(e){
   const d=nodeDrag;nodeDrag=null;const g=$('ghost');if(g)g.remove();
   if(!d.moved)return;justDragged=true;setTimeout(()=>justDragged=false,300);
-  const p=worldPoint(e),x=Math.max(40,Math.round(p.x)),y=Math.max(40,Math.round(p.y)),v=view;
-  moveLocal(d.id,x,y,v);draw();renderSide();
-  sendMove({op:'node_move',view:v,node:d.id,x,y,light:true},(v==='during'?'작업중 보기에서만':VIEWS.find(k=>k[0]===v)[1]+' 보기에서')+' 시설을 옮겼어요');
+  const p=worldPoint(e),v=view,A=N[d.id],dx=p.x-A.x,dy=p.y-A.y,label=(v==='during'?'작업중 보기에서만':VIEWS.find(k=>k[0]===v)[1]+' 보기에서');
+  const items=d.group.filter(id=>N[id]).map(id=>({node:id,x:Math.max(40,Math.round(snapV(N[id].x+dx))),y:Math.max(40,Math.round(snapV(N[id].y+dy)))}));
+  items.forEach(i=>moveLocal(i.node,i.x,i.y,v));draw();renderSide();
+  if(items.length===1)sendMove({op:'node_move',view:v,node:items[0].node,x:items[0].x,y:items[0].y,light:true},label+' 시설을 옮겼어요');
+  else sendMove({op:'nodes_move',view:v,items,light:true},label+` 시설 ${items.length}개를 옮겼어요`);
 }
 async function addNodeAt(e){
   const p=worldPoint(e),label={hamche:'함체',rn:'RN',sub:'가입자'}[tool];

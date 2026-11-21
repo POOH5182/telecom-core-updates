@@ -9,6 +9,13 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V219 / 26.11.22.02: msel (Set) multi-select in the HTML page: Shift+drag
+  band on empty space (LIVE, select tool), Shift+click toggles; dragging a
+  member moves the group (nodeDrag.group) -> op nodes_move items[{node,x,y}]
+  (light; whole request refused if any locked hamche; during -> layout in one
+  write_state). Grid snap: gridOn (localStorage workview.grid), GRID=20,
+  snapV() at drop, pattern background, key G.
+
 - V218 / 26.11.22.01: HTML shortcuts match the program: Alt+1/2/3/` tools
   (use e.code Digit1.. so IME/layout don't matter), Esc, Delete, Ctrl+F,
   Ctrl+S (toast), F1/? help overlay, Ctrl+Z/Y -> route 'history'

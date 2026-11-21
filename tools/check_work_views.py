@@ -334,6 +334,25 @@ class WorkEditTests(WorkViewTests):
         for name in ('Alt+1','Digit1','function undoRedo','function deleteSelected','function toggleHelp',"api('history'"):self.assertIn(name,page)
         print('PASS HTML undo/redo per view drawing and program-like shortcuts (Alt+1..3, Alt+`, Delete, Esc, Ctrl+Z/Y/F, F1)')
 
+    def test_group_move_and_grid(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        e=lambda **kw:app.work_view_edit(kw)
+        r=e(op='nodes_move',view='after',items=[{'node':self.nb,'x':400,'y':100},{'node':self.nc,'x':400,'y':500}],light=True)
+        self.assertEqual(r['result'],2);self.assertNotIn('scene',r)
+        self.assertEqual([(self.after.node(k)['x'],self.after.node(k)['y']) for k in (self.nb,self.nc)],[(400,100),(400,500)])
+        r=e(op='nodes_move',view='during',items=[{'node':self.nb,'x':10,'y':700},{'node':self.nc,'x':900,'y':700}])
+        pos={n['id']:n['pos'] for n in r['scene']['nodes']}
+        self.assertEqual((pos[self.nb]['during'],pos[self.nc]['during']),([40,700],[900,700]))
+        self.assertEqual(pos[self.nb]['after'],[400,100],'during group move keeps the drawing')
+        self.after.set_node_locked(self.nc,True);self.after.conn.commit()
+        with self.assertRaises(ValueError):e(op='nodes_move',view='after',items=[{'node':self.nb,'x':1,'y':1},{'node':self.nc,'x':1,'y':1}])
+        self.assertEqual(self.after.node(self.nb)['x'],400,'nothing moves when one is locked')
+        for bad in ([],'x',[{'node':self.nb,'x':'a','y':1}]):
+            with self.assertRaises(ValueError):e(op='nodes_move',view='after',items=bad)
+        page=app.work_view_text(live='T')
+        for name in ('function toggleGrid','function snapV','nodes_move','msel'):self.assertIn(name,page)
+        print('PASS HTML group move (drawing / own during layout, locked refused) and grid snap')
+
     def test_trace_and_work_list(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
         self.before.close()
