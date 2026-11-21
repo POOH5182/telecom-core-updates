@@ -438,6 +438,13 @@ tbody tr.editing td{background:#e8f0ff}
 .ph-row small{color:var(--ink-3);white-space:nowrap}
 .lock-on{background:#facc15!important;border-color:#ca8a04!important;color:#1f2937!important}
 .btn-top.kind{background:#1e3a8a;border-color:#3b5bb5}
+.chip kbd,.help kbd{font-family:var(--mono);font-size:10px;border:1px solid #cbd5e1;border-bottom-width:2px;border-radius:4px;padding:0 4px;margin-left:5px;color:var(--ink-3);background:#f8fafc}
+.chip.on kbd{color:#fff;border-color:rgba(255,255,255,.5);background:transparent}
+.help{position:absolute;inset:0;background:rgba(15,22,38,.45);display:none;align-items:center;justify-content:center;z-index:30}
+.help.open{display:flex}
+.help .box{background:#fff;border-radius:14px;padding:18px 22px;min-width:360px;max-width:min(560px,92vw);box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.help h3{margin:0 0 10px;font-size:15px}.help table{border-collapse:collapse;width:100%;font-size:13px}
+.help td{padding:5px 4px;border-bottom:1px solid #eef2f7}.help td:first-child{white-space:nowrap;width:42%}
 .if-row{display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;margin-bottom:7px}
 .if-row label{font-size:11.5px;color:var(--ink-3)}
 .if-row input,.if-row select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;background:#fff;min-width:0;width:100%}
@@ -496,6 +503,7 @@ footer .r{margin-left:auto}
       <label class="search"><span style="color:#8ea3c4">⌕</span><input id="q" placeholder="코어ID · 케이블 · 함체 찾기"></label>
       <button class="btn-top" id="copyAll" title="작업전·작업후 배정이 다른 칸을 엑셀에 붙여 넣을 수 있게 복사">절체 목록 복사</button>
       <button class="btn-top" id="fit">전체 보기</button>
+      <button class="btn-top" id="helpBtn" title="단축키 보기 (F1)">단축키</button>
     </div>
     <nav class="views" id="views"></nav>
   </header>
@@ -507,6 +515,7 @@ footer .r{margin-left:auto}
       <section class="float zoom"><button id="zin" title="확대">＋</button><div class="pct" id="pct">100%</div><button id="zout" title="축소">－</button></section>
       <section class="float toast" id="toast"></section>
       <section class="float tools" id="tools" style="display:none"></section>
+      <section class="help" id="help"></section>
     </main>
     <aside class="side" id="side"></aside>
   </div>
@@ -561,7 +570,46 @@ function setView(v){view=v;try{localStorage.setItem('workview.mode',v)}catch(e){
   if(sel.kind==='cable'&&C[sel.id]&&!shown(C[sel.id]))sel={kind:null,id:null};
   if(sel.kind==='node'&&N[sel.id]&&!nodeShown(N[sel.id]))sel={kind:null,id:null};
   runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools()}
-document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;const i=['1','2','3'].indexOf(e.key);if(i>=0)setView(VIEWS[i][0])});
+/* V218 shortcuts: the same keys as the program (Alt+1 함체, Alt+2 RN, Alt+3 가입자,
+   Alt+` 케이블, Delete, Esc, Ctrl+Z/Y, Ctrl+F). 1·2·3 alone switch views; with Alt
+   they no longer switch views. */
+const KEYS=[['1 · 2 · 3','작업전 · 작업중 · 작업후 보기'],['Alt+1','+ 함체 (빈 곳 누르기)'],['Alt+2','+ RN'],['Alt+3','+ 가입자'],['Alt+`','+ 케이블 (시설 두 개 누르기)'],
+  ['Esc','도구 끝내기 · 선택 해제'],['Delete','선택한 함체·케이블 삭제'],['Ctrl+Z','실행취소 (보기의 도면)'],['Ctrl+Y','다시실행'],['Ctrl+F','찾기'],['F1 · ?','단축키 보기']];
+function toggleHelp(open){const h=$('help');const on=open===undefined?!h.classList.contains('open'):open;
+  h.innerHTML=`<div class="box"><h3>단축키</h3><table>${KEYS.map(k=>`<tr><td>${k[0].split(' · ').map(x=>`<kbd>${esc(x)}</kbd>`).join(' ')}</td><td>${esc(k[1])}</td></tr>`).join('')}</table><div style="text-align:right;margin-top:12px"><button class="mini" id="helpClose">닫기 (Esc)</button></div></div>`;
+  h.classList.toggle('open',on);if(on)$('helpClose').onclick=()=>toggleHelp(false);}
+$('help').onclick=e=>{if(e.target.id==='help')toggleHelp(false)};
+$('helpBtn').onclick=()=>toggleHelp();
+function setTool(t){tool=t;cableStart=null;newCable=null;svg.style.cursor=tool==='select'?'':'crosshair';renderTools();if(sel.kind===null)renderSide();if(t!=='select')toast(TOOLS.find(x=>x[0]===t)[2])}
+async function undoRedo(redo){
+  if(busy||movesPending){toast('저장 중이에요. 잠시 후 다시 누르세요.');return}busy=true;
+  try{const r=await api('history',{view,redo});if(!r.ok){toast(r.error||'되돌리지 못했어요');return}
+    applyScene(r.scene);if(sel.kind==='cable'&&!C[sel.id]||sel.kind==='node'&&!N[sel.id])sel={kind:null,id:null};
+    busy=false;renderAll();toast(r.result+' · '+r.where)}
+  catch(e){toast('프로그램과 연결이 끊겼어요')}finally{busy=false}
+}
+async function deleteSelected(){
+  const x=sel.kind==='cable'?C[sel.id]:sel.kind==='node'?N[sel.id]:null;if(!x)return;
+  if(!(x.edit||{})[target()]){toast(`이 ${sel.kind==='cable'?'케이블':'시설'}은 ${targetName()}에 없어요`);return}
+  const what=sel.kind==='cable'?`케이블 ${cableName(x)}`:`시설 ${x.name} (연결된 케이블도 함께)`;
+  if(!window.confirm(`${targetName()}에서 ${what}을 지울까요? Ctrl+Z로 되돌릴 수 있어요.`))return;
+  const res=await edit('delete',{kind:sel.kind,id:x.id},'지웠어요');if(res&&res.ok){sel={kind:null,id:null};renderAll()}
+}
+document.addEventListener('keydown',e=>{
+  const k=e.key||'',low=k.toLowerCase(),ctrl=e.ctrlKey||e.metaKey,typing=/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)||e.target.isContentEditable;
+  if(ctrl&&!e.altKey&&low==='f'){e.preventDefault();$('q').focus();$('q').select();return}
+  if(ctrl&&!e.altKey&&low==='s'){e.preventDefault();toast('HTML에서 고친 내용은 바로 저장돼요');return}
+  if(k==='F1'){e.preventDefault();toggleHelp();return}
+  if(typing){if(k==='Escape')e.target.blur();return}
+  if(k==='?'){toggleHelp();return}
+  if(ctrl&&!e.altKey&&(low==='z'||low==='y')){if(!LIVE)return;e.preventDefault();undoRedo(low==='y'||e.shiftKey);return}
+  if(e.altKey&&!ctrl){const m={Digit1:'hamche',Digit2:'rn',Digit3:'sub',Backquote:'cable',Numpad1:'hamche',Numpad2:'rn',Numpad3:'sub'}[e.code]||{'1':'hamche','2':'rn','3':'sub','`':'cable'}[k];
+    if(m){e.preventDefault();if(LIVE)setTool(m)}return}
+  if(ctrl)return;
+  if(k==='Escape'){if($('help').classList.contains('open'))toggleHelp(false);else if(LIVE&&(tool!=='select'||cableStart||newCable))setTool('select');else if(sel.kind){select(null,null)}return}
+  if(k==='Delete'&&LIVE){e.preventDefault();deleteSelected();return}
+  const i=['1','2','3'].indexOf(k);if(i>=0)setView(VIEWS[i][0]);
+});
 
 /* drawing */
 const world=$('world');
@@ -864,16 +912,16 @@ function renderNode(n){
 
 /* V210 drawing tools: move / add facility / add cable / cable and facility info / delete */
 let tool='select',nodeDrag=null,justDragged=false,cableStart=null,newCable=null;
-const TOOLS=[['select','선택·이동','시설을 끌어서 옮겨요 (이 보기에서만)'],['hamche','+ 함체','빈 곳을 누르면 함체를 만들어요'],['rn','+ RN','빈 곳을 누르면 RN을 만들어요'],['sub','+ 가입자','빈 곳을 누르면 가입자를 만들어요'],['cable','+ 케이블','시설 두 개를 차례로 누르세요']];
+const TOOLS=[['select','선택·이동','시설을 끌어서 옮겨요 (이 보기에서만)','Esc'],['hamche','+ 함체','빈 곳을 누르면 함체를 만들어요','Alt+1'],['rn','+ RN','빈 곳을 누르면 RN을 만들어요','Alt+2'],['sub','+ 가입자','빈 곳을 누르면 가입자를 만들어요','Alt+3'],['cable','+ 케이블','시설 두 개를 차례로 누르세요','Alt+`']];
 const target=()=>view==='before'?'before':'after';
 const targetName=()=>view==='before'?'현장반영 도면':'후도면';
 function renderTools(){
   if(!LIVE)return;const box=$('tools');box.style.display='flex';
   const hint=tool==='cable'&&cableStart?`${esc((N[cableStart]||{}).name||'')} 다음 시설을 누르세요`:esc(TOOLS.find(t=>t[0]===tool)[2]);
   const locked=!!(D.locks||{})[target()];
-  box.innerHTML=TOOLS.map(t=>`<button class="chip btn${t[0]===tool?' on':''}" data-t="${t[0]}">${t[1]}</button>`).join('')+`<button class="chip btn${locked?' lock-on':''}" id="allLock" title="${targetName()}의 함체 전체 잠금">${locked?'🔒 전체 잠김':'🔓 전체 잠금'}</button><span class="hint">${hint} · ${tool==='select'&&view==='during'?'작업중 배치로 저장 (도면 파일 위치는 그대로)':targetName()+'에 저장'}</span>`;
+  box.innerHTML=TOOLS.map(t=>`<button class="chip btn${t[0]===tool?' on':''}" data-t="${t[0]}" title="${esc(t[2])} (${t[3]})">${t[1]}<kbd>${t[3]}</kbd></button>`).join('')+`<button class="chip btn${locked?' lock-on':''}" id="allLock" title="${targetName()}의 함체 전체 잠금">${locked?'🔒 전체 잠김':'🔓 전체 잠금'}</button><span class="hint">${hint} · ${tool==='select'&&view==='during'?'작업중 배치로 저장 (도면 파일 위치는 그대로)':targetName()+'에 저장'}</span>`;
   $('allLock').onclick=toggleAllLock;
-  box.querySelectorAll('button[data-t]').forEach(b=>b.onclick=()=>{tool=b.dataset.t;cableStart=null;newCable=null;svg.style.cursor=tool==='select'?'':'crosshair';renderTools();if(sel.kind===null)renderSide()});
+  box.querySelectorAll('button[data-t]').forEach(b=>b.onclick=()=>setTool(b.dataset.t));
 }
 function worldPoint(e){const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(world.getScreenCTM().inverse())}
 function moveNodeDrag(e){
@@ -988,7 +1036,7 @@ function bindInfo(kind,x){
   if(lk)lk.onclick=()=>edit('node_lock',{node:x.id,locked:!v.locked},v.locked?'함체 잠금을 풀었어요':'함체를 잠갔어요',msg);
   box.querySelector('[data-del]').onclick=async()=>{
     const what=kind==='cable'?`케이블 ${cableName(x)}`:`시설 ${x.name} (연결된 케이블도 함께)`;
-    if(!window.confirm(`${targetName()}에서 ${what}을 지울까요? 프로그램에서 실행취소(Ctrl+Z)로 되돌릴 수 있어요.`))return;
+    if(!window.confirm(`${targetName()}에서 ${what}을 지울까요? Ctrl+Z로 되돌릴 수 있어요.`))return;
     const res=await edit('delete',{kind,id:x.id},'지웠어요',msg);if(res&&res.ok){sel={kind:null,id:null};renderAll()}
   };
 }

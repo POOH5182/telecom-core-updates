@@ -42,6 +42,7 @@ class FakeApp:
     work_view_backup=code['App'].work_view_backup
     work_view_switch=code['App'].work_view_switch
     work_view_flush=code['App'].work_view_flush
+    work_view_history=code['App'].work_view_history
     def work_view_show_app(self,payload=None):self.shown=getattr(self,'shown',0)+1;return {'ok':True}
     def after(self,ms,fn):self.later=getattr(self,'later',[])+[fn]
     def load_scenario(self,kind):self.switched=kind;return True
@@ -312,6 +313,26 @@ class WorkEditTests(WorkViewTests):
         page=app.work_view_text(live='T')
         for name in ('function moveLocal','function sendMove','light:true'):self.assertIn(name,page)
         print('PASS facility positions per view: before/after drawings, own during layout, reset, locked refused, quick moves')
+
+    def test_undo_redo_and_shortcuts(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        app.work_view_edit({'op':'node_info','view':'after','node':self.nb,'name':'B-바뀜','status':'기설'})
+        r=app.work_view_history({'view':'after'})
+        self.assertIn('실행취소',r['result']);self.assertEqual(self.after.node(self.nb)['name'],'함체 B')
+        self.assertIn('함체 B',[n['name'] for n in r['scene']['nodes']])
+        r=app.work_view_history({'view':'during','redo':True});self.assertIn('다시실행',r['result']);self.assertEqual(self.after.node(self.nb)['name'],'B-바뀜')
+        self.before.close()
+        try:
+            app.work_view_edit({'op':'node_info','view':'before','node':self.nb,'name':'전-바뀜','status':'기설'})
+            r=app.work_view_history({'view':'before'});self.assertIn('현장반영',r['where'])
+            check=code['Store'](self.folder/'before.sqlite3')
+            try:self.assertEqual(check.node(self.nb)['name'],'함체 B','작업전 undo goes to the field file')
+            finally:check.close()
+        finally:self.before=code['Store'](self.folder/'before.sqlite3')
+        with self.assertRaises(ValueError):app.work_view_history({'view':'xx'})
+        page=app.work_view_text(live='T')
+        for name in ('Alt+1','Digit1','function undoRedo','function deleteSelected','function toggleHelp',"api('history'"):self.assertIn(name,page)
+        print('PASS HTML undo/redo per view drawing and program-like shortcuts (Alt+1..3, Alt+`, Delete, Esc, Ctrl+Z/Y/F, F1)')
 
     def test_trace_and_work_list(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k

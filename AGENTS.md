@@ -9,6 +9,13 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V218 / 26.11.22.01: HTML shortcuts match the program: Alt+1/2/3/` tools
+  (use e.code Digit1.. so IME/layout don't matter), Esc, Delete, Ctrl+F,
+  Ctrl+S (toast), F1/? help overlay, Ctrl+Z/Y -> route 'history'
+  (App.work_view_history: view's drawing like work_view_apply, flushes pending
+  moves first, returns scene). Bare 1/2/3 switch views; modified keys never do.
+  Deleting a facility from 후도면 keeps it in the scene if 현장반영 has it.
+
 - V217 / 26.11.21.03: HTML facility moves without delay. JS moveLocal()
   updates pos (same fallbacks as work_view_positions) and recomputes cable geo
   with a port of parallel_cable_path / cable_path_point / even points (ends in
