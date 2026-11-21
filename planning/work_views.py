@@ -879,13 +879,53 @@ function worldPoint(e){const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clien
 function moveNodeDrag(e){
   if(Math.abs(e.clientX-nodeDrag.sx)+Math.abs(e.clientY-nodeDrag.sy)>4)nodeDrag.moved=true;
   if(!nodeDrag.moved)return;const p=worldPoint(e);let g=$('ghost');
-  if(!g){g=el('g',{id:'ghost'},world);el('circle',{r:34,fill:'#2f5fc4','fill-opacity':.18,stroke:'#2f5fc4','stroke-width':3,'stroke-dasharray':'6 4'},g)}
-  g.setAttribute('transform',`translate(${p.x},${p.y})`);
+  if(!g){g=el('g',{id:'ghost'},world);nodeDrag.lines=cables.filter(c=>shown(c)&&(c.a===nodeDrag.id||c.b===nodeDrag.id)).map(c=>{const o=N[c.a===nodeDrag.id?c.b:c.a];return [el('line',{x1:o.x,y1:o.y,x2:o.x,y2:o.y,stroke:'#2f5fc4','stroke-width':3,'stroke-dasharray':'8 6','stroke-opacity':.7},g),o]});
+    el('circle',{r:34,fill:'#2f5fc4','fill-opacity':.18,stroke:'#2f5fc4','stroke-width':3,'stroke-dasharray':'6 4',id:'ghostDot'},g)}
+  (nodeDrag.lines||[]).forEach(([l])=>{l.setAttribute('x2',p.x);l.setAttribute('y2',p.y)});
+  const dot=$('ghostDot');dot.setAttribute('cx',p.x);dot.setAttribute('cy',p.y);
+}
+/* V217 moves show at once: the page moves the facility and redraws its cables
+   itself, then saves in the background (one after another). */
+const P_GAP=26,P_END=18,P_TAPER=65;
+function ppath(x1,y1,x2,y2,i,n){
+  if(n<=1)return [[x1,y1],[(x1+x2)/2,(y1+y2)/2],[x2,y2]];
+  const dx=x2-x1,dy=y2-y1,len=Math.max(1,Math.hypot(dx,dy)),ux=dx/len,uy=dy/len,px=-uy,py=ux,off=(i-(n-1)/2)*P_GAP,end=Math.max(-P_END,Math.min(P_END,off));
+  if(end===off)return [[x1+px*off,y1+py*off],[x2+px*off,y2+py*off]];
+  const t=Math.min(P_TAPER,len*.25);
+  return [[x1+px*end,y1+py*end],[x1+ux*t+px*off,y1+uy*t+py*off],[x2-ux*t+px*off,y2-uy*t+py*off],[x2+px*end,y2+py*end]];
+}
+function plens(p){const l=[0];for(let i=1;i<p.length;i++)l.push(l[i-1]+Math.hypot(p[i][0]-p[i-1][0],p[i][1]-p[i-1][1]));return l}
+function ppoint(p,t){const l=plens(p),target=Math.max(0,Math.min(1,t))*l[l.length-1];
+  for(let i=1;i<p.length;i++)if(l[i]>=target||i===p.length-1){const r=Math.max(0,Math.min(1,(target-l[i-1])/Math.max(.0001,l[i]-l[i-1])));return [p[i-1][0]+(p[i][0]-p[i-1][0])*r,p[i-1][1]+(p[i][1]-p[i-1][1])*r]}
+  return p[0]}
+function peven(p,sp){const total=plens(p).pop();if(total<=1)return [ppoint(p,.5)];const n=Math.max(1,Math.floor(total/Math.max(1,sp)));return Array.from({length:n},(_,k)=>ppoint(p,(k+.5)/n))}
+function psvg(p){return p.length===3?`M ${p[0][0]} ${p[0][1]} Q ${p[1][0]} ${p[1][1]} ${p[2][0]} ${p[2][1]}`:'M '+p.map(q=>q[0]+' '+q[1]).join(' L ')}
+function geoFor(c,v){
+  const ends=[c.a,c.b].sort(),a=(N[ends[0]].pos||{})[v],b=(N[ends[1]].pos||{})[v];if(!a||!b)return null;  /* same end order as the program (sorted ids) */const [i,n]=c.pi||[0,1],p=ppath(a[0],a[1],b[0],b[1],i,n);
+  return {d:psvg(p),mid:ppoint(p,.5),lab:ppoint(p,n===1?.5:.3+.4*i/Math.max(1,n-1)),marks:(c.role==='철거'||c.role==='절단')?peven(p,150):[]};
+}
+function moveLocal(id,x,y,v){
+  const n=N[id],pos=n.pos=n.pos||{},ed=n.edit||{};pos[v]=[x,y];
+  if(v==='before'){if(!n.moved)pos.during=[x,y];if(!ed.after)pos.after=[x,y]}
+  if(v==='after'&&!ed.before){pos.before=[x,y];if(!n.moved)pos.during=[x,y]}
+  if(v==='during')n.moved=true;
+  cables.forEach(c=>{if(c.a!==id&&c.b!==id)return;c.geo=c.geo||{};['before','during','after'].forEach(k=>{const g=geoFor(c,k);if(g)c.geo[k]=g})});
+}
+let moveChain=Promise.resolve(),movesPending=0;
+function sendMove(body,label){
+  movesPending++;
+  moveChain=moveChain.then(async()=>{
+    try{const r=await api('edit',body);if(!r.ok){toast(r.error||'옮기지 못했어요');movesPending--;if(!movesPending)reload(true);return}toast(label+' · '+r.where+' 저장')}
+    catch(e){toast('프로그램과 연결이 끊겼어요. 프로그램이 켜져 있는지 확인하세요.')}
+    movesPending--;
+  });
 }
 async function endNodeDrag(e){
   const d=nodeDrag;nodeDrag=null;const g=$('ghost');if(g)g.remove();
   if(!d.moved)return;justDragged=true;setTimeout(()=>justDragged=false,300);
-  const p=worldPoint(e);await edit('node_move',{node:d.id,x:p.x,y:p.y},(view==='during'?'작업중 보기에서만':VIEWS.find(x=>x[0]===view)[1]+' 보기에서')+' 시설을 옮겼어요');
+  const p=worldPoint(e),x=Math.max(40,Math.round(p.x)),y=Math.max(40,Math.round(p.y)),v=view;
+  moveLocal(d.id,x,y,v);draw();renderSide();
+  sendMove({op:'node_move',view:v,node:d.id,x,y,light:true},(v==='during'?'작업중 보기에서만':VIEWS.find(k=>k[0]===v)[1]+' 보기에서')+' 시설을 옮겼어요');
 }
 async function addNodeAt(e){
   const p=worldPoint(e),label={hamche:'함체',rn:'RN',sub:'가입자'}[tool];
@@ -1105,7 +1145,7 @@ async function api(name,body){
 }
 function applyScene(scene){if(scene)setData(scene)}
 function renderAll(){runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools()}
-async function reload(quiet){if(!LIVE||busy)return;try{const res=await api('scene');if(res.ok){applyScene(res.value);renderAll();if(quiet!==true)toast('프로그램 도면을 다시 불러왔어요')}else if(quiet!==true)toast(res.error||'불러오지 못했어요')}catch(e){if(quiet!==true)toast('프로그램과 연결이 끊겼어요')}}
+async function reload(quiet){if(!LIVE||busy||movesPending)return;try{const res=await api('scene');if(res.ok){applyScene(res.value);renderAll();if(quiet!==true)toast('프로그램 도면을 다시 불러왔어요')}else if(quiet!==true)toast(res.error||'불러오지 못했어요')}catch(e){if(quiet!==true)toast('프로그램과 연결이 끊겼어요')}}
 if(LIVE){$('reload').onclick=reload;$('showApp').style.display='';$('showApp').onclick=async()=>{try{const r=await api('show_app',{});toast(r.ok?'기존 화면을 앞으로 가져왔어요':(r.error||'열지 못했어요'))}catch(e){toast('프로그램과 연결이 끊겼어요')}}}
 window.addEventListener('focus',()=>{if(LIVE&&!busy&&editN==null&&!newCable&&!document.querySelector('.infoform[open] input:focus'))reload(true)});
 

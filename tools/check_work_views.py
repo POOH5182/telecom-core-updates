@@ -41,6 +41,7 @@ class FakeApp:
     work_view_trace=code['App'].work_view_trace
     work_view_backup=code['App'].work_view_backup
     work_view_switch=code['App'].work_view_switch
+    work_view_flush=code['App'].work_view_flush
     def work_view_show_app(self,payload=None):self.shown=getattr(self,'shown',0)+1;return {'ok':True}
     def after(self,ms,fn):self.later=getattr(self,'later',[])+[fn]
     def load_scenario(self,kind):self.switched=kind;return True
@@ -295,7 +296,22 @@ class WorkEditTests(WorkViewTests):
         for v in ('during','after'):
             with self.assertRaises(ValueError):e(op='node_move',view=v,node=self.nb,x=10,y=10)
         self.assertIn('function applyGeo',app.work_view_text(live='T'))
-        print('PASS facility positions per view: before/after drawings, own during layout, reset, locked refused')
+        # V217: quick moves answer without rebuilding the page data; redraw/save once later
+        self.after.set_node_locked(self.nb,False);self.after.conn.commit()
+        app.refreshed=0;app.saved=0;app.later=[]
+        r=e(op='node_move',view='after',node=self.nb,x=640,y=80,light=True)
+        self.assertNotIn('scene',r);self.assertTrue(r['ok'])
+        self.assertEqual((self.after.node(self.nb)['x'],self.after.node(self.nb)['y']),(640,80))
+        r=e(op='node_move',view='during',node=self.nb,x=660,y=90,light=True);self.assertNotIn('scene',r)
+        self.assertEqual((app.refreshed,app.saved),(0,0),'nothing slow per move')
+        self.assertTrue(app.later);app.later[-1]()
+        self.assertEqual((app.refreshed,app.saved),(1,1),'one redraw + one save after the moves')
+        node={n['id']:n for n in app.work_view_live_scene()['nodes']}[self.nb]
+        self.assertEqual((node['pos']['after'],node['pos']['during']),([640,80],[660,90]))
+        cable={c['id']:c for c in app.work_view_live_scene()['cables']}[self.k];self.assertEqual(cable['pi'],[0,1])
+        page=app.work_view_text(live='T')
+        for name in ('function moveLocal','function sendMove','light:true'):self.assertIn(name,page)
+        print('PASS facility positions per view: before/after drawings, own during layout, reset, locked refused, quick moves')
 
     def test_trace_and_work_list(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k

@@ -9,6 +9,15 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V217 / 26.11.21.03: HTML facility moves without delay. JS moveLocal()
+  updates pos (same fallbacks as work_view_positions) and recomputes cable geo
+  with a port of parallel_cable_path / cable_path_point / even points (ends in
+  sorted-id order like the scene; scene cables carry pi=[index,count]); then
+  sendMove() posts node_move light:true on a serial chain (reload waits while
+  movesPending). work_view_apply(light=True) returns no scene and schedules
+  work_view_flush (1.2 s debounce: one Tk refresh, one save_current_drawing,
+  one cloud sync); non-light edits and on_close flush first.
+
 - V216 / 26.11.21.02: Google 로그인 HTML page (planning/login_view.py, bundled
   >=216 after work_server). CloudLogin (cloud/client.py) starts it only when
   namespace AUTO_HTML_ON_START and login_view_enabled(root home data/
