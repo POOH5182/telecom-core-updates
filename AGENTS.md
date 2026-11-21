@@ -9,6 +9,11 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V220 / 26.11.22.03: 작업차수 filter in the HTML page (works read-only too):
+  #phasebar chips from c.phases (short names) of shown cables; phaseF
+  (localStorage workview.phase) dims other cables and facilities not on a
+  phase cable; side phaseList + copy (rows whose r.ph has the phase).
+
 - V219 / 26.11.22.02: msel (Set) multi-select in the HTML page: Shift+drag
   band on empty space (LIVE, select tool), Shift+click toggles; dragging a
   member moves the group (nodeDrag.group) -> op nodes_move items[{node,x,y}]

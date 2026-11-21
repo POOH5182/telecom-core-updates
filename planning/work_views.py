@@ -426,6 +426,9 @@ td.no{font-family:var(--mono);font-weight:700;color:var(--ink-2);width:30px}
 .list .ok{padding:10px 12px;border:1px dashed #b7dfc2;border-radius:8px;color:var(--ok);background:#f4fbf6;font-size:12px;margin-bottom:6px}
 .side-f{padding:9px 16px;border-top:1px solid var(--line-2);background:#fbfcfe;font-size:11.5px;color:var(--ink-3)}
 tbody tr.editing td{background:#e8f0ff}
+.phasebar{left:50%;transform:translateX(-50%);bottom:64px;display:flex;gap:4px;align-items:center;padding:5px 8px;border-radius:999px;max-width:calc(100% - 660px);flex-wrap:wrap}
+.phasebar b{font-size:11.5px;color:#6d28d9;margin-right:4px}
+.phasebar .chip.on{background:#7c3aed;border-color:#7c3aed;color:#fff}
 .tools{left:50%;transform:translateX(-50%);top:16px;display:flex;gap:4px;align-items:center;padding:5px 6px;border-radius:999px;max-width:calc(100% - 660px);flex-wrap:wrap}
 .tools .hint{font-size:11.5px;color:var(--ink-3);padding:0 8px;white-space:nowrap}
 .infoform{margin:8px 12px 0;border:1px solid var(--line);border-radius:10px;background:#fbfcfe;padding:8px 12px}
@@ -516,6 +519,7 @@ footer .r{margin-left:auto}
       <section class="float toast" id="toast"></section>
       <section class="float tools" id="tools" style="display:none"></section>
       <section class="help" id="help"></section>
+      <section class="float phasebar" id="phasebar" style="display:none"></section>
     </main>
     <aside class="side" id="side"></aside>
   </div>
@@ -569,7 +573,7 @@ function renderHeader(){
 function setView(v){view=v;try{localStorage.setItem('workview.mode',v)}catch(e){}
   if(sel.kind==='cable'&&C[sel.id]&&!shown(C[sel.id]))sel={kind:null,id:null};
   if(sel.kind==='node'&&N[sel.id]&&!nodeShown(N[sel.id]))sel={kind:null,id:null};
-  runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools()}
+  runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools();renderPhaseBar()}
 /* V218 shortcuts: the same keys as the program (Alt+1 함체, Alt+2 RN, Alt+3 가입자,
    Alt+` 케이블, Delete, Esc, Ctrl+Z/Y, Ctrl+F). 1·2·3 alone switch views; with Alt
    they no longer switch views. */
@@ -637,7 +641,19 @@ function applyGeo(){
   nodes.forEach(n=>{const p=(n.pos||{})[view];if(p){n.x=p[0];n.y=p[1]}});
   cables.forEach(c=>{const g=(c.geo||{})[view];if(g){c.d=g.d;c.mid=g.mid;c.lab=g.lab;c.marks=g.marks}});
 }
+/* V220 작업차수 filter: only cables (and their facilities) of one phase stay bright */
+let phaseF=(()=>{try{return localStorage.getItem('workview.phase')||''}catch(e){return ''}})(),phaseNodes=new Set();
+function renderPhaseBar(){
+  const names=[...new Set(cables.filter(shown).flatMap(c=>c.phases||[]))].sort((a,b)=>a.localeCompare(b,'ko',{numeric:true}));
+  const bar=$('phasebar');if(phaseF&&!names.includes(phaseF))names.unshift(phaseF);
+  if(!names.length){bar.style.display='none';return}
+  const count=n=>cables.filter(c=>shown(c)&&(c.phases||[]).includes(n)).length;
+  bar.style.display='flex';bar.innerHTML=`<b>작업차수</b><button class="chip btn${phaseF?'':' on'}" data-ph="">전체</button>`+names.map(n=>`<button class="chip btn${n===phaseF?' on':''}" data-ph="${esc(n)}">${esc(n)} <small>${count(n)}</small></button>`).join('');
+  bar.querySelectorAll('[data-ph]').forEach(b=>b.onclick=()=>{phaseF=b.dataset.ph;try{localStorage.setItem('workview.phase',phaseF)}catch(e){}draw();renderPhaseBar();renderSide();
+    if(phaseF)toast(`${phaseF} 케이블 ${count(phaseF)}개만 진하게 보여요`)});
+}
 function draw(){
+  phaseNodes=new Set();if(phaseF)cables.forEach(c=>{if(shown(c)&&(c.phases||[]).includes(phaseF)){phaseNodes.add(c.a);phaseNodes.add(c.b)}});
   applyGeo();world.innerHTML='';
   if(gridOn&&LIVE){const defs=el('defs',{},world),pt=el('pattern',{id:'gridPat',width:GRID,height:GRID,patternUnits:'userSpaceOnUse'},defs);
     el('path',{d:`M ${GRID} 0 L 0 0 0 ${GRID}`,fill:'none',stroke:'#cfd8e6','stroke-width':1},pt);
@@ -646,7 +662,7 @@ function draw(){
   const gC=el('g',{},world),gL=el('g',{},world),gN=el('g',{},world);
   cables.filter(shown).forEach(c=>{
     const on=sel.kind==='cable'&&sel.id===c.id,st=cableStyle(c);
-    const dim=query&&!hits.has('c:'+c.id);
+    const dim=query&&!hits.has('c:'+c.id)||phaseF&&!(c.phases||[]).includes(phaseF);
     const g=el('g',{class:'cable'+(dim?' dim':''),'data-id':c.id},gC);
     const hasBad=(cores[c.id]||[]).some(r=>bad.has(c.id+'#'+r.n));
     if(hasBad)el('path',{d:c.d,fill:'none',stroke:'#ff1744','stroke-width':16,'stroke-opacity':.28},g);
@@ -672,7 +688,7 @@ function draw(){
   });
   nodes.filter(nodeShown).forEach(n=>{
     const on=sel.kind==='node'&&sel.id===n.id||msel.has(n.id),v=n.v||{},x=n.x,y=n.y;
-    const dim=query&&!hits.has('n:'+n.id);
+    const dim=query&&!hits.has('n:'+n.id)||phaseF&&!phaseNodes.has(n.id);
     const g=el('g',{class:'node'+(dim?' dim':'')},gN);
     if(on)el('circle',{cx:x,cy:y,r:44,fill:'none',stroke:'#00a843','stroke-width':3,'stroke-dasharray':'6 4'},g);
     if(query&&hits.has('n:'+n.id))el('circle',{cx:x,cy:y,r:46,fill:'#ffd54f','fill-opacity':.45},g);
@@ -803,7 +819,7 @@ function renderSide(){
   if(sideTab==='work'){$('side').innerHTML=head+matchList()+workPanel();bindTabs();bindWork();bindList($('side'));return}
   if(sideTab==='trace'){$('side').innerHTML=head+tracePanel();bindTabs();bindTrace();return}
   $('side').innerHTML=head+`
-   ${matchList()}
+   ${matchList()}${phaseList()}
    <div class="list">
     <h4 style="--c:#c62828">이 보기 안의 충돌 <span class="cnt">${list.length}</span></h4>
     ${list.length?list.map((i,k)=>item(i,k)).join(''):`<div class="ok">겹치거나 오류인 코어가 없습니다.</div>`}
@@ -812,7 +828,7 @@ function renderSide(){
     <div class="empty" style="padding:16px 8px">케이블을 누르면 칸마다 <b>작업전 → 작업후</b> 배정이 나옵니다.<br>숫자키 <b>1·2·3</b>으로 보기를 바꿀 수 있어요.</div>
    </div>`;
   $('side').querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>goIssue(all[+b.dataset.i]));
-  bindTabs();bindList($('side'));
+  bindTabs();bindList($('side'));bindPhaseList();
 }
 /* V213 side tabs: 작업 목록 (작업필요코어 진행표) and 코어 추적 */
 let sideTab='check',workFilter='todo',traceId='',traceResult=null,traceSet=new Set(),traceBusy=false;
@@ -862,6 +878,12 @@ async function runTrace(){
   }catch(e){toast('프로그램과 연결이 끊겼어요')}
   finally{traceBusy=false;sel={kind:null,id:null};sideTab='trace';draw();renderSide()}
 }
+function phaseList(){
+  if(!phaseF)return'';const cs=cables.filter(c=>shown(c)&&(c.phases||[]).includes(phaseF));
+  return `<div class="list" style="flex:none;max-height:40%"><div class="crumb" style="margin:4px 2px 8px;display:flex;align-items:center;gap:8px"><span style="white-space:nowrap">작업차수 ${esc(phaseF)} · 케이블 ${cs.length}개</span><button class="mini" id="phCopy" style="margin-left:auto;flex:none;width:auto">이 차수 표 복사</button></div>`+
+   cs.map(c=>`<button data-c="${esc(c.id)}"><i style="--c:#7c3aed"></i><span><span class="t">${esc(cableName(c))}</span><span class="d">${esc(c.role)} · ${esc(ends(c))}</span></span></button>`).join('')+'</div>';
+}
+function bindPhaseList(){const b=$('phCopy');if(b)b.onclick=()=>copyRows(cables.filter(c=>shown(c)&&(c.phases||[]).includes(phaseF)),`작업차수 ${phaseF} 표`,r=>(r.ph||[]).includes(phaseF))}
 function matchList(){
   if(!query)return'';
   const cs=cables.filter(c=>shown(c)&&hits.has('c:'+c.id)),ns=nodes.filter(n=>nodeShown(n)&&hits.has('n:'+n.id));
@@ -1221,7 +1243,7 @@ async function api(name,body){
   return res.json();
 }
 function applyScene(scene){if(scene)setData(scene)}
-function renderAll(){runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools()}
+function renderAll(){runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools();renderPhaseBar()}
 async function reload(quiet){if(!LIVE||busy||movesPending)return;try{const res=await api('scene');if(res.ok){applyScene(res.value);renderAll();if(quiet!==true)toast('프로그램 도면을 다시 불러왔어요')}else if(quiet!==true)toast(res.error||'불러오지 못했어요')}catch(e){if(quiet!==true)toast('프로그램과 연결이 끊겼어요')}}
 if(LIVE){$('reload').onclick=reload;$('showApp').style.display='';$('showApp').onclick=async()=>{try{const r=await api('show_app',{});toast(r.ok?'기존 화면을 앞으로 가져왔어요':(r.error||'열지 못했어요'))}catch(e){toast('프로그램과 연결이 끊겼어요')}}}
 window.addEventListener('focus',()=>{if(LIVE&&!busy&&editN==null&&!newCable&&!document.querySelector('.infoform[open] input:focus'))reload(true)});
@@ -1265,7 +1287,7 @@ function renderFoot(){
   $('foot').innerHTML=`<span>보기 <b>${VIEWS.find(x=>x[0]===view)[1]}</b></span><span>케이블 <b>${vis.length}</b> (${Object.entries(ro).map(([k,v])=>esc(k)+' '+v).join(' · ')})</span><span>시설 <b>${nodes.filter(nodeShown).length}</b></span><span class="r">통신 코어 도면 ${esc(M.version||'')} · ${LIVE?'프로그램과 연결됨 · 수정 가능':'보기 전용'}</span>`;
 }
 
-renderHeader();renderDash();renderLegend();renderFoot();draw();renderSide();renderTools();fit();
+renderHeader();renderDash();renderLegend();renderFoot();draw();renderSide();renderTools();renderPhaseBar();fit();
 </script>
 </body>
 </html>

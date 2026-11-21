@@ -351,7 +351,8 @@ class WorkEditTests(WorkViewTests):
             with self.assertRaises(ValueError):e(op='nodes_move',view='after',items=bad)
         page=app.work_view_text(live='T')
         for name in ('function toggleGrid','function snapV','nodes_move','msel'):self.assertIn(name,page)
-        print('PASS HTML group move (drawing / own during layout, locked refused) and grid snap')
+        for name in ('function renderPhaseBar','function phaseList','workview.phase'):self.assertIn(name,page)
+        print('PASS HTML group move (drawing / own during layout, locked refused), grid snap, phase filter')
 
     def test_trace_and_work_list(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
