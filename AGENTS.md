@@ -9,6 +9,13 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V222 / 26.11.22.05: route 'route' (App.work_view_route, read-only like
+  work_view_trace) -> cable_route_overview(view store, cable) -> {cable,
+  colors, ends[{node,name,arrive,stop,cores[{n,id,detail,state,end}]}],
+  summary, count}. JS: route/routeEnd, glow by colors, end labels under the
+  facilities (routeLabels at the end of draw()), routePanel in the cable side,
+  Esc / view change clears it. LIVE only.
+
 - V221 / 26.11.22.04: op core_signal (view before/after, cable, n, signal
   key '', on, off, exception, error): empty number -> set_empty_core_signal,
   else update_core with the new signal (CableDialog.apply_core rules). When

@@ -573,7 +573,7 @@ function renderHeader(){
   if(LIVE){const k=D.kind||M.kind,b=$('switchKind');b.style.display='';b.textContent=`열린 도면: ${k==='after'?'후도면':'현장반영'} ⇄`;b.title=`프로그램에서 ${k==='after'?'현장반영':'후도면'}(으)로 전환합니다 · 작업차수는 열린 도면 기준`}
   $('strip').innerHTML=`<span>●</span>${v[1]} 보기 · ${esc(v[2])}<span class="right">${esc(note)} · ${esc(D.created||M.created||'')} 기준 · ${LIVE?'코어 줄을 눌러 바로 수정':'수정은 기존 프로그램에서'}</span>`;
 }
-function setView(v){view=v;try{localStorage.setItem('workview.mode',v)}catch(e){}
+function setView(v){view=v;if(route&&route.view!==v){route=null;routeEnd=null}try{localStorage.setItem('workview.mode',v)}catch(e){}
   if(sel.kind==='cable'&&C[sel.id]&&!shown(C[sel.id]))sel={kind:null,id:null};
   if(sel.kind==='node'&&N[sel.id]&&!nodeShown(N[sel.id]))sel={kind:null,id:null};
   runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools();renderPhaseBar()}
@@ -613,7 +613,7 @@ document.addEventListener('keydown',e=>{
   if(e.altKey&&!ctrl){const m={Digit1:'hamche',Digit2:'rn',Digit3:'sub',Backquote:'cable',Numpad1:'hamche',Numpad2:'rn',Numpad3:'sub'}[e.code]||{'1':'hamche','2':'rn','3':'sub','`':'cable'}[k];
     if(m){e.preventDefault();if(LIVE)setTool(m)}return}
   if(ctrl)return;
-  if(k==='Escape'){if($('help').classList.contains('open'))toggleHelp(false);else if(LIVE&&(tool!=='select'||cableStart||newCable))setTool('select');else if(msel.size){msel.clear();draw();renderTools()}else if(sel.kind){select(null,null)}return}
+  if(k==='Escape'){if($('help').classList.contains('open'))toggleHelp(false);else if(LIVE&&(tool!=='select'||cableStart||newCable))setTool('select');else if(route){route=null;routeEnd=null;draw();renderSide()}else if(msel.size){msel.clear();draw();renderTools()}else if(sel.kind){select(null,null)}return}
   if(low==='g'&&LIVE&&!e.altKey){toggleGrid();return}
   if(k==='Delete'&&LIVE){e.preventDefault();deleteSelected();return}
   const i=['1','2','3'].indexOf(k);if(i>=0)setView(VIEWS[i][0]);
@@ -639,6 +639,34 @@ function cableBadge(c){
   if(view==='before'&&(c.role==='철거'||c.role==='절단')){const k=rows.filter(r=>r.b).length;return k?[c.role+' '+k+'코어',ROLE_C[c.role]]:null}
   if(view==='after'&&c.role==='신설'){const k=rows.filter(r=>r.a).length;return ['신설 '+k+'코어','#b45309']}
   return null;
+}
+/* V222 케이블 전체 경로: where every used core of the chosen cable goes, and how
+   many arrive at each end (program rules, read-only) */
+let route=null,routeEnd=null,routeBusy=false;
+function routeLabels(){
+  if(!route)return;const gR=el('g',{},world);
+  route.ends.forEach(e=>{const n=N[e.node];if(!n||!nodeShown(n))return;
+    const t=e.arrive?`${e.arrive}코어 도착`+(e.stop?` · 미접속 ${e.stop}`:''):`미접속 ${e.stop}코어`,w=t.length*11+18,bad=e.stop&&!e.arrive,on=routeEnd===e.node;
+    const g=el('g',{style:'cursor:pointer'},gR);el('rect',{x:n.x-w/2,y:n.y+40,width:w,height:24,rx:12,fill:bad?'#fff1f2':'#eef6ff',stroke:bad?'#c62828':'#1565c0','stroke-width':on?3:1.8},g);
+    const tx=el('text',{x:n.x,y:n.y+52.5,'dominant-baseline':'central','text-anchor':'middle','font-size':12,'font-weight':'bold',fill:bad?'#c62828':'#1565c0','font-family':'var(--font)'},g);tx.textContent=t;
+    g.addEventListener('click',ev=>{ev.stopPropagation();routeEnd=e.node;select('cable',route.cable)})});
+}
+async function showRoute(c){
+  if(routeBusy)return;if(route&&route.cable===c.id){route=null;routeEnd=null;draw();renderCable(c);return}
+  routeBusy=true;
+  try{const r=await api('route',{view,cable:c.id});if(!r.ok){toast(r.error||'경로를 찾지 못했어요');return}route=r.value;route.view=view;routeEnd=null;toast(route.summary.split(' · 케이블 창')[0]);
+    draw();renderCable(c)}catch(e){toast('프로그램과 연결이 끊겼어요')}finally{routeBusy=false}
+}
+function routePanel(c){
+  if(!route||route.cable!==c.id)return'';
+  const list=route.ends.map(e=>`<button data-end="${esc(e.node)}"${routeEnd===e.node?' class="on"':''}><i style="--c:${e.stop&&!e.arrive?'#c62828':'#1565c0'}"></i><span><span class="t">${esc(e.name)}</span><span class="d">${e.arrive?e.arrive+'코어 도착':''}${e.arrive&&e.stop?' · ':''}${e.stop?'미접속 '+e.stop+'코어':''}</span></span></button>`).join('');
+  const sel=route.ends.find(e=>e.node===routeEnd);
+  const cores=sel?`<div class="crumb" style="margin:8px 2px 6px">${esc(sel.name)}에 오는 이 케이블 번호</div><table><tbody>${sel.cores.map(x=>`<tr><td class="no">${x.n}</td><td class="cid">${esc(x.id||'-')}${x.detail?`<span class="sub">${esc(x.detail)}</span>`:''}</td><td>${x.state==='미접속'?'<span class="done" style="color:var(--bad)">미접속</span>':'도착'}</td><td class="sub">${esc(x.end)}</td></tr>`).join('')}</tbody></table>`:'<div class="ed-note">말단을 누르면 그곳에 오는 번호가 보여요.</div>';
+  return `<details class="infoform" open id="routeBox"><summary>전체 경로 · 말단 ${route.ends.length}곳 <small>${esc(VIEWS.find(x=>x[0]===route.view)[1])} 기준</small></summary><div class="list" style="padding:0">${list}</div>${cores}</details>`;
+}
+function bindRoute(c){
+  const b=$('routeBtn');if(b)b.onclick=()=>showRoute(c);
+  const box=$('routeBox');if(box)box.querySelectorAll('[data-end]').forEach(x=>x.onclick=()=>{routeEnd=x.dataset.end;draw();renderCable(c)});
 }
 function applyGeo(){
   nodes.forEach(n=>{const p=(n.pos||{})[view];if(p){n.x=p[0];n.y=p[1]}});
@@ -670,6 +698,7 @@ function draw(){
     const hasBad=(cores[c.id]||[]).some(r=>bad.has(c.id+'#'+r.n));
     if(hasBad)el('path',{d:c.d,fill:'none',stroke:'#ff1744','stroke-width':16,'stroke-opacity':.28},g);
     if(traceSet.has(c.id))el('path',{d:c.d,fill:'none',stroke:'#a855f7','stroke-width':14,'stroke-opacity':.55},g);
+    if(route&&route.colors[c.id])el('path',{d:c.d,fill:'none',stroke:route.colors[c.id],'stroke-width':14,'stroke-opacity':.5},g);
     if(on)el('path',{d:c.d,fill:'none',stroke:'#b9f6ca','stroke-width':16},g);
     if(query&&hits.has('c:'+c.id))el('path',{d:c.d,fill:'none',stroke:'#ffd54f','stroke-width':16,'stroke-opacity':.8},g);
     if(view==='during'&&c.role==='신설')el('path',{d:c.d,fill:'none',stroke:'#fff','stroke-width':st.w+4},g);
@@ -710,9 +739,11 @@ function draw(){
       nodeDrag={id:n.id,sx:e.clientX,sy:e.clientY,moved:false,group:msel.has(n.id)&&msel.size>1?[...msel]:[n.id]}});
     g.addEventListener('click',e=>{e.stopPropagation();if(justDragged){justDragged=false;return}
       if(LIVE&&tool==='cable')return pickCableEnd(n);
+      if(route&&route.ends.some(x=>x.node===n.id)){routeEnd=n.id;select('cable',route.cable);return}
       if(e.shiftKey){if(msel.has(n.id))msel.delete(n.id);else{msel.add(n.id);if(sel.kind==='node'&&sel.id&&sel.id!==n.id)msel.add(sel.id)}renderTools();return select(msel.size===1?'node':null,msel.size===1?[...msel][0]:null)}
       msel.clear();select('node',n.id)});
   });
+  routeLabels();
 }
 function star(cx,cy,o,i){const p=[];for(let k=0;k<10;k++){const r=k%2?i:o,a=-Math.PI/2+k*Math.PI/5;p.push((cx+Math.cos(a)*r).toFixed(1)+','+(cy+Math.sin(a)*r).toFixed(1))}return p.join(' ')}
 
@@ -932,7 +963,8 @@ function renderCable(c){
    <div class="title-row"><h2>${esc(cableName(c))}</h2><span class="pill" style="--c:${ROLE_C[c.role]}">${esc(c.role)}</span>${(c.phases||[]).map(p=>`<span class="pill" style="--c:#7c3aed">${esc(p)}</span>`).join('')}</div>
    <div class="meta"><div><span>규격</span><b>${esc(c.spec)}</b></div><div><span>LOT</span><b>${esc(c.lot||'-')}</b></div><div><span>사용 코어 (${VIEWS.find(x=>x[0]===view)[1]})</span><b>${used} / ${c.size||all.length}</b></div></div></div>
    <div class="split">${Object.entries(cnt).map(([k,v])=>`<span class="chip"><i style="--c:${STATE_C[k]}"></i>${esc(STATE_T[k]||k)} <b>${v}</b></span>`).join('')}
-    ${view==='during'?`<span class="chip btn${onlyChanged?' on':''}" id="onlyChg">바뀐 칸만</span>`:''}<button class="mini r" id="copyOne">표 복사</button></div>
+    ${view==='during'?`<span class="chip btn${onlyChanged?' on':''}" id="onlyChg">바뀐 칸만</span>`:''}${LIVE?`<button class="mini r" id="routeBtn" title="이 케이블의 사용 코어가 어디까지 가는지 도면에 표시">${route&&route.cable===c.id?'경로 끄기':'전체 경로'}</button>`:''}<button class="mini${LIVE?'':' r'}" id="copyOne">표 복사</button></div>
+   ${routePanel(c)}
    ${infoForm('cable',c)}
    ${phaseRow(c)}
    ${editBox(c)}
@@ -940,7 +972,7 @@ function renderCable(c){
    <div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${rows.length?'':'<div class="empty">보여 줄 칸이 없습니다.</div>'}</div>
    <div class="side-f">${view==='during'?'같은 칸의 작업전·작업후 배정이 다르면 <b>코어절체</b>로 표시합니다 (에러 아님).':'충돌은 이 보기 안에서만 검사합니다 · 미완료에 마우스를 올리면 이유가 보입니다'}${LIVE?' · 코어 줄을 누르면 고칠 수 있어요':''}</div>`;
   const oc=$('onlyChg');if(oc)oc.onclick=()=>{onlyChanged=!onlyChanged;renderCable(c)};
-  bindInfo('cable',c);bindPaste(c);bindPhaseRow(c);
+  bindInfo('cable',c);bindPaste(c);bindPhaseRow(c);bindRoute(c);
   if(LIVE){$('side').querySelectorAll('tr[data-row]').forEach(tr=>{tr.style.cursor='pointer';tr.onclick=()=>{editN=+tr.dataset.row;renderCable(c);const f=$('side').querySelector('.editbox input');if(f)f.focus()}});bindEdit(c)}
   $('copyOne').onclick=()=>copyRows([c],'이 케이블 표');
   const first=$('side').querySelector('tr.hit');if(first)first.scrollIntoView({block:'center'});

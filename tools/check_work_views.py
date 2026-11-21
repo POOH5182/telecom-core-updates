@@ -43,6 +43,7 @@ class FakeApp:
     work_view_switch=code['App'].work_view_switch
     work_view_flush=code['App'].work_view_flush
     work_view_history=code['App'].work_view_history
+    work_view_route=code['App'].work_view_route
     def work_view_show_app(self,payload=None):self.shown=getattr(self,'shown',0)+1;return {'ok':True}
     def after(self,ms,fn):self.later=getattr(self,'later',[])+[fn]
     def load_scenario(self,kind):self.switched=kind;return True
@@ -379,6 +380,22 @@ class WorkEditTests(WorkViewTests):
         page=app.work_view_text(live='T')
         for name in ('function sigTag','data-f="signal"',"op:'core_signal'"):self.assertIn(name,page)
         print('PASS HTML core signal per view (ON/OFF/exception/error, empty number, mix warning asks first)')
+
+    def test_cable_route(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        r=app.work_view_route({'view':'after','cable':self.k})['value']
+        self.assertEqual(r['cable'],self.k);self.assertEqual(r['colors'][self.k],'#7c3aed');self.assertGreater(r['count'],0)
+        names={e['name']:e for e in r['ends']}
+        self.assertTrue(names,'ends listed');self.assertTrue(all('cores' in e and 'arrive' in e for e in r['ends']))
+        self.before.close()
+        try:
+            b=app.work_view_route({'view':'before','cable':self.r})['value'];self.assertIn(self.r,b['colors'])
+            with self.assertRaises(ValueError):app.work_view_route({'view':'after','cable':'nope'})
+            with self.assertRaises(ValueError):app.work_view_route({'view':'after','cable':''})
+        finally:self.before=code['Store'](self.folder/'before.sqlite3')
+        page=app.work_view_text(live='T')
+        for name in ('function showRoute','function routePanel',"api('route'"):self.assertIn(name,page)
+        print('PASS HTML cable route overview per view (colors, ends with arriving cores)')
 
     def test_trace_and_work_list(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
