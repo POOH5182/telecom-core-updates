@@ -9,6 +9,13 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V221 / 26.11.22.04: op core_signal (view before/after, cable, n, signal
+  key '', on, off, exception, error): empty number -> set_empty_core_signal,
+  else update_core with the new signal (CableDialog.apply_core rules). When
+  the view's drawing is the open one and signal_mix_warning has text and no
+  confirm flag, it returns {ok:false, confirm:text}; the page asks and resends
+  confirm:true. Scene core rows carry sb/sa; editBox has a signal select.
+
 - V220 / 26.11.22.03: 작업차수 filter in the HTML page (works read-only too):
   #phasebar chips from c.phases (short names) of shown cables; phaseF
   (localStorage workview.phase) dims other cables and facilities not on a

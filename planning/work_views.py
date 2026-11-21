@@ -126,6 +126,7 @@ def work_view_data(before,after,work=None):
             db,rb=_work_view_done(b_report,slot) if bc else (None,'')
             da,ra=_work_view_done(a_report,slot) if (has_after and ac) else (None,'')
             result.append(dict(n=n,b=bid,bd=str(b.get('detail') or ''),a=aid,ad=str(a.get('detail') or ''),
+                               sb=str(b.get('signal') or '') if bc else '',sa=str(a.get('signal') or '') if (has_after and ac) else str(b.get('signal') or ''),
                                s=work_view_state(role,bid,aid),m=methods.get(slot,''),db=db,rb=rb,da=da,ra=ra,
                                eb=b_errors.get(slot,'') if bc else '',ea=a_errors.get(slot,'') if (has_after and ac) else '',
                                ph=_work_view_phases(phase_store,a if (has_after and ac) else b) if (aid or bid) else []))
@@ -448,6 +449,8 @@ tbody tr.editing td{background:#e8f0ff}
 .help .box{background:#fff;border-radius:14px;padding:18px 22px;min-width:360px;max-width:min(560px,92vw);box-shadow:0 20px 50px rgba(0,0,0,.3)}
 .help h3{margin:0 0 10px;font-size:15px}.help table{border-collapse:collapse;width:100%;font-size:13px}
 .help td{padding:5px 4px;border-bottom:1px solid #eef2f7}.help td:first-child{white-space:nowrap;width:42%}
+.sg{display:inline-block;font-size:10px;font-weight:800;border-radius:4px;padding:0 4px;margin-left:4px;color:#fff;vertical-align:1px}
+.ed-row.sig4{grid-template-columns:52px 1fr 1fr 78px}.ed-row.sig4 small{grid-column:2/-1}
 .if-row{display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;margin-bottom:7px}
 .if-row label{font-size:11.5px;color:var(--ink-3)}
 .if-row input,.if-row select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;background:#fff;min-width:0;width:100%}
@@ -898,7 +901,10 @@ function bindList(root){
 }
 function doneCell(d,reason){return d===true?'<span class="done" style="color:var(--ok)">완료</span>':d===false?`<span class="done" style="color:var(--bad)" title="${esc(reason)}">미완료</span>`:'<span style="color:#cbd5e1">-</span>'}
 function stateTag(s){return s?`<span class="st${s==='유지'?' ghost':''}" style="--c:${STATE_C[s]||'#64748b'}">${esc(STATE_T[s]||s)}</span>`:''}
-function idCell(id,det,err){return (id?esc(id):'<span style="color:#cbd5e1">-</span>')+(det?`<span class="sub">${esc(det)}</span>`:'')+(err?`<span class="sub badtxt">${esc(err)}</span>`:'')}
+/* V221 신호 (ON·OFF·예외·오류), same colours as the program's core table */
+const SIGNALS=[['','확인필요'],['on','ON'],['off','OFF'],['exception','예외'],['error','오류']],SIG_C={on:'#d00000',off:'#111111',exception:'#64748b',error:'#6a1b9a'};
+function sigTag(v){return v&&SIG_C[v]?`<span class="sg" style="background:${SIG_C[v]}">${esc((SIGNALS.find(x=>x[0]===v)||[,v])[1])}</span>`:''}
+function idCell(id,det,err,sig){return (id?esc(id):'<span style="color:#cbd5e1">-</span>')+sigTag(sig)+(det?`<span class="sub">${esc(det)}</span>`:'')+(err?`<span class="sub badtxt">${esc(err)}</span>`:'')}
 function rowsFor(c){
   let rows=cores[c.id]||[];
   if(view==='during'&&onlyChanged)rows=rows.filter(r=>r.s&&r.s!=='유지');
@@ -920,7 +926,7 @@ function renderCable(c){
     head=`<th>#</th><th>색</th><th>코어ID · 내역 (${b?'작업전':'작업후'})</th><th>${b?'분배':'상태'}</th><th>연결</th>`;
     body=rows.map(r=>{const k=c.id+'#'+r.n;
       const tag=b?(r.m?`<span class="st" style="--c:${METHOD_C[r.m]}">${esc(r.m)}</span>`:(r.s==='코어절체'?`<span class="st ghost" style="--c:#7c3aed">후: ${esc(r.a||'빈칸')}</span>`:'')):(stateTag(r.s)+(r.s==='코어절체'?`<span class="sub">전: ${esc(r.b)}</span>`:''));
-      return `<tr data-row="${r.n}" class="${editN===r.n?'editing':focusRows.has(k)||hitCores.has(k)?'hit':bad.has(k)?'bad':''}"><td class="no">${r.n}</td><td>${fiber(r.n)}</td><td class="cid">${idCell(b?r.b:r.a,b?r.bd:r.ad,b?r.eb:r.ea)}${(r.ph||[]).map(p=>`<span class="ph-tag">${esc(p)}</span>`).join('')}</td><td>${tag}</td><td>${b?doneCell(r.db,r.rb):doneCell(r.da,r.ra)}</td></tr>`}).join('');
+      return `<tr data-row="${r.n}" class="${editN===r.n?'editing':focusRows.has(k)||hitCores.has(k)?'hit':bad.has(k)?'bad':''}"><td class="no">${r.n}</td><td>${fiber(r.n)}</td><td class="cid">${idCell(b?r.b:r.a,b?r.bd:r.ad,b?r.eb:r.ea,b?r.sb:r.sa)}${(r.ph||[]).map(p=>`<span class="ph-tag">${esc(p)}</span>`).join('')}</td><td>${tag}</td><td>${b?doneCell(r.db,r.rb):doneCell(r.da,r.ra)}</td></tr>`}).join('');
   }
   $('side').innerHTML=`<div class="side-h"><div class="crumb">케이블 · ${esc(ends(c))}</div>
    <div class="title-row"><h2>${esc(cableName(c))}</h2><span class="pill" style="--c:${ROLE_C[c.role]}">${esc(c.role)}</span>${(c.phases||[]).map(p=>`<span class="pill" style="--c:#7c3aed">${esc(p)}</span>`).join('')}</div>
@@ -1197,9 +1203,11 @@ function editBox(c){
   if(!LIVE||editN==null)return '';
   const r=(cores[c.id]||[]).find(x=>x.n===editN);if(!r)return '';
   const sides=editSides(c);
-  const body=sides.length?sides.map(s=>`<div class="ed-row"><span class="ed-l" style="--c:${s[0]==='before'?'#1565c0':'#15803d'}">${s[1]}</span>
+  const sigKey=s=>s[0]==='before'?'sb':'sa';
+  const body=sides.length?sides.map(s=>`<div class="ed-row sig4"><span class="ed-l" style="--c:${s[0]==='before'?'#1565c0':'#15803d'}">${s[1]}</span>
      <input data-side="${s[0]}" data-f="id" value="${esc(r[s[3]])}" placeholder="코어ID (비우면 배정 해제)">
-     <input data-side="${s[0]}" data-f="detail" value="${esc(r[s[4]])}" placeholder="내역"><small>${s[2]}</small></div>`).join(''):
+     <input data-side="${s[0]}" data-f="detail" value="${esc(r[s[4]])}" placeholder="내역">
+     <select data-side="${s[0]}" data-f="signal" title="신호">${SIGNALS.map(x=>`<option value="${x[0]}"${(r[sigKey(s)]||'')===x[0]?' selected':''}>${x[1]}</option>`).join('')}</select><small>${s[2]}</small></div>`).join(''):
      '<div class="ed-note">이 보기에서는 이 케이블을 고칠 수 없어요. 작업전·작업중·작업후 중 이 케이블이 있는 보기로 바꾸세요.</div>';
   const pid=view==='before'?r.b:(r.a||r.b),P=D.phase||{names:[]};
   const phase=pid?`<div class="ed-row"><span class="ed-l" style="--c:#7c3aed">차수</span><select id="edPhase" style="grid-column:2/-1">${phaseOptions((P.core||{})[pid]||'','케이블 차수 따름')}</select><small>코어 ${esc(pid)} · 이 코어가 지나가는 모든 케이블에 표시${P.names.length?'':' · 차수가 없으면 「+ 차수」로 만드세요'}</small></div>`:'';
@@ -1221,13 +1229,18 @@ function bindEdit(c){
   save.onclick=async()=>{
     if(busy)return;
     const r=(cores[c.id]||[]).find(x=>x.n===editN);const jobs=[];
+    const sigs=[];
     editSides(c).forEach(s=>{const id=box.querySelector(`input[data-side="${s[0]}"][data-f="id"]`).value.trim(),det=box.querySelector(`input[data-side="${s[0]}"][data-f="detail"]`).value.trim();
-      if(id!==(r[s[3]]||'')||det!==(r[s[4]]||''))jobs.push({view:s[0],cable:c.id,n:editN,id,detail:det,label:s[1]})});
+      const sg=box.querySelector(`select[data-side="${s[0]}"][data-f="signal"]`).value;
+      if(id!==(r[s[3]]||'')||det!==(r[s[4]]||''))jobs.push({view:s[0],cable:c.id,n:editN,id,detail:det,label:s[1]});
+      if(sg!==(r[s[0]==='before'?'sb':'sa']||''))sigs.push({op:'core_signal',view:s[0],cable:c.id,n:editN,signal:sg,label:s[1]+' 신호'})});
+    jobs.push(...sigs);
     if(!jobs.length){$('edMsg').textContent='바뀐 내용이 없어요.';return}
     busy=true;save.disabled=true;$('edMsg').textContent='저장 중…';
     try{
       for(const j of jobs){
-        const res=await api('core',j);
+        let res=await api(j.op==='core_signal'?'edit':'core',j);
+        if(!res.ok&&res.confirm){if(!window.confirm(res.confirm))continue;res=await api('edit',Object.assign({},j,{confirm:true}))}
         if(!res.ok){$('edMsg').textContent=j.label+': '+(res.error||'저장하지 못했어요');$('edMsg').className='ed-msg bad';return}
         applyScene(res.scene);
       }

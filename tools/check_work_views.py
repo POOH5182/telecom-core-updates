@@ -354,6 +354,32 @@ class WorkEditTests(WorkViewTests):
         for name in ('function renderPhaseBar','function phaseList','workview.phase'):self.assertIn(name,page)
         print('PASS HTML group move (drawing / own during layout, locked refused), grid snap, phase filter')
 
+    def test_core_signal(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        e=lambda **kw:app.work_view_edit(kw)
+        r=e(op='core_signal',view='after',cable=self.k,n=1,signal='on',confirm=True)
+        self.assertEqual(self.after.core(self.k,1)['signal'],'on');self.assertIn('ON',r['result'])
+        row={x['n']:x for x in r['scene']['cores'][self.k]}[1];self.assertEqual(row['sa'],'on')
+        r=e(op='core_signal',view='after',cable=self.k,n=10,signal='off',confirm=True)
+        self.assertEqual((self.after.core(self.k,10)['signal'],self.after.core(self.k,10)['core_id']),('off',''),'empty number keeps only its signal')
+        self.before.close()
+        try:
+            e(op='core_signal',view='before',cable=self.k,n=2,signal='exception')
+            check=code['Store'](self.folder/'before.sqlite3')
+            try:self.assertEqual(check.core(self.k,2)['signal'],'exception')
+            finally:check.close()
+        finally:self.before=code['Store'](self.folder/'before.sqlite3')
+        row={x['n']:x for x in app.work_view_live_scene()['cores'][self.k]}[2];self.assertEqual(row['sb'],'exception')
+        with patch.object(wf,'signal_mix_warning',lambda store,slots,signal:'섞임'):
+            r=e(op='core_signal',view='after',cable=self.k,n=2,signal='off')
+            self.assertEqual(r,{'ok':False,'confirm':'섞임'});self.assertNotEqual(self.after.core(self.k,2)['signal'],'off')
+        for bad in (dict(signal='zz',n=1),dict(signal='on',n=0),dict(signal='on',n=99)):
+            with self.assertRaises(ValueError):e(op='core_signal',view='after',cable=self.k,confirm=True,**bad)
+        with self.assertRaises(ValueError):e(op='core_signal',view='during',cable=self.k,n=1,signal='on')
+        page=app.work_view_text(live='T')
+        for name in ('function sigTag','data-f="signal"',"op:'core_signal'"):self.assertIn(name,page)
+        print('PASS HTML core signal per view (ON/OFF/exception/error, empty number, mix warning asks first)')
+
     def test_trace_and_work_list(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
         self.before.close()
