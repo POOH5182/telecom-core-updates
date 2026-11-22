@@ -388,7 +388,6 @@ class WorkEditTests(WorkViewTests):
         print('PASS HTML core signal per view (ON/OFF/exception/error, empty number, mix warning asks first)')
 
     def test_one_drawing(self):
-        """V223: 작업전·작업후 act as one drawing over the two files."""
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
         e=lambda **kw:app.work_view_edit(kw)
         def field():return code['Store'](self.folder/'before.sqlite3')
@@ -426,10 +425,9 @@ class WorkEditTests(WorkViewTests):
             finally:check.close()
             self.assertIsNone(self.after.cable(cid))
         finally:self.before=code['Store'](self.folder/'before.sqlite3')
-        print('PASS one drawing: shared adds/info/delete in both files, 신설 only after, cores follow only when equal')
+        print('PASS one drawing: shared adds/info/delete in both files, new cables only after, cores follow only when equal')
 
     def test_after_made_on_first_edit(self):
-        """V223: no 후도면 button; the first 작업후 edit prepares it."""
         self.after.close();(self.folder/'after.sqlite3').unlink()
         app=FakeApp(self.before,'before',self.folder);app.cable_k=self.k
         try:
@@ -443,7 +441,17 @@ class WorkEditTests(WorkViewTests):
             page=app.work_view_text(live='T')
             self.assertIn('x.edit.after=x.edit.before',page);self.assertIn('모든 보기에서 지워져요',page)
         finally:self.after=code['Store'](self.folder/'after.sqlite3')
-        print('PASS 작업후 file is made automatically on the first 작업중/작업후 edit')
+        print('PASS after file is made automatically on the first during/after edit')
+
+    def test_phase_stages(self):
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        code['workflow'].set_cable_phase(self.after,[self.s,self.r],'1차작업');self.after.conn.commit()
+        scene=app.work_view_live_scene()
+        self.assertEqual(scene['phase']['cable'].get(self.s),'1차작업')
+        page=app.work_view_text(live='T')
+        for name in ('function stageRole','철거대기','철거 (최종)','function stepStage','id="stages"',"k==='['||k===']'",'남은 코어','비움 완료','function slotDone'):
+            self.assertIn(name,page)
+        print('PASS phase stage view: steps per phase, removed cables kept (waiting) until the final removal step')
 
     def test_cable_route(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k

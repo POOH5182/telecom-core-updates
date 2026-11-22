@@ -9,6 +9,15 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V224 / 26.11.22.07: page-only 차수 단계 보기. #stages bar (stageList from
+  D.phase.names up to the last used phase: 「n 중」,「n 후」, then 철거 (최종)).
+  stage={i,m:'during'|'after'} or {final:true}; underlying view = during
+  (final = after) so edits still go to 후도면. stageRole(c): 기설 always;
+  신설 hidden before its phase, '신설' during, '신설완료' after; 철거/절단 '기설'
+  before, role during, '철거대기' after, hidden only at final. cablePhase =
+  own phase, else earliest core phase, else last phase. idOf uses slotDone
+  (core phase first). setView clears stage; [ ] keys step.
+
 - V223 / 26.11.22.06 ONE DRAWING: work_view_apply(view,label,action,light,
   mirror=None). After the view's file (before -> 현장반영, during/after ->
   후도면) commits, mirror(other_store, other_side, result, store) runs in its

@@ -375,6 +375,14 @@ header.top{background:var(--navy);color:#fff;display:grid;grid-template-columns:
 .view.on{color:#fff;font-weight:700;background:rgba(255,255,255,.07)}
 .view.on .n{background:var(--vc);border-color:var(--vc);color:#fff}
 .view.on small{color:#c8d6ee}
+.stages{grid-column:1/-1;display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:0 -16px;padding:6px 16px;border-top:1px solid #1d2f4f;font-size:12px;color:#8ea3c4}
+.stages b{color:#c4b5fd;margin-right:6px;font-size:12px}
+.stages .stg{border:1px solid #2a3d61;background:none;color:#c8d6ee;border-radius:999px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer}
+.stages .stg.on{background:#7c3aed;border-color:#7c3aed;color:#fff;font-weight:700}
+.stages .stg.fin{border-style:dashed}
+.stages .ar{color:#475a7d}
+.stages .warn{margin-left:8px;color:#fbbf24}
+.stages small{margin-left:auto;color:#64748b}
 .view.on::after{content:"";position:absolute;left:12%;right:12%;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--vc)}
 .body{display:grid;grid-template-columns:1fr 440px;min-height:0}
 .canvas-wrap{position:relative;min-width:0;overflow:hidden;background:radial-gradient(circle at 1px 1px,#d5dde8 1px,transparent 1.2px) 0 0/24px 24px,#f7f9fc}
@@ -548,6 +556,7 @@ footer .r{margin-left:auto}
       <button class="btn-top" id="helpBtn" title="단축키 보기 (F1)">단축키</button>
     </div>
     <nav class="views" id="views"></nav>
+    <nav class="stages" id="stages" style="display:none"></nav>
   </header>
   <div class="body">
     <main class="canvas-wrap" id="canvas">
@@ -571,7 +580,7 @@ let D=JSON.parse(document.getElementById('data').textContent);
 const M=D.meta||{};
 const VIEWS=[['before','작업전','기설 + 철거 표시','#1565c0'],['during','작업중','기설 · 철거 · 신설 모두','#7c3aed'],['after','작업후','기설 + 신설 (철거 숨김)','#15803d']];
 const VISIBLE={before:['기설','철거','절단'],during:['기설','철거','절단','신설'],after:['기설','신설']};
-const ROLE_C={'기설':'#1565c0','철거':'#424242','절단':'#d32f2f','신설':'#f59e0b'};
+const ROLE_C={'기설':'#1565c0','철거':'#424242','절단':'#d32f2f','신설':'#f59e0b','신설완료':'#1565c0','철거대기':'#64748b'};
 const STATE_C={'유지':'#94a3b8','코어절체':'#7c3aed','해제':'#64748b','신규배정':'#0d9488','신설':'#f59e0b','철거':'#424242','절단':'#d32f2f'};
 const STATE_T={'유지':'유지','코어절체':'코어절체','해제':'배정 해제','신규배정':'새로 배정','신설':'신설 배정','철거':'철거','절단':'절단'};
 const METHOD_C={'절단절체':'#d32f2f','코어절체':'#2f5fc4'};
@@ -585,17 +594,64 @@ function setData(d){D=Object.assign({},D,d);nodes=D.nodes||[];cables=D.cables||[
   // V223 one drawing: before the 작업후 file exists it starts as a copy of 작업전,
   // so 작업중·작업후 can already edit everything; the first edit prepares it.
   if(!D.has_after)for(const x of [...nodes,...cables])if(x.edit&&x.edit.before&&!x.edit.after)x.edit.after=x.edit.before;
+  for(const id in cores)(cores[id]||[]).forEach(r=>r._c=id);
   N=Object.fromEntries(nodes.map(n=>[n.id,n]));C=Object.fromEntries(cables.map(c=>[c.id,c]))}
 setData({});
 const LIVE=!!M.live;let editN=null,busy=false;
 let view=(()=>{try{const v=localStorage.getItem('workview.mode');return VISIBLE[v]?v:'during'}catch(e){return 'during'}})();
 let sel={kind:null,id:null},query='',hits=new Set(),hitCores=new Set(),focusRows=new Set(),onlyChanged=false;
 
-const shown=c=>VISIBLE[view].includes(c.role);
-const nodeShown=n=>view==='during'||(view==='before'?n.role!=='신설':n.role!=='철거');
+const shown=c=>stage?stageRole(c)!==null:VISIBLE[view].includes(c.role);
+const nodeShown=n=>stage?stageNode(n):view==='during'||(view==='before'?n.role!=='신설':n.role!=='철거');
+/* V224 작업차수 단계 보기: 작업전 → 1차 중 → 1차 후(=2차 전) → … → 철거(최종).
+   A cable's 차수 = its own 차수, else the earliest 차수 of its cores; none = the
+   last 차수. 신설 appears from its 차수; 철거·절단 stay drawn as 「철거 대기」 after
+   their 차수 until the last 「철거」 step (the field removes them all at the end).
+   A core slot shows its 작업후 value once its 차수 (core 차수 first) is done. */
+let stage=null;
+const pshort=n=>{n=String(n||'').trim();return n.endsWith('작업')&&n.slice(0,-2).trim()?n.slice(0,-2).trim():n};
+function stageNames(){const names=((D.phase||{}).names||[]),used=new Set(cables.flatMap(c=>c.phases||[]));let last=-1;names.forEach((n,i)=>{if(used.has(pshort(n)))last=i});return names.slice(0,last+1)}
+function phaseIdx(list){const ns=stageNames().map(pshort);let best=null;(list||[]).forEach(p=>{const i=ns.indexOf(pshort(p));if(i>=0&&(best===null||i<best))best=i});return best}
+function cablePhase(c){const own=((D.phase||{}).cable||{})[c.id];let i=own?phaseIdx([own]):null;if(i===null)i=phaseIdx(c.phases);return i===null?stageNames().length-1:i}
+const cableUnphased=c=>!((D.phase||{}).cable||{})[c.id]&&phaseIdx(c.phases)===null;
+const pdone=q=>stage.final||q<stage.i||(q===stage.i&&stage.m==='after');
+const pnow=q=>!stage.final&&q===stage.i&&stage.m==='during';
+function stageRole(c){const q=cablePhase(c),r=c.role;
+  if(r==='신설')return stage.final?'신설':pdone(q)?'신설완료':pnow(q)?'신설':null;
+  if(r==='철거'||r==='절단')return stage.final?null:pdone(q)?'철거대기':pnow(q)?r:'기설';
+  return '기설'}
+function stageNode(n){
+  if(n.role==='철거')return !stage.final;
+  if(n.role!=='신설')return true;
+  const mine=cables.filter(c=>c.a===n.id||c.b===n.id);return !mine.length||mine.some(c=>stageRole(c)!==null)}
+const roleOf=c=>stage?stageRole(c):c.role;
+function slotDone(r){const c=C[r._c];let q=phaseIdx(r.ph);if(q===null)q=c?cablePhase(c):0;return pdone(q)}
+function stageList(){const ns=stageNames();if(!ns.length)return [];const out=[];
+  ns.forEach((n,i)=>{const s=pshort(n);out.push({i,m:'during',t:s+' 중',k:`${i}d`});out.push({i,m:'after',t:s+' 후',k:`${i}a`})});
+  out.push({final:true,t:'철거 (최종)',k:'f'});return out}
+const stageKey=s=>s?(s.final?'f':`${s.i}${s.m==='during'?'d':'a'}`):'';
+function stageText(){if(!stage)return '';const ns=stageNames().map(pshort);
+  if(stage.final)return '철거 (최종) · 모든 차수 끝 · 철거 케이블을 한 번에 없앤 모습';
+  const n=ns[stage.i],next=ns[stage.i+1];
+  return stage.m==='during'?`${n} 작업중 · ${n} 철거·신설 표시 · ${n} 이후 차수는 아직 안 보임`:`${n} 작업후${next?' = '+next+' 작업전':''} · ${n} 신설은 기설처럼 · 철거 케이블은 「철거 대기」로 남김`}
+function setStage(s){if(!s){setView(view);return}
+  const k=stageKey(s),hit=stageList().find(x=>x.k===k);if(!hit){setView(view);return}
+  stage=hit;const v=hit.final?'after':'during';view=v;if(route){route=null;routeEnd=null}
+  if(sel.kind==='cable'&&C[sel.id]&&!shown(C[sel.id]))sel={kind:null,id:null};
+  if(sel.kind==='node'&&N[sel.id]&&!nodeShown(N[sel.id]))sel={kind:null,id:null};
+  runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools();renderPhaseBar()}
+function stepStage(d){const list=stageList();if(!list.length){toast('작업차수가 있는 케이블이 없어요');return}
+  const i=list.findIndex(x=>x.k===stageKey(stage));const j=i<0?(d>0?0:list.length-1):i+d;
+  if(j<0){stage=null;setView('before');return}if(j>=list.length)return;setStage(list[j])}
+function renderStages(){const box=$('stages');if(!box)return;const list=stageList();
+  if(!list.length){box.style.display='none';return}box.style.display='flex';
+  const cur=stageKey(stage),un=cables.filter(c=>(c.role==='신설'||c.role==='철거'||c.role==='절단')&&cableUnphased(c)).length;
+  box.innerHTML=`<b>차수 단계</b><button class="stg${!stage&&view==='before'?' on':''}" data-k="">작업전</button>`+list.map(x=>`<span class="ar">▸</span><button class="stg${x.k===cur?' on':''}${x.final?' fin':''}" data-k="${x.k}">${esc(x.t)}</button>`).join('')+
+    (un?`<span class="warn" title="차수가 없는 신설·철거 케이블은 마지막 차수로 봐요">차수 없음 ${un}개 → 마지막 차수</span>`:'')+`<small>[ ] 키로 이동</small>`;
+  box.querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(!k){stage=null;setView('before');return}setStage(stageList().find(x=>x.k===k))})}
 const cableName=c=>(c.spec||'')+(c.cable_id?' ('+c.cable_id+')':'');
 const ends=c=>`${(N[c.a]||{}).name||'?'} ↔ ${(N[c.b]||{}).name||'?'}`;
-function idOf(r){return view==='before'?r.b:r.a}
+function idOf(r){return stage?(slotDone(r)?r.a:r.b):view==='before'?r.b:r.a}
 function issueList(v){return v==='before'?(issues.before||[]):v==='after'?(issues.after||[]):[...(issues.before||[]).map(x=>({...x,v:'작업전'})),...(issues.after||[]).map(x=>({...x,v:'작업후'}))]}
 function badSlots(){const s=new Set();issueList(view).forEach(i=>(i.n||[]).forEach(n=>s.add(i.cable+'#'+n)));if(view!=='before')(issues.broken||[]).forEach(i=>s.add(i.cable+'#'+i.n[0]));return s}
 
@@ -606,20 +662,21 @@ $('fname').textContent=M.name||'';
 $('when').textContent=M.created?('만든 시각 '+M.created):'';
 function renderHeader(){
   const v=VIEWS.find(x=>x[0]===view);document.getElementById('app').style.setProperty('--vc',v[3]);
-  $('views').innerHTML=VIEWS.map((x,i)=>`<button class="view${x[0]===view?' on':''}" data-v="${x[0]}" style="--vc:${x[3]}"><span class="n">${i+1}</span>${x[1]} <small>${x[2]}</small></button>`).join('');
+  $('views').innerHTML=VIEWS.map((x,i)=>`<button class="view${x[0]===view&&!stage?' on':''}" data-v="${x[0]}" style="--vc:${x[3]}"><span class="n">${i+1}</span>${x[1]} <small>${x[2]}</small></button>`).join('');
   $('views').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
   const note=D.has_after?'한 도면 · 작업전·작업후에서 같이 쓰는 내용은 함께 바뀌어요':'한 도면 · 작업중·작업후에서 처음 고치면 작업후 배정이 자동으로 준비돼요';
   if(LIVE){const k=D.kind||M.kind,b=$('switchKind');b.style.display='';b.textContent=`열린 도면: ${k==='after'?'후도면':'현장반영'} ⇄`;b.title=`프로그램에서 ${k==='after'?'현장반영':'후도면'}(으)로 전환합니다 · 작업차수는 열린 도면 기준`}
-  $('strip').innerHTML=`<span>●</span>${v[1]} 보기 · ${esc(v[2])}<span class="right">${esc(note)} · ${esc(D.created||M.created||'')} 기준 · ${LIVE?'코어 줄을 눌러 바로 수정':'수정은 기존 프로그램에서'}</span>`;
+  renderStages();
+  $('strip').innerHTML=`<span>●</span>${stage?esc(stageText()):v[1]+' 보기 · '+esc(v[2])}<span class="right">${esc(note)} · ${esc(D.created||M.created||'')} 기준 · ${LIVE?'코어 줄을 눌러 바로 수정':'수정은 기존 프로그램에서'}</span>`;
 }
-function setView(v){view=v;if(route&&route.view!==v){route=null;routeEnd=null}try{localStorage.setItem('workview.mode',v)}catch(e){}
+function setView(v){view=v;stage=null;if(route&&route.view!==v){route=null;routeEnd=null}try{localStorage.setItem('workview.mode',v)}catch(e){}
   if(sel.kind==='cable'&&C[sel.id]&&!shown(C[sel.id]))sel={kind:null,id:null};
   if(sel.kind==='node'&&N[sel.id]&&!nodeShown(N[sel.id]))sel={kind:null,id:null};
   runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools();renderPhaseBar()}
 /* V218 shortcuts: the same keys as the program (Alt+1 함체, Alt+2 RN, Alt+3 가입자,
    Alt+` 케이블, Delete, Esc, Ctrl+Z/Y, Ctrl+F). 1·2·3 alone switch views; with Alt
    they no longer switch views. */
-const KEYS=[['1 · 2 · 3','작업전 · 작업중 · 작업후 보기'],['Alt+1','+ 함체 (빈 곳 누르기)'],['Alt+2','+ RN'],['Alt+3','+ 가입자'],['Alt+`','+ 케이블 (시설 두 개 누르기)'],
+const KEYS=[['1 · 2 · 3','작업전 · 작업중 · 작업후 보기'],['[ · ]','차수 단계 앞·뒤 (1차 중 → 1차 후 → 2차 중 …)'],['Alt+1','+ 함체 (빈 곳 누르기)'],['Alt+2','+ RN'],['Alt+3','+ 가입자'],['Alt+`','+ 케이블 (시설 두 개 누르기)'],
   ['Esc','도구 끝내기 · 선택 해제'],['Shift+드래그','빈 곳을 끌어 함체 여러 개 고르기 (Shift+클릭: 하나씩 더하기·빼기)'],['G','격자 맞추기 켜기·끄기'],['Delete','선택한 함체·케이블 삭제'],['Ctrl+Z','실행취소 (보기의 도면)'],['Ctrl+Y','다시실행'],['Ctrl+F','찾기'],['F1 · ?','단축키 보기']];
 function toggleHelp(open){const h=$('help');const on=open===undefined?!h.classList.contains('open'):open;
   h.innerHTML=`<div class="box"><h3>단축키</h3><table>${KEYS.map(k=>`<tr><td>${k[0].split(' · ').map(x=>`<kbd>${esc(x)}</kbd>`).join(' ')}</td><td>${esc(k[1])}</td></tr>`).join('')}</table><div style="text-align:right;margin-top:12px"><button class="mini" id="helpClose">닫기 (Esc)</button></div></div>`;
@@ -655,13 +712,18 @@ document.addEventListener('keydown',e=>{
   if(k==='Escape'){if($('help').classList.contains('open'))toggleHelp(false);else if(LIVE&&(tool!=='select'||cableStart||newCable))setTool('select');else if(route){route=null;routeEnd=null;draw();renderSide()}else if(msel.size){msel.clear();draw();renderTools()}else if(sel.kind){select(null,null)}return}
   if(low==='g'&&LIVE&&!e.altKey){toggleGrid();return}
   if(k==='Delete'&&LIVE){e.preventDefault();deleteSelected();return}
+  if(k==='['||k===']'){stepStage(k===']'?1:-1);return}
   const i=['1','2','3'].indexOf(k);if(i>=0)setView(VIEWS[i][0]);
 });
 
 /* drawing */
 const world=$('world');
 function cableStyle(c){
-  const r=c.role;
+  const r=roleOf(c);
+  if(stage){
+    if(r==='철거대기')return {color:'#64748b',dash:'6 6',w:4,op:.8};
+    if(r==='신설완료')return {color:'#1565c0',dash:null,w:5,op:1};
+  }
   if(view==='during'){
     if(r==='철거'||r==='절단')return {color:'#d32f2f',dash:'14 9',w:4,op:.95};
     if(r==='신설')return {color:'#f59e0b',dash:null,w:6,op:1};
@@ -674,6 +736,12 @@ function cableStyle(c){
 }
 function cableBadge(c){
   const rows=cores[c.id]||[];
+  if(stage){const r=roleOf(c),ns=stageNames().map(pshort),q=cablePhase(c);
+    if(r==='철거대기'){const k=(issues.broken||[]).filter(i=>i.cable===c.id).length;return k?['철거 대기 · 남은 코어 '+k,'#c62828']:['철거 대기 · 비움 완료','#15803d']}
+    if(r==='신설')return [(stage.final?'':(ns[q]||'')+' ')+'신설','#b45309'];
+    if(r==='철거'||r==='절단')return [(ns[q]||'')+' '+r,ROLE_C[r]];
+    if(r==='신설완료')return [(ns[q]||'')+' 신설','#1565c0'];
+    const k=rows.filter(x=>x.s==='코어절체'&&pnow(phaseIdx(x.ph)??q)).length;return k?['절체 '+k,'#7c3aed']:null}
   if(view==='during'&&c.role==='기설'){const k=rows.filter(r=>r.s==='코어절체').length;return k?['절체 '+k,'#7c3aed']:null}
   if(view==='before'&&(c.role==='철거'||c.role==='절단')){const k=rows.filter(r=>r.b).length;return k?[c.role+' '+k+'코어',ROLE_C[c.role]]:null}
   if(view==='after'&&c.role==='신설'){const k=rows.filter(r=>r.a).length;return ['신설 '+k+'코어','#b45309']}
@@ -740,18 +808,19 @@ function draw(){
     if(route&&route.colors[c.id])el('path',{d:c.d,fill:'none',stroke:route.colors[c.id],'stroke-width':14,'stroke-opacity':.5},g);
     if(on)el('path',{d:c.d,fill:'none',stroke:'#b9f6ca','stroke-width':16},g);
     if(query&&hits.has('c:'+c.id))el('path',{d:c.d,fill:'none',stroke:'#ffd54f','stroke-width':16,'stroke-opacity':.8},g);
-    if(view==='during'&&c.role==='신설')el('path',{d:c.d,fill:'none',stroke:'#fff','stroke-width':st.w+4},g);
+    const rr=roleOf(c);
+    if(view==='during'&&rr==='신설')el('path',{d:c.d,fill:'none',stroke:'#fff','stroke-width':st.w+4},g);
     el('path',{d:c.d,fill:'none',stroke:on?'#00a843':st.color,'stroke-width':on?st.w+2:st.w,'stroke-dasharray':st.dash,'stroke-opacity':st.op,'stroke-linecap':'round'},g);
     (c.marks||[]).forEach(m=>{
-      if(c.role==='철거')el('path',{d:`M ${m[0]-9} ${m[1]-9} L ${m[0]+9} ${m[1]+9} M ${m[0]-9} ${m[1]+9} L ${m[0]+9} ${m[1]-9}`,fill:'none',stroke:view==='during'?'#b71c1c':'#111','stroke-width':3},g);
-      else if(c.role==='절단')el('polygon',{points:star(m[0],m[1],12,5.5),fill:'#ff1744',stroke:'#111','stroke-width':2},g);
+      if(rr==='철거'||rr==='철거대기')el('path',{d:`M ${m[0]-9} ${m[1]-9} L ${m[0]+9} ${m[1]+9} M ${m[0]-9} ${m[1]+9} L ${m[0]+9} ${m[1]-9}`,fill:'none',stroke:rr==='철거대기'?'#64748b':view==='during'?'#b71c1c':'#111','stroke-width':3},g);
+      else if(rr==='절단')el('polygon',{points:star(m[0],m[1],12,5.5),fill:'#ff1744',stroke:'#111','stroke-width':2},g);
     });
     el('path',{d:c.d,fill:'none',stroke:'transparent','stroke-width':22},g);
     g.addEventListener('click',e=>{e.stopPropagation();select('cable',c.id)});
     /* label */
     const L=el('g',{class:'cable'+(dim?' dim':'')},gL),[x,y]=c.lab||c.mid;
     const text=cableName(c),w=Math.max(46,text.length*7.2+14);
-    el('rect',{x:x-w/2,y:y-11,width:w,height:22,rx:5,fill:'#fff',stroke:on?'#00a843':ROLE_C[c.role],'stroke-width':on?2.5:1.6,'stroke-dasharray':(view==='during'&&(c.role==='철거'||c.role==='절단'))?'4 3':null},L);
+    el('rect',{x:x-w/2,y:y-11,width:w,height:22,rx:5,fill:'#fff',stroke:on?'#00a843':ROLE_C[rr],'stroke-width':on?2.5:1.6,'stroke-dasharray':(view==='during'&&(rr==='철거'||rr==='절단'||rr==='철거대기'))?'4 3':null},L);
     const t=el('text',{x,y,'dominant-baseline':'central','text-anchor':'middle','font-size':11.5,'font-weight':'bold',fill:'#172033','font-family':'var(--font)'},L);t.textContent=text;
     const b=cableBadge(c);
     if(b){const bw=b[0].length*7+14;el('rect',{x:x-bw/2,y:y+13,width:bw,height:17,rx:8.5,fill:b[1]},L);const bt=el('text',{x,y:y+21.5,'dominant-baseline':'central','text-anchor':'middle','font-size':10,'font-weight':'bold',fill:'#fff','font-family':'var(--font)'},L);bt.textContent=b[0]}
@@ -872,6 +941,7 @@ function renderLegend(){
   const items={before:[['#1565c0',null,'기설'],['#424242',null,'철거 ×'],['#d32f2f',null,'절단 ★']],
     during:[['#1565c0',null,'기설'],['#d32f2f','7 5','철거·절단 (점선)'],['#f59e0b',null,'신설',6]],
     after:[['#1565c0',null,'기설'],['#f59e0b',null,'신설',6]]}[view];
+  if(stage&&!stage.final)items.push(['#64748b','6 6','철거 대기 (마지막에 철거)']);
   $('legend').innerHTML='<span class="grp">선</span>'+items.map(x=>`<span class="sw">${line(x[0],x[1],x[3])}${x[2]}</span>`).join('')+
    `<span class="grp">· 칸 상태</span>`+['유지','코어절체','신규배정','해제'].map(s=>`<span class="sw"><span class="st" style="--c:${STATE_C[s]}">${STATE_T[s]}</span></span>`).join('')+
    `<span class="sw" style="color:var(--bad)">■ 빨간 줄 = 이 보기 안의 충돌</span>`;
@@ -1376,3 +1446,4 @@ renderHeader();renderDash();renderLegend();renderFoot();draw();renderSide();rend
 </body>
 </html>
 '''
+
