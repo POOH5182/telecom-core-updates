@@ -371,6 +371,63 @@ def work_view_field_check(store,node_id,items,checked,how='현장값'):
     return len(items)
 
 
+def work_view_linked_mismatch(store):
+    """V226: connected paths whose numbers carry different 코어ID·내역.
+    In 현장반영 the user connects both ends as they really are even when the
+    내역 differ; this marks every number of such a path until the 내역 are
+    settled (in 작업중·작업후). {cable#n: number of different values}."""
+    if store is None:return {}
+    parent={};joined=set()
+    def find(x):
+        while parent.get(x,x)!=x:
+            parent[x]=parent.get(parent[x],parent[x]);x=parent[x]
+        return x
+    for r in store.conn.execute('SELECT cable1_id,core1_index,cable2_id,core2_index FROM splices'):
+        x=(str(r[0]),int(r[1]));y=(str(r[2]),int(r[3]));joined.update((x,y))
+        a=find(x);b=find(y)
+        if a!=b:parent[a]=b
+    if not joined:return {}
+    values={}
+    for r in store.conn.execute('SELECT cable_id,core_index,core_id,detail FROM cores'):
+        slot=(str(r[0]),int(r[1]))
+        if slot in joined:values[slot]=(str(r[2] or '').strip(),str(r[3] or '').strip())
+    groups={}
+    for slot in joined:
+        groups.setdefault(find(slot),[]).append(slot)
+    out={}
+    for members in groups.values():
+        seen={values[s] for s in members if s in values and any(values[s])}
+        ids={v[0] for v in seen if v[0]}
+        details={v[1] for v in seen if v[1]}
+        if len(ids)>1 or len(details)>1:
+            for s in members:
+                if not s[0].startswith('PORT:'):out[f'{s[0]}#{s[1]}']=max(len(ids),len(details))
+    return out
+
+
+def work_view_path_align(store,slot,core_id,detail):
+    """V226: 내역 맞추기 - one 코어ID·내역 on every number of the connected path."""
+    members=store.component(tuple(slot))
+    for cable,n in members:
+        if store.core(cable,n):store._write_core_identity(cable,n,core_id,detail,True)
+    return len(members)
+
+
+def work_view_cable_compare(field,reference):
+    """V226: cable level 시스템 vs 현장: {id: '현장 신규' | '경로 다름'} and the
+    system cables the field drawing does not have."""
+    snap=(reference or {}).get('snapshot',{})
+    if not snap:return {},[]
+    ref={str(r['id']):r for r in snap.get('cables',[])};names={str(r['id']):str(r['name'] or '') for r in snap.get('nodes',[])}
+    tags={};here=set()
+    for c in field.cables():
+        cid=str(c['id']);here.add(cid);old=ref.get(cid)
+        if old is None:tags[cid]='현장 신규'
+        elif {str(old['n1id']),str(old['n2id'])}!={str(c['n1id']),str(c['n2id'])}:tags[cid]='경로 다름'
+    missing=[dict(id=cid,name=str(r['cable_id'] or '').strip() or cid,spec=str(r['spec'] or ''),ends=f"{names.get(str(r['n1id']),'?')} ↔ {names.get(str(r['n2id']),'?')}") for cid,r in ref.items() if cid not in here]
+    return tags,missing
+
+
 TEMP_CONFIRM_KEY='work_view_temp_confirmed'
 
 
@@ -503,6 +560,7 @@ header.top{background:var(--navy);color:#fff;display:grid;grid-template-columns:
 .stages .ar{color:#475a7d}
 .stages .warn{margin-left:8px;color:#fbbf24}
 .stages small{margin-left:auto;color:#64748b}
+.stages .stg.chk{margin-left:10px;border-color:#b45309;color:#fde68a}.stages .stg.chk .cnt{background:#b91c1c;color:#fff;border-radius:999px;padding:0 6px;margin:0 0 0 4px;font-size:11px}
 .view.on::after{content:"";position:absolute;left:12%;right:12%;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--vc)}
 .body{display:grid;grid-template-columns:1fr 440px;min-height:0}
 .canvas-wrap{position:relative;min-width:0;overflow:hidden;background:radial-gradient(circle at 1px 1px,#d5dde8 1px,transparent 1.2px) 0 0/24px 24px,#f7f9fc}
@@ -759,12 +817,29 @@ function stageText(){if(!stage)return '';const ns=stageNames().map(pshort);
   if(stage.final)return '철거 (최종) · 모든 차수 끝 · 철거 케이블을 한 번에 없앤 모습';
   const n=ns[stage.i],next=ns[stage.i+1];
   return stage.m==='during'?`${n} 작업중 · ${n} 철거·신설 표시 · ${n} 이후 차수는 아직 안 보임`:`${n} 작업후${next?' = '+next+' 작업전':''} · ${n} 신설은 기설처럼 · 철거 케이블은 「철거 대기」로 남김`}
+/* V226 차수 점검: conflicts of this 차수 + what earlier 차수 left untidy */
+function slotPhase(cable,n){const c=C[cable],r=(cores[cable]||[]).find(x=>x.n===n);let q=r?phaseIdx(r.ph):null;if(q===null)q=c?cablePhase(c):0;return q}
+function stageCheck(){const now=[],left=[];if(!stage||stage.final)return {now,left};const i=stage.i;
+  (issues.after||[]).forEach(x=>{const q=Math.min(...(x.n||[0]).map(n=>slotPhase(x.cable,n)));const item={cable:x.cable,n:x.n,id:x.id,text:`${x.kind} · ${x.text}`};if(q===i)now.push(item);else if(q<i)left.push(item)});
+  (issues.broken||[]).forEach(x=>{const c=C[x.cable];if(c&&cablePhase(c)<i)left.push({cable:x.cable,n:x.n,id:x.id,text:'철거 케이블에 남은 코어 · 작업후 경로 없음'})});
+  Object.keys((D.mismatch||{}).after||{}).forEach(k=>{const [cable,n]=[k.slice(0,k.lastIndexOf('#')),+k.slice(k.lastIndexOf('#')+1)];if(!C[cable])return;const q=slotPhase(cable,n),r=(cores[cable]||[]).find(x=>x.n===n)||{};
+    const item={cable,n:[n],id:r.a||r.b||'',text:'연결됨·내역 다름 · 경로 내역 맞추기 필요'};if(q===i)now.push(item);else if(q<i)left.push(item)});
+  return {now,left}}
+function renderStageCheck(){const k=stageCheck(),ns=stageNames().map(pshort),i=stage?stage.i:0;sel={kind:null,id:null};draw();
+  const item=(x,j)=>`<button data-sk="${j}"><i style="--c:#b91c1c"></i><span><span class="t">${esc(x.id||'-')} · ${esc(cableName(C[x.cable]||{}))} ${esc((x.n||[]).join(','))}번</span><span class="d">${esc(x.text)}</span></span></button>`;
+  const all=[...k.now,...k.left];
+  $('side').innerHTML=`<div class="side-h"><div class="crumb">차수 점검</div><div class="title-row"><h2>${esc(ns[i]||'')} ${stage&&stage.m==='after'?'작업후':'작업중'}</h2></div></div>
+   <div class="list"><div class="crumb" style="margin:4px 2px 8px">${esc(ns[i]||'')} 코어 충돌 · ${k.now.length}개</div>${k.now.length?k.now.map((x,j)=>item(x,j)).join(''):'<div class="ed-note">이번 차수 코어끼리·기존 코어와 겹치는 것이 없어요.</div>'}
+   ${i>0?`<div class="crumb" style="margin:14px 2px 8px">앞 차수(${esc(ns.slice(0,i).join('·'))}) 정리 안 된 코어 · ${k.left.length}개</div>${k.left.length?k.left.map((x,j)=>item(x,k.now.length+j)).join(''):'<div class="ed-note">앞 차수 코어가 모두 정리됐어요.</div>'}`:''}</div>`;
+  $('side').querySelectorAll('[data-sk]').forEach(b=>b.onclick=()=>{const x=all[+b.dataset.sk],c=C[x.cable];if(!c)return;select('cable',c.id);focusRows=new Set((x.n||[]).map(n=>c.id+'#'+n));renderSide();if(c.mid)focusOn(c.mid[0],c.mid[1])});
+}
 function setStage(s){if(!s){setView(view);return}
   const k=stageKey(s),hit=stageList().find(x=>x.k===k);if(!hit){setView(view);return}
   stage=hit;const v=hit.final?'after':'during';view=v;if(route){route=null;routeEnd=null}
   if(sel.kind==='cable'&&C[sel.id]&&!shown(C[sel.id]))sel={kind:null,id:null};
   if(sel.kind==='node'&&N[sel.id]&&!nodeShown(N[sel.id]))sel={kind:null,id:null};
-  runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools();renderPhaseBar()}
+  runSearch();renderHeader();renderDash();renderLegend();draw();renderSide();renderFoot();renderTools();renderPhaseBar();
+  if(!hit.final&&hit.m==='during'&&hit.i>0){const k=stageCheck();if(k.left.length)toast(`앞 차수에서 정리 안 된 코어 ${k.left.length}개 · 「점검」을 눌러 확인하세요`)}}
 function stepStage(d){const list=stageList();if(!list.length){toast('작업차수가 있는 케이블이 없어요');return}
   const i=list.findIndex(x=>x.k===stageKey(stage));const j=i<0?(d>0?0:list.length-1):i+d;
   if(j<0){stage=null;setView('before');return}if(j>=list.length)return;setStage(list[j])}
@@ -772,7 +847,9 @@ function renderStages(){const box=$('stages');if(!box)return;const list=stageLis
   if(!list.length){box.style.display='none';return}box.style.display='flex';
   const cur=stageKey(stage),un=cables.filter(c=>(c.role==='신설'||c.role==='철거'||c.role==='절단')&&cableUnphased(c)).length;
   box.innerHTML=`<b>차수 단계</b><button class="stg${!stage&&view==='before'?' on':''}" data-k="">작업전</button>`+list.map(x=>`<span class="ar">▸</span><button class="stg${x.k===cur?' on':''}${x.final?' fin':''}" data-k="${x.k}">${esc(x.t)}</button>`).join('')+
-    (un?`<span class="warn" title="차수가 없는 신설·철거 케이블은 마지막 차수로 봐요">차수 없음 ${un}개 → 마지막 차수</span>`:'')+`<small>[ ] 키로 이동</small>`;
+    (un?`<span class="warn" title="차수가 없는 신설·철거 케이블은 마지막 차수로 봐요">차수 없음 ${un}개 → 마지막 차수</span>`:'')+
+    (stage&&!stage.final?`<button class="stg chk" id="stageChk" title="이번 차수 충돌과 앞 차수 정리 상태">점검${(()=>{const k=stageCheck();return k.now.length+k.left.length?` <b class="cnt">${k.now.length+k.left.length}</b>`:' ✓'})()}</button>`:'')+`<small>[ ] 키로 이동</small>`;
+  const sc=$('stageChk');if(sc)sc.onclick=renderStageCheck;
   box.querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(!k){stage=null;setView('before');return}setStage(stageList().find(x=>x.k===k))})}
 const cableName=c=>(c.spec||'')+(c.cable_id?' ('+c.cable_id+')':'');
 const ends=c=>`${(N[c.a]||{}).name||'?'} ↔ ${(N[c.b]||{}).name||'?'}`;
@@ -1056,7 +1133,8 @@ function renderDash(){
   }
   const extra=view==='after'?(k.broken||0):0;
   foot=(iss||extra)?`<div class="dash-f badf">확인 필요 ${iss+extra}건<button id="showIss">목록 보기</button></div>`:`<div class="dash-f good">이 보기 안에서 겹치는 코어 없음</div>`;
-  const fu=fieldTotals();if(fu.d&&view!=='after')foot+=`<div class="dash-f ${fu.u?'badf':'good'}">시스템과 다른 말단 ${fu.d}칸 · 확정 안 함 ${fu.u}칸${fu.u?'<button id="showField">함체 보기</button>':''}</div>`;
+  const fc=Object.keys((D.field||{}).cables||{}).length+((D.field||{}).missing||[]).length;
+  const fu=fieldTotals();if((fu.d||fc)&&view!=='after')foot+=`<div class="dash-f ${fu.u?'badf':'good'}">시스템과 다른 말단 ${fu.d}칸 · 확정 안 함 ${fu.u}칸${fc?` · 케이블 차이 ${fc}`:''}<button id="showField">보기</button></div>`;
   $('dash').innerHTML=`<div class="dash-h"><b>${VIEWS.find(x=>x[0]===view)[1]} 현황</b><span class="tag">${D.has_after?'후도면 기준':'후도면 없음'}</span></div><div class="dash-b">${body}</div>${foot}`;
   const sb=$('showIss');if(sb)sb.onclick=()=>select(null,null);
   const sf=$('showField');if(sf)sf.onclick=renderFieldList;
@@ -1168,7 +1246,10 @@ function bindList(root){
 }
 function doneCell(d,reason){return d===true?'<span class="done" style="color:var(--ok)">완료</span>':d===false?`<span class="done" style="color:var(--bad)" title="${esc(reason)}">미완료</span>`:'<span style="color:#cbd5e1">-</span>'}
 /* V225 코어 이름표: 시스템과 다름 / 확정 / 임시→실제 */
+function mmSides(){return stage?['after']:view==='before'?['before']:view==='after'?['after']:['before','after']}
+function slotMismatch(c,r,side){return ((D.mismatch||{})[side]||{})[c.id+'#'+r.n]}
 function slotTags(c,r){const f=D.field||{},t=(f.slots||{})[c.id+'#'+r.n],out=[];
+  mmSides().forEach(sd=>{if(slotMismatch(c,r,sd))out.push(`<span class="st" style="--c:#9a3412" title="양끝은 연결돼 있지만 경로의 코어ID·내역이 서로 달라요 · 작업중·작업후에서 코어 줄을 눌러 「경로 내역 맞추기」">연결됨·내역 다름${mmSides().length>1?(sd==='before'?' (전)':' (후)'):''}</span>`)});
   if(t&&t.t)out.push(`<span class="st" style="--c:#b91c1c" title="시스템(임시도면)과 현장반영이 다른 말단 · 함체를 눌러 확정하세요">${esc(t.t)}</span>`);
   else if(t&&t.c)out.push(`<span class="st ghost" style="--c:#15803d">${esc(t.c)}</span>`);
   const ids=[...new Set([r.b,r.a].filter(Boolean))];ids.forEach(id=>{const x=(f.temp||{})[id];if(x)out.push(`<span class="st ghost" style="--c:#0d9488" title="${esc(String(x.time||'').replace('T',' '))} 확정">${esc(x.temp)} → ${esc(id)} 확정</span>`)});
@@ -1202,7 +1283,7 @@ function renderCable(c){
       return `<tr data-row="${r.n}" class="${editN===r.n?'editing':focusRows.has(k)||hitCores.has(k)?'hit':bad.has(k)?'bad':''}"><td class="no">${r.n}</td><td>${fiber(r.n)}</td><td class="cid">${idCell(b?r.b:r.a,b?r.bd:r.ad,b?r.eb:r.ea,b?r.sb:r.sa)}${(r.ph||[]).map(p=>`<span class="ph-tag">${esc(p)}</span>`).join('')}${slotTags(c,r)}</td><td>${tag}</td><td>${b?doneCell(r.db,r.rb):doneCell(r.da,r.ra)}</td></tr>`}).join('');
   }
   $('side').innerHTML=`<div class="side-h"><div class="crumb">케이블 · ${esc(ends(c))}</div>
-   <div class="title-row"><h2>${esc(cableName(c))}</h2><span class="pill" style="--c:${ROLE_C[c.role]}">${esc(c.role)}</span>${(c.phases||[]).map(p=>`<span class="pill" style="--c:#7c3aed">${esc(p)}</span>`).join('')}</div>
+   <div class="title-row"><h2>${esc(cableName(c))}</h2><span class="pill" style="--c:${ROLE_C[c.role]}">${esc(c.role)}</span>${(c.phases||[]).map(p=>`<span class="pill" style="--c:#7c3aed">${esc(p)}</span>`).join('')}${((D.field||{}).cables||{})[c.id]?`<span class="pill" style="--c:#b91c1c" title="시스템(임시도면)과 비교">${esc(D.field.cables[c.id])}</span>`:''}</div>
    <div class="meta"><div><span>규격</span><b>${esc(c.spec)}</b></div><div><span>LOT</span><b>${esc(c.lot||'-')}</b></div><div><span>사용 코어 (${VIEWS.find(x=>x[0]===view)[1]})</span><b>${used} / ${c.size||all.length}</b></div></div></div>
    <div class="split">${Object.entries(cnt).map(([k,v])=>`<span class="chip"><i style="--c:${STATE_C[k]}"></i>${esc(STATE_T[k]||k)} <b>${v}</b></span>`).join('')}
     ${view==='during'?`<span class="chip btn${onlyChanged?' on':''}" id="onlyChg">바뀐 칸만</span>`:''}${LIVE?`<button class="mini r" id="routeBtn" title="이 케이블의 사용 코어가 어디까지 가는지 도면에 표시">${route&&route.cable===c.id?'경로 끄기':'전체 경로'}</button>`:''}<button class="mini${LIVE?'':' r'}" id="copyOne">표 복사</button></div>
@@ -1227,9 +1308,14 @@ function fieldTotals(){const f=(D.field||{}).nodes||{};let d=0,u=0;for(const k i
 function renderFieldList(){
   const f=(D.field||{}).nodes||{},list=nodes.filter(n=>f[n.id]&&f[n.id].u).sort((a,b)=>f[b.id].u-f[a.id].u);sel={kind:null,id:null};draw();
   $('side').innerHTML=`<div class="side-h"><div class="crumb">${esc((D.field||{}).source||'시스템')} ↔ 현장반영</div><div class="title-row"><h2>시스템과 다른 함체</h2></div></div>
-   ${tempLog()}<div class="list"><div class="crumb" style="margin:4px 2px 8px">확정 안 한 차이가 있는 시설 ${list.length}곳</div>${list.map(n=>`<button data-n="${esc(n.id)}"><i style="--c:#c62828"></i><span><span class="t">${esc(n.name)}</span><span class="d">확정 안 함 ${f[n.id].u}칸 · 다른 칸 ${f[n.id].d}</span></span></button>`).join('')}</div>`;
+   ${cableCompareList()}${tempLog()}<div class="list"><div class="crumb" style="margin:4px 2px 8px">확정 안 한 차이가 있는 시설 ${list.length}곳</div>${list.map(n=>`<button data-n="${esc(n.id)}"><i style="--c:#c62828"></i><span><span class="t">${esc(n.name)}</span><span class="d">확정 안 함 ${f[n.id].u}칸 · 다른 칸 ${f[n.id].d}</span></span></button>`).join('')}</div>`;
   $('side').querySelectorAll('[data-n]').forEach(b=>b.onclick=()=>{const n=N[b.dataset.n];if(!n)return;if(!nodeShown(n))setView('before');fieldRows=null;select('node',n.id);focusOn(n.x,n.y)});
+  $('side').querySelectorAll('[data-cc]').forEach(b=>b.onclick=()=>{const c=C[b.dataset.cc];if(!c)return;if(!shown(c))setView('before');select('cable',c.id);if(c.mid)focusOn(c.mid[0],c.mid[1])});
 }
+function cableCompareList(){const f=D.field||{},tags=Object.entries(f.cables||{}).filter(([id])=>C[id]),miss=f.missing||[];if(!tags.length&&!miss.length)return'';
+  return `<details class="infoform" open><summary>케이블 비교 <small>현장 신규 ${tags.filter(t=>t[1]==='현장 신규').length} · 경로 다름 ${tags.filter(t=>t[1]==='경로 다름').length} · 현장에 없음 ${miss.length}</small></summary><table class="fcmp"><tbody>
+    ${tags.map(([id,t])=>`<tr data-cc="${esc(id)}" style="cursor:pointer"><td><span class="st" style="--c:#b91c1c">${esc(t)}</span></td><td>${esc(cableName(C[id]))}<span class="sub">${esc(ends(C[id]))}</span></td></tr>`).join('')}
+    ${miss.map(m=>`<tr><td><span class="st ghost" style="--c:#64748b">현장에 없음</span></td><td>${esc(m.spec)} (${esc(m.name)})<span class="sub">시스템: ${esc(m.ends)}</span></td></tr>`).join('')}</tbody></table></details>`}
 function tempLog(){const t=Object.entries((D.field||{}).temp||{});if(!t.length)return'';
   return `<details class="infoform"><summary>임시코어 확정 기록 <small>${t.length}개</small></summary><table class="fcmp"><tbody>${t.sort((a,b)=>String(b[1].time).localeCompare(String(a[1].time))).map(([id,x])=>`<tr><td>${esc(x.temp)}</td><td>→ <b>${esc(id)}</b></td><td class="sub">${esc(String(x.time||'').replace('T',' '))}</td></tr>`).join('')}</tbody></table></details>`}
 function fieldBadges(){if(view==='after'||(stage&&stage.final))return;const f=(D.field||{}).nodes||{},gF=el('g',{},world);
@@ -1540,13 +1626,22 @@ function editBox(c){
      '<div class="ed-note">이 보기에서는 이 케이블을 고칠 수 없어요. 작업전·작업중·작업후 중 이 케이블이 있는 보기로 바꾸세요.</div>';
   const pid=view==='before'?r.b:(r.a||r.b),P=D.phase||{names:[]};
   const phase=pid?`<div class="ed-row"><span class="ed-l" style="--c:#7c3aed">차수</span><select id="edPhase" style="grid-column:2/-1">${phaseOptions((P.core||{})[pid]||'','케이블 차수 따름')}</select><small>코어 ${esc(pid)} · 이 코어가 지나가는 모든 케이블에 표시${P.names.length?'':' · 차수가 없으면 「+ 차수」로 만드세요'}</small></div>`:'';
+  const mm=sides.filter(sd=>slotMismatch(c,r,sd[0]));
+  const align=mm.map(sd=>`<div class="ed-row"><span class="ed-l" style="--c:#9a3412">맞추기</span><input data-al="${sd[0]}" data-f="id" value="${esc(r[sd[3]])}" placeholder="경로 전체에 넣을 코어ID"><input data-al="${sd[0]}" data-f="detail" value="${esc(r[sd[4]])}" placeholder="내역"><button class="mini" data-alg="${sd[0]}" title="이 코어와 연결된 경로 전체(${sd[1]})의 코어ID·내역을 하나로 맞춰요">${sd[1]} 경로 내역 맞추기</button></div>`).join('');
   const tid=[r.b,r.a].find(x=>String(x||'').startsWith('임시-'));
   const temp=tid?`<div class="ed-row"><span class="ed-l" style="--c:#0d9488">임시</span><input id="tmpId" placeholder="${esc(tid)}의 실제 코어ID"><input id="tmpDet" placeholder="실제 내역 (비우면 그대로)"><button class="mini" id="tmpGo" title="같은 임시번호가 붙은 칸 전체(작업전·작업후)를 한 번에 바꿔요">실제 코어ID로 확정</button></div>`:'';
-  return `<div class="editbox"><div class="ed-h"><b>${editN}번 코어 고치기</b><span>${esc(cableName(c))}</span></div>${body}${phase}${temp}
+  return `<div class="editbox"><div class="ed-h"><b>${editN}번 코어 고치기</b><span>${esc(cableName(c))}</span></div>${body}${align}${phase}${temp}
     <div class="ed-b"><span class="ed-msg" id="edMsg"></span><button class="mini" id="edCancel">닫기</button>${sides.length?'<button class="mini primary" id="edSave">저장 (Enter)</button>':''}</div></div>`;
 }
 function bindEdit(c){
   const save=$('edSave'),cancel=$('edCancel'),tg=$('tmpGo');
+  $('side').querySelectorAll('[data-alg]').forEach(b=>b.onclick=async()=>{const sd=b.dataset.alg,keep=editN;
+    const id=$('side').querySelector(`input[data-al="${sd}"][data-f="id"]`).value.trim(),det=$('side').querySelector(`input[data-al="${sd}"][data-f="detail"]`).value.trim();
+    if(!id){$('edMsg').textContent='맞출 코어ID를 입력하세요.';return}
+    if(!window.confirm(`이 코어와 연결된 경로 전체를 ${id}${det?' · '+det:''}(으)로 맞출까요? Ctrl+Z로 되돌릴 수 있어요.`))return;
+    const res=await api('edit',{op:'path_align',view:sd==='before'?'before':'after',cable:c.id,n:editN,id,detail:det});
+    if(!res.ok){$('edMsg').textContent=res.error||'맞추지 못했어요';return}
+    applyScene(res.scene);renderAll();toast(res.result+' · '+res.where);if(C[c.id]){editN=keep;renderCable(C[c.id])}});
   if(tg)tg.onclick=async()=>{const r=(cores[c.id]||[]).find(x=>x.n===editN)||{},tid=[r.b,r.a].find(x=>String(x||'').startsWith('임시-'));
     const id=$('tmpId').value.trim(),det=$('tmpDet').value.trim();if(!id){$('edMsg').textContent='실제 코어ID를 입력하세요.';return}
     const body={temp:tid,id,detail:det},keep=editN;let res=await edit('temp_confirm',body,`${tid} → ${id} 확정`,$('edMsg'));

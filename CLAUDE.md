@@ -31,7 +31,7 @@ AGENTS.md의 버전별 규칙(V48~최신)은 이 파일보다 구체적이며, �
   `app/workflow_v<N>.py` 뒤에 붙는 planning/cloud 사본은 직접 고치지 않는다.
 - 새 버전마다 정수 버전을 올리고 다음을 일치시킨다:
   `app/version.json`, `app/workflow_v<N>.py` 파일명, `telecom_core_app.pyw`의 `import workflow_v<N>`,
-  `APP_UPDATE_NUMBER`(=N)와 화면 버전 `APP_VERSION_LABEL`(YY.MM.DD.NN: 한국 날짜 + 그날 몇 번째, 다음 날 01부터 — 사용자 지시 2026-11-21). 새 planning 모듈은 `tools/build_release.py`에 번들 순서를 추가한다.
+  `APP_UPDATE_NUMBER`(=N)와 화면 버전 `APP_VERSION_LABEL`(YYMMDD.NNv 예: 261122.08v — 한국 날짜 + 그날 몇 번째, 다음 날 01부터 — 사용자 지시 2026-11-21, 형식 변경 2026-11-22). 새 planning 모듈은 `tools/build_release.py`에 번들 순서를 추가한다.
 - 수정 후 `python tools/build_release.py --prepare`로 `release_payload/`를 다시 만든다.
   (prepare 전 materialize 재실행 금지)
 - 업데이트 ZIP은 3개 파일만: `telecom_core_app.pyw`, `workflow_v<N>.py`, `version.json`.

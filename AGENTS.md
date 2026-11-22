@@ -1,13 +1,24 @@
 # Telecom Core updater project
 
-- VERSION LABEL RULE (user, 2026-11-21): the shown version is
-  APP_VERSION_LABEL = "YY.MM.DD.NN" (KST date of the release + the number of
+- VERSION LABEL RULE (user, 2026-11-21; format changed 2026-11-22): the
+  shown version is APP_VERSION_LABEL = "YYMMDD.NNv" (e.g. 261122.08v; before
+  V226 it was "YY.MM.DD.NN") (KST date of the release + the number of
   that day starting at 01; next day restarts at 01). Set it in the pyw next to
   APP_UPDATE_NUMBER (= version.json integer). APP_TITLE shows the label, not
   "V<N>"; HTML meta.version = APP_VERSION_LABEL. The integer N still names
   workflow_v<N>.py, the ZIP, tag v<N> and the installed updater's messages
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
+
+- V226 / 261122.08v (V225 never released alone; shipped here): label format
+  YYMMDD.NNv. work_view_linked_mismatch(store) -> {cable#n: variants} for
+  spliced paths whose numbers carry different 코어ID/내역 (scene mismatch
+  {before,after}); op path_align (view, cable, n, id, detail) writes one
+  identity on store.component(slot). work_view_cable_compare(field, ref) ->
+  (tags {id: 현장 신규|경로 다름}, missing system cables) in scene field.cables
+  / field.missing. Page: stageCheck/renderStageCheck (#stageChk in the stage
+  bar): now = after issues + mismatch on slots of this phase, left = earlier
+  phases incl. broken cores of earlier-phase removed cables.
 
 - V225 / 26.11.22.08: 시스템 vs 현장 at cable ends. System = workflow
   field_reference(현장반영) with source GIS, else the gis file snapshot

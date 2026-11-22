@@ -276,11 +276,11 @@ class WorkEditTests(WorkViewTests):
 
     def test_version_label(self):
         label=code['APP_VERSION_LABEL']
-        self.assertRegex(label,r'^\d\d\.\d\d\.\d\d\.\d\d$','shown version is YY.MM.DD.NN')
+        self.assertRegex(label,r'^\d{6}\.\d\dv$','shown version is YYMMDD.NNv')
         root=Path(__file__).resolve().parents[1]
         self.assertEqual(code['APP_UPDATE_NUMBER'],json.loads((root/'app'/'version.json').read_text(encoding='utf-8'))['version'])
         self.assertIn(label,code['APP_TITLE']);self.assertNotIn(' V2',code['APP_TITLE'])
-        print('PASS shown version label YY.MM.DD.NN matches the update number')
+        print('PASS shown version label YYMMDD.NNv matches the update number')
 
     def test_positions_per_view(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
@@ -516,6 +516,29 @@ class WorkEditTests(WorkViewTests):
             for name in ('실제 코어ID로 확정','function slotTags','임시코어 확정 기록','직접 입력'):self.assertIn(name,page)
         finally:self.before=code['Store'](self.folder/'before.sqlite3')
         print('PASS temporary core gets its real core ID on the whole path in both drawings, record shown as a tag')
+
+    def test_linked_mismatch_and_phase_check(self):
+        W=code['workflow'];a=self.after
+        # S 1 (R1) joined to K 9 (X-other) at C? use B: K and S both touch B
+        put(a,self.k,9,'X-OTHER');a.conn.commit()
+        a.conn.execute('INSERT INTO splices(node_id,cable1_id,core1_index,cable2_id,core2_index) VALUES(?,?,?,?,?)',(self.nb,*sorted([(self.k,9),(self.s,1)])[0],*sorted([(self.k,9),(self.s,1)])[1]));a.conn.commit()
+        mm=W.work_view_linked_mismatch(a)
+        self.assertEqual(set(mm),{f'{self.k}#9',f'{self.s}#1'},'both numbers of the connected path are marked')
+        app=FakeApp(a,'after',self.folder);app.cable_k=self.k
+        scene=app.work_view_live_scene();self.assertIn(f'{self.s}#1',scene['mismatch']['after'])
+        r=app.work_view_edit({'op':'path_align','view':'after','cable':self.s,'n':1,'id':'R1','detail':'맞춘 내역'})
+        self.assertIn('2칸',r['result']);self.assertEqual((a.core(self.k,9)['core_id'],a.core(self.k,9)['detail']),('R1','맞춘 내역'))
+        self.assertEqual(r['scene']['mismatch']['after'],{},'aligned path is no longer marked')
+        with self.assertRaises(ValueError):app.work_view_edit({'op':'path_align','view':'after','cable':self.s,'n':1,'id':''})
+        ref=W.field_capture_reference(self.before.conn)
+        ref['snapshot']['cables'].append(dict(id='CGONE',n1id=self.na,n2id=self.nc,cable_id='GONE',spec='12C'))
+        for c in ref['snapshot']['cables']:
+            if c['id']==self.r:c['n2id']=self.na
+        tags,missing=W.work_view_cable_compare(self.before,ref)
+        self.assertEqual(tags,{self.r:'경로 다름'});self.assertEqual([m['name'] for m in missing],['GONE'])
+        page=app.work_view_text(live='T')
+        for name in ('연결됨·내역 다름','경로 내역 맞추기','function stageCheck','앞 차수','function cableCompareList','현장에 없음'):self.assertIn(name,page)
+        print('PASS connected ends with different details are marked and aligned along the path; cable-level compare; phase check page')
 
     def test_cable_route(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
