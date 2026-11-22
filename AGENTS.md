@@ -9,6 +9,24 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V223 / 26.11.22.06 ONE DRAWING: work_view_apply(view,label,action,light,
+  mirror=None). After the view's file (before -> 현장반영, during/after ->
+  후도면) commits, mirror(other_store, other_side, result, store) runs in its
+  own store.action in the other file; raise workflow.WorkViewSkip when there
+  is nothing to change there; a ValueError there only adds a note (the view's
+  edit stays). Pairs {(side, history group): (other side, group)} make
+  work_view_history undo/redo both files while the other file's next step is
+  that group. Shared ops: cable_info, node_info, node_lock, all_lock, delete;
+  node_add in 작업전 and cable_add 기설/철거/절단 copy rows (work_view_copy_rows,
+  same id, ports/cores); 신설 cable -> 작업후 only; core edit / paste / signal
+  follow only when the other slot was equal (work_view_slot_same), so
+  코어절체 slots stay separate. Positions and splices stay per view.
+  work_view_ensure_after makes after.sqlite3 (prepare_after + save +
+  after_identity_copy) on the first non-작업정책 edit aimed at 작업후. The page
+  copies edit.before to edit.after while has_after is false.
+  USER RULE: 철거 cables stay shown through all phase steps until a final
+  철거 step (field removes everything at once at the end).
+
 - V222 / 26.11.22.05: route 'route' (App.work_view_route, read-only like
   work_view_trace) -> cable_route_overview(view store, cable) -> {cable,
   colors, ends[{node,name,arrive,stop,cores[{n,id,detail,state,end}]}],

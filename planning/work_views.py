@@ -282,6 +282,42 @@ def work_view_positions(rows,during=None):
     return {'before':bp,'during':list(during) if during else bp,'after':ap}
 
 
+WORK_VIEW_ROW_PLAN={'node':(('nodes','id'),('ports','node_id')),'cable':(('cables','id'),('cores','cable_id'))}
+
+
+class WorkViewSkip(Exception):
+    """V223: this drawing has nothing to change (object missing there)."""
+
+
+def work_view_copy_rows(source,target,kind,key):
+    """V223: one drawing, two files. Copy a facility (with its ports) or a cable
+    (with its cores) into the other file with the same id, so both views show
+    the same object. Columns are matched by name; history triggers record it."""
+    if kind not in WORK_VIEW_ROW_PLAN:raise ValueError('복사할 대상을 다시 고르세요.')
+    if kind=='cable':
+        row=source.cable(key)
+        if not row:raise WorkViewSkip('원본 케이블 없음')
+        if not target.node(row['n1id']) or not target.node(row['n2id']):raise WorkViewSkip('양 끝 시설이 그 도면에 없음')
+    if (target.cable(key) if kind=='cable' else target.node(key)):raise WorkViewSkip('이미 있음')
+    copied=0
+    for table,column in WORK_VIEW_ROW_PLAN[kind]:
+        have={r[1] for r in target.conn.execute(f'PRAGMA table_info("{table}")')}
+        cols=[r[1] for r in source.conn.execute(f'PRAGMA table_info("{table}")') if r[1] in have]
+        names=','.join('"'+c.replace('"','""')+'"' for c in cols)
+        rows=source.conn.execute(f'SELECT {names} FROM "{table}" WHERE "{column}"=?',(key,)).fetchall()
+        if table in ('nodes','cables') and not rows:raise WorkViewSkip('원본 없음')
+        target.conn.executemany(f'INSERT OR REPLACE INTO "{table}"({names}) VALUES({",".join("?" for _ in cols)})',[tuple(r) for r in rows])
+        copied+=len(rows)
+    return copied
+
+
+def work_view_slot_same(row,old,fields):
+    """V223: the other file's slot follows an edit only when it held the same
+    values (no 코어절체 there)."""
+    if not row or not old:return False
+    return all(str(row[f] or '').strip()==str(old[f] or '').strip() for f in fields)
+
+
 def work_view_node_locked(row):
     try:return str(row['type'] or 'hamche')=='hamche' and bool(json.loads(row['extra_json'] or '{}').get('editLocked'))
     except (KeyError,IndexError,TypeError,ValueError):return False
@@ -546,6 +582,9 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 function el(t,a,p){const e=document.createElementNS(svgNS,t);for(const k in a)if(a[k]!==undefined&&a[k]!==null)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e}
 let nodes,cables,cores,issues,counts,N,C;
 function setData(d){D=Object.assign({},D,d);nodes=D.nodes||[];cables=D.cables||[];cores=D.cores||{};issues=D.issues||{};counts=D.counts||{};
+  // V223 one drawing: before the 작업후 file exists it starts as a copy of 작업전,
+  // so 작업중·작업후 can already edit everything; the first edit prepares it.
+  if(!D.has_after)for(const x of [...nodes,...cables])if(x.edit&&x.edit.before&&!x.edit.after)x.edit.after=x.edit.before;
   N=Object.fromEntries(nodes.map(n=>[n.id,n]));C=Object.fromEntries(cables.map(c=>[c.id,c]))}
 setData({});
 const LIVE=!!M.live;let editN=null,busy=false;
@@ -569,7 +608,7 @@ function renderHeader(){
   const v=VIEWS.find(x=>x[0]===view);document.getElementById('app').style.setProperty('--vc',v[3]);
   $('views').innerHTML=VIEWS.map((x,i)=>`<button class="view${x[0]===view?' on':''}" data-v="${x[0]}" style="--vc:${x[3]}"><span class="n">${i+1}</span>${x[1]} <small>${x[2]}</small></button>`).join('');
   $('views').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
-  const note=D.has_after?'현장반영 도면 = 작업전 배정 · 후도면 = 작업후 배정':'후도면이 아직 없어 작업후는 현장반영 배정으로 보여 줍니다';
+  const note=D.has_after?'한 도면 · 작업전·작업후에서 같이 쓰는 내용은 함께 바뀌어요':'한 도면 · 작업중·작업후에서 처음 고치면 작업후 배정이 자동으로 준비돼요';
   if(LIVE){const k=D.kind||M.kind,b=$('switchKind');b.style.display='';b.textContent=`열린 도면: ${k==='after'?'후도면':'현장반영'} ⇄`;b.title=`프로그램에서 ${k==='after'?'현장반영':'후도면'}(으)로 전환합니다 · 작업차수는 열린 도면 기준`}
   $('strip').innerHTML=`<span>●</span>${v[1]} 보기 · ${esc(v[2])}<span class="right">${esc(note)} · ${esc(D.created||M.created||'')} 기준 · ${LIVE?'코어 줄을 눌러 바로 수정':'수정은 기존 프로그램에서'}</span>`;
 }
@@ -599,7 +638,7 @@ async function deleteSelected(){
   const x=sel.kind==='cable'?C[sel.id]:sel.kind==='node'?N[sel.id]:null;if(!x)return;
   if(!(x.edit||{})[target()]){toast(`이 ${sel.kind==='cable'?'케이블':'시설'}은 ${targetName()}에 없어요`);return}
   const what=sel.kind==='cable'?`케이블 ${cableName(x)}`:`시설 ${x.name} (연결된 케이블도 함께)`;
-  if(!window.confirm(`${targetName()}에서 ${what}을 지울까요? Ctrl+Z로 되돌릴 수 있어요.`))return;
+  if(!window.confirm(`${what}을 도면에서 지울까요? 작업전·작업후 모든 보기에서 지워져요. Ctrl+Z로 되돌릴 수 있어요.`))return;
   const res=await edit('delete',{kind:sel.kind,id:x.id},'지웠어요');if(res&&res.ok){sel={kind:null,id:null};renderAll()}
 }
 document.addEventListener('keydown',e=>{
@@ -992,7 +1031,7 @@ function renderNode(n){
 let tool='select',nodeDrag=null,justDragged=false,cableStart=null,newCable=null;
 const TOOLS=[['select','선택·이동','시설을 끌어서 옮겨요 (이 보기에서만)','Esc'],['hamche','+ 함체','빈 곳을 누르면 함체를 만들어요','Alt+1'],['rn','+ RN','빈 곳을 누르면 RN을 만들어요','Alt+2'],['sub','+ 가입자','빈 곳을 누르면 가입자를 만들어요','Alt+3'],['cable','+ 케이블','시설 두 개를 차례로 누르세요','Alt+`']];
 const target=()=>view==='before'?'before':'after';
-const targetName=()=>view==='before'?'현장반영 도면':'후도면';
+const targetName=()=>view==='before'?'작업전':'작업후';
 function renderTools(){
   if(!LIVE)return;const box=$('tools');box.style.display='flex';
   const hint=tool==='cable'&&cableStart?`${esc((N[cableStart]||{}).name||'')} 다음 시설을 누르세요`:esc(TOOLS.find(t=>t[0]===tool)[2]);
@@ -1125,7 +1164,7 @@ function bindInfo(kind,x){
   if(lk)lk.onclick=()=>edit('node_lock',{node:x.id,locked:!v.locked},v.locked?'함체 잠금을 풀었어요':'함체를 잠갔어요',msg);
   box.querySelector('[data-del]').onclick=async()=>{
     const what=kind==='cable'?`케이블 ${cableName(x)}`:`시설 ${x.name} (연결된 케이블도 함께)`;
-    if(!window.confirm(`${targetName()}에서 ${what}을 지울까요? Ctrl+Z로 되돌릴 수 있어요.`))return;
+    if(!window.confirm(`${what}을 도면에서 지울까요? 작업전·작업후 모든 보기에서 지워져요. Ctrl+Z로 되돌릴 수 있어요.`))return;
     const res=await edit('delete',{kind,id:x.id},'지웠어요',msg);if(res&&res.ok){sel={kind:null,id:null};renderAll()}
   };
 }
@@ -1219,7 +1258,7 @@ async function edit(op,body,done,msgEl){
     if(res.ok&&typeof res.result==='string'&&/건너뜀|확인 필요/.test(res.result))done=res.result;
     if(!res.ok){const t=res.error||'저장하지 못했어요';if(msgEl){msgEl.textContent=t;msgEl.className='ed-msg bad'}else toast(t);return res}
     applyScene(res.scene);if(sel.kind==='cable'&&!C[sel.id]||sel.kind==='node'&&!N[sel.id])sel={kind:null,id:null};
-    renderAll();toast(done+' · '+res.where+' 저장');return res;
+    renderAll();toast(done+' · '+res.where+' 저장'+(res.note?' · '+res.note:''));return res;
   }catch(e){toast('프로그램과 연결이 끊겼어요. 프로그램이 켜져 있는지 확인하세요.');return null}
   finally{busy=false}
 }
@@ -1227,8 +1266,8 @@ async function edit(op,body,done,msgEl){
 /* V209 editing (only when opened from the program) */
 function editSides(c){
   const out=[];
-  if(c.in_before&&(view==='before'||view==='during'))out.push(['before','작업전','현장반영 도면에 저장','b','bd']);
-  if(D.has_after&&c.in_after&&(view==='after'||view==='during'))out.push(['after','작업후','후도면에 저장','a','ad']);
+  if(c.in_before&&(view==='before'||view==='during'))out.push(['before','작업전','작업전에 저장 · 작업후 칸이 같으면 같이 바뀜','b','bd']);
+  if((D.has_after?c.in_after:c.in_before)&&(view==='after'||view==='during'))out.push(['after','작업후','작업후에 저장 · 작업전 칸이 같으면 같이 바뀜','a','ad']);
   return out;
 }
 function editBox(c){

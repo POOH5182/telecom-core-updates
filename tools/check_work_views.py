@@ -44,6 +44,9 @@ class FakeApp:
     work_view_flush=code['App'].work_view_flush
     work_view_history=code['App'].work_view_history
     work_view_route=code['App'].work_view_route
+    work_view_ensure_after=code['App'].work_view_ensure_after
+    work_view_side_store=code['App'].work_view_side_store
+    work_view_last_group=code['App'].work_view_last_group
     def work_view_show_app(self,payload=None):self.shown=getattr(self,'shown',0)+1;return {'ok':True}
     def after(self,ms,fn):self.later=getattr(self,'later',[])+[fn]
     def load_scenario(self,kind):self.switched=kind;return True
@@ -249,15 +252,16 @@ class WorkEditTests(WorkViewTests):
         r=e(op='node_lock',view='after',node=self.nb,locked=True)
         self.assertTrue(wf.node_locked(self.after,self.nb))
         node={n['id']:n for n in r['scene']['nodes']}[self.nb]
-        self.assertTrue(node['edit']['after']['locked']);self.assertFalse(node['edit']['before']['locked'])
-        e(op='node_lock',view='after',node=self.nb,locked=False);self.assertFalse(wf.node_locked(self.after,self.nb))
+        self.assertTrue(node['edit']['after']['locked']);self.assertTrue(node['edit']['before']['locked'],'V223 one drawing: lock is shared')
+        r=e(op='node_lock',view='after',node=self.nb,locked=False);self.assertFalse(wf.node_locked(self.after,self.nb))
+        self.assertFalse({n['id']:n for n in r['scene']['nodes']}[self.nb]['edit']['before']['locked'])
         rn=self.after.add_node('RN1',50,50,'rn')
         with self.assertRaises(ValueError):e(op='node_lock',view='after',node=rn,locked=True)
         self.before.close()
         try:
             r=e(op='all_lock',view='before',locked=True)
-            self.assertEqual(r['scene']['locks'],{'before':True,'after':False})
-            self.assertIn('현장반영',r['where'])
+            self.assertEqual(r['scene']['locks'],{'before':True,'after':True},'V223: all-lock goes to both files')
+            self.assertIn('현장반영',r['where']);self.assertIn('후도면',r['where'])
         finally:self.before=code['Store'](self.folder/'before.sqlite3')
         self.assertTrue(self.before.all_enclosures_locked())
         with self.assertRaises(ValueError):app.work_view_switch({'kind':'gis'})
@@ -325,10 +329,12 @@ class WorkEditTests(WorkViewTests):
         self.before.close()
         try:
             app.work_view_edit({'op':'node_info','view':'before','node':self.nb,'name':'전-바뀜','status':'기설'})
-            r=app.work_view_history({'view':'before'});self.assertIn('현장반영',r['where'])
+            self.assertEqual(self.after.node(self.nb)['name'],'전-바뀜','V223: shared name follows into 작업후')
+            r=app.work_view_history({'view':'before'});self.assertIn('현장반영',r['where']);self.assertIn('함께',r['result'])
             check=code['Store'](self.folder/'before.sqlite3')
-            try:self.assertEqual(check.node(self.nb)['name'],'함체 B','작업전 undo goes to the field file')
+            try:self.assertEqual(check.node(self.nb)['name'],'B-바뀜','작업전 undo goes to the field file')
             finally:check.close()
+            self.assertEqual(self.after.node(self.nb)['name'],'B-바뀜','the mirrored change is undone too')
         finally:self.before=code['Store'](self.folder/'before.sqlite3')
         with self.assertRaises(ValueError):app.work_view_history({'view':'xx'})
         page=app.work_view_text(live='T')
@@ -380,6 +386,64 @@ class WorkEditTests(WorkViewTests):
         page=app.work_view_text(live='T')
         for name in ('function sigTag','data-f="signal"',"op:'core_signal'"):self.assertIn(name,page)
         print('PASS HTML core signal per view (ON/OFF/exception/error, empty number, mix warning asks first)')
+
+    def test_one_drawing(self):
+        """V223: 작업전·작업후 act as one drawing over the two files."""
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        e=lambda **kw:app.work_view_edit(kw)
+        def field():return code['Store'](self.folder/'before.sqlite3')
+        self.before.close()
+        try:
+            nid=e(op='node_add',view='before',name='기설 함체',type='hamche',x=500,y=60)['result']
+            self.assertEqual(self.after.node(nid)['name'],'기설 함체','made in 작업전 -> in 작업후 too, same id')
+            cid=e(op='cable_add',view='before',a=self.nb,b=nid,status='기설',spec='12C',cable_id='G',lot='')['result']
+            self.assertEqual(len(self.after.cores(cid)),12,'기설 cable copied with its cores')
+            sid=e(op='cable_add',view='before',a=self.nb,b=nid,status='신설',spec='12C',cable_id='',lot='')['result']
+            self.assertIsNotNone(self.after.cable(sid))
+            check=field()
+            try:
+                self.assertIsNotNone(check.node(nid));self.assertIsNotNone(check.cable(cid))
+                self.assertIsNone(check.cable(sid),'신설 lives in 작업후 only')
+            finally:check.close()
+            # core 1: X1 on both sides -> follows; core 5: X5 before / X7 after (코어절체) -> stays
+            e(op='core_paste',view='before',cable=self.k,start=1,lines=[['Y1','새']])
+            self.assertEqual(self.after.core(self.k,1)['core_id'],'Y1')
+            app.work_view_edit_core({'view':'before','cable':self.k,'n':5,'id':'Z5','detail':''})
+            self.assertEqual(self.after.core(self.k,5)['core_id'],'X7','코어절체 slot keeps its own value')
+            app.work_view_edit_core({'view':'after','cable':self.k,'n':2,'id':'Y2','detail':''})
+            check=field()
+            try:
+                self.assertEqual((check.core(self.k,1)['core_id'],check.core(self.k,2)['core_id'],check.core(self.k,5)['core_id']),('Y1','Y2','Z5'))
+            finally:check.close()
+            r=e(op='cable_info',view='after',cable=cid,status='철거',spec='12C',cable_id='G2',lot='L1')
+            self.assertIn('현장반영',r['where']);self.assertIn('후도면',r['where'])
+            check=field()
+            try:self.assertEqual((check.cable(cid)['status'],check.cable(cid)['cable_id']),('철거','G2'))
+            finally:check.close()
+            e(op='delete',view='after',kind='cable',id=cid)
+            check=field()
+            try:self.assertIsNone(check.cable(cid),'delete removes it from every view')
+            finally:check.close()
+            self.assertIsNone(self.after.cable(cid))
+        finally:self.before=code['Store'](self.folder/'before.sqlite3')
+        print('PASS one drawing: shared adds/info/delete in both files, 신설 only after, cores follow only when equal')
+
+    def test_after_made_on_first_edit(self):
+        """V223: no 후도면 button; the first 작업후 edit prepares it."""
+        self.after.close();(self.folder/'after.sqlite3').unlink()
+        app=FakeApp(self.before,'before',self.folder);app.cable_k=self.k
+        try:
+            with patch.object(code['workflow'],'Workflow',lambda app:SimpleNamespace(prepare_after=lambda:None)):
+                r=app.work_view_edit({'op':'node_info','view':'after','node':self.nb,'name':'B2','status':'기설'})
+            self.assertTrue((self.folder/'after.sqlite3').exists());self.assertIn('후도면 생성',r['note'])
+            check=code['Store'](self.folder/'after.sqlite3')
+            try:self.assertEqual(check.node(self.nb)['name'],'B2')
+            finally:check.close()
+            self.assertEqual(self.before.node(self.nb)['name'],'B2','shared rename reaches the open 작업전 too')
+            page=app.work_view_text(live='T')
+            self.assertIn('x.edit.after=x.edit.before',page);self.assertIn('모든 보기에서 지워져요',page)
+        finally:self.after=code['Store'](self.folder/'after.sqlite3')
+        print('PASS 작업후 file is made automatically on the first 작업중/작업후 edit')
 
     def test_cable_route(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
