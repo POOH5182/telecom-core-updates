@@ -44,6 +44,8 @@ class FakeApp:
     work_view_flush=code['App'].work_view_flush
     work_view_history=code['App'].work_view_history
     work_view_route=code['App'].work_view_route
+    work_view_compare=code['App'].work_view_compare
+    work_view_field_reference=code['App'].work_view_field_reference
     work_view_ensure_after=code['App'].work_view_ensure_after
     work_view_side_store=code['App'].work_view_side_store
     work_view_last_group=code['App'].work_view_last_group
@@ -452,6 +454,68 @@ class WorkEditTests(WorkViewTests):
         for name in ('function stageRole','철거대기','철거 (최종)','function stepStage','id="stages"',"k==='['||k===']'",'남은 코어','비움 완료','function slotDone'):
             self.assertIn(name,page)
         print('PASS phase stage view: steps per phase, removed cables kept (waiting) until the final removal step')
+
+    def test_field_vs_system(self):
+        b=self.before;W=code['workflow']
+        put(b,self.r,3,'X7')
+        b.conn.execute('INSERT INTO splices(node_id,cable1_id,core1_index,cable2_id,core2_index) VALUES(?,?,?,?,?)',(self.nb,*sorted([(self.k,7),(self.r,3)])[0],*sorted([(self.k,7),(self.r,3)])[1]));b.conn.commit()
+        reference=W.field_capture_reference(b.conn);W.field_keep_reference(b,reference)
+        put(b,self.k,2,'X2-현장');b.conn.execute('DELETE FROM splices WHERE node_id=?',(self.nb,));b.conn.commit()
+        summary=W.work_view_field_compare(b,W.field_reference(b))
+        self.assertEqual(summary['slots'][f'{self.k}#2']['t'],'시스템과 내역 다름')
+        summary=summary['nodes']
+        self.assertEqual(summary[self.nb],{'d':3,'u':3},'K 2 detail differs + K7 and R3 link missing at B')
+        rows={r['key']:r for r in W.work_view_field_compare(b,W.field_reference(b),self.nb)}
+        self.assertEqual(rows[f'{self.k}#2']['state'],'내역 다름');self.assertEqual(rows[f'{self.k}#7']['state'],'연결 다름')
+        self.assertEqual(rows[f'{self.k}#1']['state'],'같음')
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        self.before.close()
+        try:
+            scene=app.work_view_live_scene();self.assertEqual(scene['field']['nodes'][self.nb]['u'],3);self.assertIn('임시도면',scene['field']['source'])
+            value=app.work_view_compare({'node':self.nb})['value'];self.assertEqual(len([r for r in value['rows'] if r['state']!='같음']),3)
+            r=app.work_view_edit({'op':'field_check','view':'before','node':self.nb,'keys':[f'{self.k}#2']})
+            self.assertEqual(r['scene']['field']['nodes'][self.nb]['u'],2,'checked end no longer counted')
+            r=app.work_view_edit({'op':'field_fix','view':'before','node':self.nb,'keys':[f'{self.k}#7'],'what':'link'})
+            self.assertEqual(r['scene']['field']['nodes'][self.nb],{'d':1,'u':0},'link back: only the checked K 2 detail is left')
+            r=app.work_view_edit({'op':'field_fix','view':'before','node':self.nb,'keys':[f'{self.k}#2'],'what':'detail'})
+            self.assertNotIn(self.nb,app.work_view_live_scene()['field']['nodes'],'all ends equal again')
+            check=code['Store'](self.folder/'before.sqlite3')
+            try:self.assertEqual(check.core(self.k,2)['core_id'],'X2')
+            finally:check.close()
+            scene=app.work_view_live_scene();self.assertEqual(scene['field']['slots'][f'{self.k}#2'],{'t':'','c':'확정: 시스템값'})
+            app.work_view_edit({'op':'field_fix','view':'before','node':self.nb,'keys':[f'{self.k}#1'],'what':'manual','id':'X1-NEW','detail':'새 내역'})
+            check=code['Store'](self.folder/'before.sqlite3')
+            try:self.assertEqual((check.core(self.k,1)['core_id'],check.core(self.k,1)['detail']),('X1-NEW','새 내역'))
+            finally:check.close()
+            self.assertEqual(self.after.core(self.k,1)['core_id'],'X1-NEW','작업후 slot was the same, so it follows')
+            self.assertEqual(app.work_view_live_scene()['field']['slots'][f'{self.k}#1']['c'],'확정: 직접 입력')
+            with self.assertRaises(ValueError):app.work_view_edit({'op':'field_fix','view':'before','node':self.nb,'keys':['nope#1'],'what':'detail'})
+            page=app.work_view_text(live='T')
+            for name in ('function fieldForm',"api('compare'",'현장값으로 확정','시스템값으로 확정','시스템 연결로 확정','function renderFieldList'):self.assertIn(name,page)
+        finally:self.before=code['Store'](self.folder/'before.sqlite3')
+        print('PASS system vs field at cable ends: equal pass, differences listed, check remembered, fix to system detail/link')
+
+    def test_temp_core_confirm(self):
+        put(self.after,self.s,2,'임시-0007');put(self.after,self.k,9,'임시-0007');self.after.conn.commit()
+        put(self.before,self.k,9,'임시-0007');self.before.conn.commit()
+        app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k
+        self.before.close()
+        try:
+            r=app.work_view_edit({'op':'temp_confirm','view':'after','temp':'임시-0007','id':'X1'})
+            self.assertFalse(r['ok']);self.assertIn('이미',r['confirm'])
+            r=app.work_view_edit({'op':'temp_confirm','view':'after','temp':'임시-0007','id':'OPT-77','detail':'실내역'})
+            self.assertIn('2칸',r['result'])
+            self.assertEqual((self.after.core(self.s,2)['core_id'],self.after.core(self.k,9)['core_id'],self.after.core(self.k,9)['detail']),('OPT-77','OPT-77','실내역'))
+            check=code['Store'](self.folder/'before.sqlite3')
+            try:self.assertEqual(check.core(self.k,9)['core_id'],'OPT-77','작업전 has the same 임시 core, it follows')
+            finally:check.close()
+            self.assertEqual(r['scene']['field']['temp']['OPT-77']['temp'],'임시-0007')
+            for bad in (dict(temp='X1',id='Y'),dict(temp='임시-0007',id=''),dict(temp='임시-9999',id='Z')):
+                with self.assertRaises(ValueError):app.work_view_edit(dict(op='temp_confirm',view='after',**bad))
+            page=app.work_view_text(live='T')
+            for name in ('실제 코어ID로 확정','function slotTags','임시코어 확정 기록','직접 입력'):self.assertIn(name,page)
+        finally:self.before=code['Store'](self.folder/'before.sqlite3')
+        print('PASS temporary core gets its real core ID on the whole path in both drawings, record shown as a tag')
 
     def test_cable_route(self):
         app=FakeApp(self.after,'after',self.folder);app.cable_k=self.k

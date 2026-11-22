@@ -9,6 +9,22 @@
   (launcher is not updated by the ZIP). RELEASE_NOTES heading: "## <label> (V<N>)".
   Before bumping, look at RELEASE_NOTES to find today's last NN.
 
+- V225 / 26.11.22.08: 시스템 vs 현장 at cable ends. System = workflow
+  field_reference(현장반영) with source GIS, else the gis file snapshot
+  (App.work_view_field_reference). work_view_field_compare(field, ref[, node])
+  -> per node rows {key cable#n, state 같음/내역 다름/연결 다름/연결·내역 다름,
+  sys/fld {id,detail,link}, checked, how, tsig, lsig}; without node ->
+  {nodes:{id:{d,u}}, slots:{key:{t,c}}}. Records in workflow_state key
+  work_view_field_end_checks: '#core'[key] (내역, both ends) + [node][key]
+  (연결), each {sig,how,time}; a value change breaks the sig -> 다름 again.
+  ops field_check (현장값), field_fix what=detail|link|manual (writes 현장반영,
+  then records 시스템값/직접 입력; 작업후 follows when equal). Route 'compare'.
+  op temp_confirm: every slot with that 임시 ID -> real ID in both files
+  (work_view_temp_confirm, log key work_view_temp_confirmed); asks first
+  ({ok:false,confirm}) when the real ID already exists. Scene field
+  {source,nodes,slots,temp}. Page: slotTags in core tables, fieldForm in the
+  facility panel, map badge 「시스템≠ n」, renderFieldList + tempLog.
+
 - V224 / 26.11.22.07: page-only 차수 단계 보기. #stages bar (stageList from
   D.phase.names up to the last used phase: 「n 중」,「n 후」, then 철거 (최종)).
   stage={i,m:'during'|'after'} or {final:true}; underlying view = during
